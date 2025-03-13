@@ -23,7 +23,7 @@ def parse_args():
     
     # Mode arguments
     parser.add_argument("--mode", type=str, default="train", 
-                        choices=["train", "eval", "profile", "train_byte_lm"],
+                        choices=["train", "eval", "profile", "train_byte_lm", "test_messaging"],
                         help="Operation mode")
     
     # Model configuration arguments
@@ -45,6 +45,10 @@ def parse_args():
                         help="Use BLT byte processor")
     parser.add_argument("--use_two_pass_inference", action="store_true",
                         help="Use two-pass inference")
+    parser.add_argument("--use_component_messaging", action="store_true", default=True,
+                        help="Use component messaging system")
+    parser.add_argument("--use_cross_component_feedback", action="store_true", default=True,
+                        help="Use cross-component feedback loops")
     
     # Hardware optimization arguments
     parser.add_argument("--mixed_precision", action="store_true",
@@ -116,6 +120,8 @@ def create_config_from_args(args):
     config.use_mvot_processor = args.use_mvot_processor
     config.use_blt_processor = args.use_blt_processor
     config.use_two_pass_inference = args.use_two_pass_inference
+    config.use_component_messaging = args.use_component_messaging
+    config.use_cross_component_feedback = args.use_cross_component_feedback
     
     # Hardware optimization
     config.mixed_precision = args.mixed_precision
@@ -143,6 +149,11 @@ def create_config_from_args(args):
     config.mvot_activation_threshold = 0.5
     config.blt_activation_threshold = 0.5
     config.two_pass_activation_threshold = 0.8
+    
+    # Messaging and feedback parameters
+    config.surprise_threshold = 0.7
+    config.high_entropy_threshold = 0.8
+    config.computation_budget = 100
     
     return config
 
@@ -421,6 +432,121 @@ def train_byte_lm_mode(args):
     print(f"Training complete. Model saved to {config.output_dir}")
 
 
+def test_messaging_mode(args):
+    """Test the component messaging and feedback system."""
+    print("Setting up component messaging testing environment...")
+    
+    # Import necessary modules
+    from src.components.messaging import (
+        Message, 
+        MessageType, 
+        send_message, 
+        process_messages, 
+        get_message_bus
+    )
+    
+    # Create configuration with all components enabled
+    config = create_config_from_args(args)
+    config.use_titans_memory = True
+    config.use_transformer2_adaptation = True
+    config.use_mvot_processor = True
+    config.use_blt_processor = True
+    config.use_component_messaging = True
+    config.use_cross_component_feedback = True
+    
+    # Smaller model size for testing
+    config.hidden_size = 128
+    config.num_layers = 2
+    config.num_attention_heads = 4
+    
+    print("Creating unified architecture with all components and feedback loops...")
+    model = UnifiedArchitecture(config)
+    
+    # Create sample inputs
+    print("Creating sample inputs...")
+    input_ids = torch.randint(0, config.vocab_size, (2, 24))
+    attention_mask = torch.ones_like(input_ids)
+    token_type_ids = torch.zeros_like(input_ids)
+    
+    # Enable extra logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # Set token_type_ids to include some image tokens (token_type_id=1)
+    token_type_ids[0, 10:15] = 1  # Some image tokens in first sequence
+    
+    print("Running forward pass with messaging...")
+    # Run forward pass to generate messages
+    outputs = model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        token_type_ids=token_type_ids,
+        process_feedback=True
+    )
+    
+    # Manually create and send some test messages
+    print("\nSending test messages...")
+    
+    # Task identification message
+    send_message(Message(
+        msg_type=MessageType.TASK_IDENTIFIED,
+        sender="transformer2_adaptation",
+        content={
+            "task_embedding": torch.randn(1, 10).tolist(),  # Convert tensor to list for simpler serialization
+            "task_id": "test_task_1"
+        },
+        target="task_memory_feedback"
+    ))
+    
+    # Surprise detection message
+    send_message(Message(
+        msg_type=MessageType.SURPRISE_DETECTED,
+        sender="titans_memory_system",
+        content={
+            "surprise_values": [0.7, 0.2, 0.9, 0.1],
+            "positions": [10, 11, 12, 13]
+        }
+    ))
+    
+    # Process queued messages
+    print("\nProcessing pending messages...")
+    num_messages = process_messages()
+    print(f"Processed {num_messages} messages")
+    
+    # Get message bus state
+    message_bus = get_message_bus()
+    
+    print("\nActive components:")
+    for component, status in model.get_active_components().items():
+        print(f"  {component}: {status}")
+    
+    print("\nFeedback components:")
+    if hasattr(model, 'feedback_components'):
+        for name, component in model.feedback_components.items():
+            print(f"  {name}: {type(component).__name__}")
+    else:
+        print("  No feedback components initialized")
+    
+    print("\nMessage handlers:")
+    for component, handlers in message_bus.handlers.items():
+        print(f"  {component}:")
+        for msg_type in handlers:
+            print(f"    {msg_type.name}: {len(handlers[msg_type])} handler(s)")
+    
+    # Run another forward pass to see cross-component effects
+    print("\nRunning second forward pass to demonstrate cross-component effects...")
+    outputs = model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        token_type_ids=token_type_ids,
+        process_feedback=True
+    )
+    
+    print("\nMessaging system test complete!")
+
+
 def main():
     """Main function."""
     # Parse command-line arguments
@@ -446,6 +572,9 @@ def main():
     elif args.mode == "train_byte_lm":
         # Train byte-level language model
         train_byte_lm_mode(args)
+    elif args.mode == "test_messaging":
+        # Test component messaging
+        test_messaging_mode(args)
     else:
         raise ValueError(f"Unknown mode: {args.mode}")
 

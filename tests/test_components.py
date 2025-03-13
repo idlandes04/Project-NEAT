@@ -409,6 +409,15 @@ class TestMVoTTokenProcessor(unittest.TestCase):
         self.config.hidden_size = 64
         self.config.is_multimodal = True
         self.config.codebook_size = 32
+        self.config.mvot = type('obj', (object,), {
+            'codebook_size': 32,
+            'embedding_dim': 64,  # Set this to match hidden_size
+            'discrepancy_loss_weight': 1.0,
+            'is_multimodal': True,
+            'use_pretrained_codebook': False,
+            'codebook_path': None,
+            'codebook_model_type': 'vqvae'
+        })
         
         self.batch_size = 2
         self.seq_len = 24

@@ -117,26 +117,41 @@ class TokenDiscrepancyLoss(nn.Module):
             
             # Use efficient batch computation if possible
             if self.embedding_dim == target_image_embeddings.size(-1):
-                # Reshape for broadcasting
-                # [batch_size, embedding_dim] and [codebook_size, embedding_dim]
-                target_expanded = target_image_embeddings.unsqueeze(1)  # [batch_size, 1, embedding_dim]
-                codebook_expanded = self.codebook_embeddings.unsqueeze(0)  # [1, codebook_size, embedding_dim]
+                # Use a more explicit approach to avoid broadcasting warnings
+                batch_size = target_image_embeddings.size(0)
                 
-                # Compute MSE distances in one go
-                mse_distances = F.mse_loss(
-                    target_expanded, 
-                    codebook_expanded, 
-                    reduction='none'
-                ).mean(dim=-1)  # [batch_size, codebook_size]
+                # Initialize distances tensor
+                mse_distances = torch.zeros(batch_size, self.codebook_size, device=hidden_states.device)
+                
+                # Compute MSE for each codebook entry in a vectorized way
+                for i in range(self.codebook_size):
+                    # Get codebook embedding and expand to batch size
+                    codebook_emb = self.codebook_embeddings[i].unsqueeze(0)  # [1, embedding_dim]
+                    expanded_codebook = codebook_emb.expand(batch_size, -1)  # [batch_size, embedding_dim]
+                    
+                    # Compute squared differences and mean
+                    mse_distances[:, i] = torch.mean((target_image_embeddings - expanded_codebook)**2, dim=-1)
             else:
                 # Fallback to loop for dimension mismatch
+                # For dimension mismatch, we need to use a different approach
+                # First, ensure codebook and target have the same embedding dimension
+                
+                # Get the minimum dimension to compare
+                min_dim = min(self.embedding_dim, target_image_embeddings.size(-1))
+                
+                # Use only the common dimensions for both
                 for i in range(self.codebook_size):
-                    codebook_embedding = self.codebook_embeddings[i].unsqueeze(0)
-                    mse_distances[:, i] = F.mse_loss(
-                        target_image_embeddings,
-                        codebook_embedding.expand_as(target_image_embeddings),
-                        reduction='none'
-                    ).mean(dim=-1)
+                    # Get codebook embedding and truncate to min_dim if needed
+                    codebook_emb = self.codebook_embeddings[i, :min_dim].unsqueeze(0)  # [1, min_dim]
+                    
+                    # Get target embeddings and truncate to min_dim if needed
+                    target_emb = target_image_embeddings[:, :min_dim]  # [batch_size, min_dim]
+                    
+                    # Expand codebook to match batch size
+                    expanded_codebook = codebook_emb.expand(target_emb.size(0), -1)  # [batch_size, min_dim]
+                    
+                    # Compute MSE on truncated dimensions
+                    mse_distances[:, i] = torch.mean((target_emb - expanded_codebook)**2, dim=-1)
         else:
             # If we have a visual codebook, use it to compute real distances
             if self.has_visual_codebook:

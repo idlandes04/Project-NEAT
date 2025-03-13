@@ -2,10 +2,12 @@
 Unified neural architecture integrating Titans, Transformer², MVoT, and BLT.
 
 This module implements a unified model that combines all the components
-into a single architecture with flexible configuration options.
+into a single architecture with flexible configuration options and
+cross-component communication.
 """
 import torch
 import torch.nn as nn
+import logging
 from typing import Dict, List, Optional, Tuple, Union, Any
 
 from ..components.titans.memory_system import TitansMemorySystem
@@ -14,6 +16,22 @@ from ..components.mvot.token_processor import MVoTTokenProcessor
 from ..components.blt.byte_processor import BLTByteProcessor
 from ..components.mvot.mapping import BidirectionalMapper, create_mapping_layer
 from ..models.transformer import MemoryEfficientTransformer
+
+# Import messaging and feedback components
+from ..components.messaging import (
+    Message, 
+    MessageType, 
+    process_messages, 
+    ComponentState, 
+    StateType, 
+    register_state
+)
+
+from ..components.feedback import (
+    connect_task_identification_with_memory,
+    link_surprise_to_adaptation,
+    create_bidirectional_flow
+)
 
 
 class UnifiedArchitecture(nn.Module):
@@ -38,6 +56,7 @@ class UnifiedArchitecture(nn.Module):
         """
         super().__init__()
         self.config = config
+        self.logger = logging.getLogger("UnifiedArchitecture")
         
         # Base transformer
         self.transformer = MemoryEfficientTransformer(config)
@@ -55,12 +74,18 @@ class UnifiedArchitecture(nn.Module):
             'token_processor': config.use_mvot_processor,
             'adaptation_system': config.use_transformer2_adaptation,
             'two_pass_inference': config.use_two_pass_inference,
-            'byte_token_mapper': config.use_blt_processor and config.use_mvot_processor
+            'byte_token_mapper': config.use_blt_processor and config.use_mvot_processor,
+            'component_messaging': getattr(config, 'use_component_messaging', True),
+            'cross_component_feedback': getattr(config, 'use_cross_component_feedback', True)
         }
         
         # Two-pass inference handler
         if config.use_two_pass_inference:
             self.two_pass_inference = TwoPassInference(self)
+            
+        # Initialize cross-component feedback loops if enabled
+        if self.active_components['cross_component_feedback']:
+            self._init_feedback_loops()
     
     def _init_components(self):
         """Initialize all components."""
@@ -83,6 +108,54 @@ class UnifiedArchitecture(nn.Module):
         # Byte-to-token mapper (if both BLT and MVoT are active)
         if self.config.use_blt_processor and self.config.use_mvot_processor:
             self.byte_token_mapper = create_mapping_layer(self.config)
+    
+    def _init_feedback_loops(self):
+        """Initialize cross-component feedback loops."""
+        self.logger.info("Initializing cross-component feedback loops")
+        
+        # Store feedback components
+        self.feedback_components = {}
+        
+        # Only initialize feedback if the required components are present
+        if (hasattr(self, 'memory_system') and 
+            hasattr(self, 'adaptation_system') and 
+            self.active_components['memory_system'] and 
+            self.active_components['adaptation_system']):
+            
+            # Connect task identification with memory updates
+            self.feedback_components['task_memory_feedback'] = connect_task_identification_with_memory(
+                self, self.config
+            )
+            self.logger.info("Task-Memory feedback loop initialized")
+            
+            # Link surprise detection to adaptation priorities
+            self.feedback_components['adaptation_feedback'] = link_surprise_to_adaptation(
+                self, self.config
+            )
+            self.logger.info("Surprise-Adaptation feedback loop initialized")
+        
+        # Connect MVoT and BLT if both are present
+        if (hasattr(self, 'token_processor') and 
+            hasattr(self, 'byte_processor') and 
+            self.active_components['token_processor'] and 
+            self.active_components['byte_processor']):
+            
+            # Create bidirectional flow between modality processors
+            self.feedback_components['modality_feedback'] = create_bidirectional_flow(
+                self, self.config
+            )
+            self.logger.info("Modality feedback loop initialized")
+        
+        # Register unified model state
+        if self.feedback_components:
+            register_state(ComponentState(
+                state_type=StateType.MEMORY_CONTENT,  # Use a general state type
+                component="unified_architecture",
+                value={
+                    "active_feedback_loops": list(self.feedback_components.keys()),
+                    "active_components": self.active_components
+                }
+            ))
     
     def _connect_components(self):
         """Connect components to extension points in the transformer."""
@@ -129,6 +202,7 @@ class UnifiedArchitecture(nn.Module):
         past_key_values: Optional[List[torch.FloatTensor]] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        process_feedback: bool = True,
     ):
         """
         Forward pass through the unified architecture.
@@ -142,6 +216,7 @@ class UnifiedArchitecture(nn.Module):
             past_key_values: Past key values for incremental decoding
             output_hidden_states: Whether to output all hidden states
             return_dict: Whether to return a dictionary
+            process_feedback: Whether to process feedback messages
             
         Returns:
             Model outputs
@@ -175,7 +250,19 @@ class UnifiedArchitecture(nn.Module):
         # Remove None values
         transformer_kwargs = {k: v for k, v in transformer_kwargs.items() if v is not None}
         
+        # Run the forward pass
         outputs = self.transformer(**transformer_kwargs)
+        
+        # Process component messages for feedback loops
+        if (self.active_components['component_messaging'] and 
+            self.active_components['cross_component_feedback'] and 
+            process_feedback and
+            hasattr(self, 'feedback_components')):
+            
+            # Process any pending messages to ensure feedback is complete
+            num_messages = process_messages(max_messages=100)  # Process up to 100 messages
+            if num_messages > 0:
+                self.logger.debug(f"Processed {num_messages} feedback messages")
         
         return outputs
     
@@ -223,6 +310,24 @@ class UnifiedArchitecture(nn.Module):
         
         # Update extension points
         self._update_extension_points()
+        
+        # Update feedback components if needed
+        if self.active_components['cross_component_feedback'] and not hasattr(self, 'feedback_components'):
+            self._init_feedback_loops()
+        elif hasattr(self, 'feedback_components') and not self.active_components['cross_component_feedback']:
+            # Clean up feedback components
+            self.feedback_components = {}
+            
+        # Register updated state
+        if self.active_components['component_messaging']:
+            register_state(ComponentState(
+                state_type=StateType.MEMORY_CONTENT,  # Use a general state type
+                component="unified_architecture",
+                value={
+                    "active_components": self.active_components,
+                    "active_feedback_loops": getattr(self, 'feedback_components', {}).keys()
+                }
+            ))
     
     def get_active_components(self) -> Dict[str, bool]:
         """

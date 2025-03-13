@@ -10,11 +10,11 @@
 
 
 ## Build & Test Commands
-- Run all tests: `python -m pytest tests/`
-- Run a single test: `python -m pytest tests/test_components.py::TestName::test_method_name`
-- Train model: `python main.py --mode train --use_titans_memory --use_transformer2_adaptation --use_mvot_processor`
-- Evaluate model: `python main.py --mode eval --model_path ./outputs/best_model`
-- Profile components: `python main.py --mode profile`
+- Run all tests: `python3 -m pytest tests/`
+- Run a single test: `python3 -m pytest tests/test_components.py::TestName::test_method_name`
+- Train model: `python3 main.py --mode train --use_titans_memory --use_transformer2_adaptation --use_mvot_processor`
+- Evaluate model: `python3 main.py --mode eval --model_path ./outputs/best_model`
+- Profile components: `python3 main.py --mode profile`
 
 ## Code Style Guidelines
 - Use type hints (from typing import Dict, List, Optional, Union, Any)
@@ -78,6 +78,16 @@
 - **Key Insight 5**: Layer normalization is essential for stabilizing the training dynamics of conversion networks.
 - **Key Insight 6**: Quality assessment of conversions through cosine similarity provides an effective measure for monitoring fidelity loss.
 
+### Cross-Component Communication (Completed 2.1.x)
+- **Key Insight 1**: A message-based pub-sub architecture provides flexibility for loosely coupled components to communicate.
+- **Key Insight 2**: Priority-based message processing ensures critical information is processed first during heavy computational loads.
+- **Key Insight 3**: State tracking with subscriptions enables components to react to relevant state changes without tight coupling.
+- **Key Insight 4**: Task-memory correlation enables more efficient memory allocation by prioritizing regions associated with the current task.
+- **Key Insight 5**: Surprise-driven adaptation creates a feedback loop that dynamically adjusts model parameters where uncertainty is high.
+- **Key Insight 6**: Bidirectional modality feedback enables coordinated processing between text and visual representations.
+- **Key Insight 7**: Separating message types from content allows extensibility while maintaining a structured communication protocol.
+- **Key Insight 8**: Decentralized state management with centralized synchronization balances component autonomy with system coherence.
+
 ### Implementation Patterns
 - Use torch.utils.checkpoint.checkpoint for memory-efficient gradient computation
 - Implement fallback mechanisms when operations aren't supported on all platforms
@@ -88,3 +98,50 @@
 - Use similarity metrics for content-based lookup in caches
 - Apply pruning mechanisms based on recency and frequency for memory management
 - Use randomized algorithms when appropriate to speed up processing of large matrices
+- Use message-based pub-sub architecture for cross-component communication
+- Implement state management with subscriptions for loose coupling
+- Employ priority-based message handling to focus on critical information first
+
+## Project Reflections and Planning
+
+### Current State Assessment (Updated: 2025-03-13)
+We've made significant progress on Project NEAT, having completed the foundational implementation of all four key architectural components (Titans, Transformer², MVoT, and BLT) and their initial integration through cross-component communication. The system is structured with careful modularity, allowing selective activation of components based on computational needs and input complexity.
+
+The messaging system we've implemented provides robust communication between components with priority-based processing, and the state management system allows them to share and react to state changes without tight coupling. The feedback loops (task-memory, surprise-adaptation, and modality) enable coordinated behavior between components.
+
+### Upcoming Challenges
+As we move toward a trainable 100-500M parameter model, several challenges need attention:
+
+1. **Training Data Requirements**: Creating appropriate synthetic data that exercises all components, especially demonstrating the advantages of component coordination. We'll need data that:
+   - Contains information patterns requiring long-term memory (for Titans)
+   - Includes diverse tasks requiring adaptation (for Transformer²)
+   - Has multimodal content requiring visualization (for MVoT)
+   - Contains varied entropy patterns for byte-level processing (for BLT)
+
+2. **Hardware Scaling**: While we have promising component-level optimizations, training even a small model (~100M parameters) will require careful resource management, particularly for:
+   - Gradient computation for test-time learning (Titans)
+   - SVD decompositions for adaptation (Transformer²)
+   - Handling of visual content (MVoT)
+   - Large compute graphs from byte-level processing (BLT)
+
+3. **Comparative Validation**: We need clear metrics showing our advantage over vanilla transformers:
+   - Memory efficiency gains (bytes/parameters ratio)
+   - Adaptive capability measures (cross-task performance improvement)
+   - Multimodal reasoning improvements (compared to text-only models)
+   - Processing efficiency (bytes/sec or tokens/sec)
+
+### Next Phase Focus (2.2.x): Test-Time Learning Synchronization
+The next critical phase is coordinating test-time learning across components, particularly between Titans and Transformer². Key tasks include:
+1. Developing a shared gradient computation infrastructure
+2. Implementing component-specific gradient isolation
+3. Creating adaptive learning rate management
+4. Building monitoring systems for test-time optimization quality
+
+### Long-Term Vision
+The ultimate goal is to demonstrate a model that achieves superior efficiency and capability through coordinated components vs. monolithic scaling. We need to prove that:
+1. Dynamic component activation by input complexity saves computation while maintaining quality
+2. Test-time learning provides better generalization on long contexts
+3. Cross-component communication improves overall efficiency and task performance
+4. The combined system handles a wider array of tasks than any component alone
+
+I'll continue to update this reflection as we make progress, focusing on overcoming the key challenges while maintaining a clear path toward proving the system's advantages.
