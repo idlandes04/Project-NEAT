@@ -1,0 +1,16 @@
+# Core dependencies
+torch>=1.10.0
+numpy>=1.20.0
+tqdm>=4.62.0
+
+# Hardware optimization
+psutil>=5.9.0  # For CPU monitoring
+py3nvml>=0.2.7  # For NVIDIA GPU monitoring
+
+# Utilities
+pyyaml>=6.0  # For configuration files
+matplotlib>=3.5.0  # For visualization
+rich>=12.0.0  # For CLI interface
+
+# Testing
+pytest>=7.0.0
