@@ -12,6 +12,7 @@ from ..components.titans.memory_system import TitansMemorySystem
 from ..components.transformer2.adaptation import Transformer2Adaptation, OptimizedTwoPassInference as TwoPassInference
 from ..components.mvot.token_processor import MVoTTokenProcessor
 from ..components.blt.byte_processor import BLTByteProcessor
+from ..components.mvot.mapping import BidirectionalMapper, create_mapping_layer
 from ..models.transformer import MemoryEfficientTransformer
 
 
@@ -53,7 +54,8 @@ class UnifiedArchitecture(nn.Module):
             'memory_system': config.use_titans_memory,
             'token_processor': config.use_mvot_processor,
             'adaptation_system': config.use_transformer2_adaptation,
-            'two_pass_inference': config.use_two_pass_inference
+            'two_pass_inference': config.use_two_pass_inference,
+            'byte_token_mapper': config.use_blt_processor and config.use_mvot_processor
         }
         
         # Two-pass inference handler
@@ -77,6 +79,10 @@ class UnifiedArchitecture(nn.Module):
         # BLT byte processor
         if self.config.use_blt_processor:
             self.byte_processor = BLTByteProcessor(self.config)
+        
+        # Byte-to-token mapper (if both BLT and MVoT are active)
+        if self.config.use_blt_processor and self.config.use_mvot_processor:
+            self.byte_token_mapper = create_mapping_layer(self.config)
     
     def _connect_components(self):
         """Connect components to extension points in the transformer."""
@@ -98,6 +104,20 @@ class UnifiedArchitecture(nn.Module):
         # Connect Transformer² adaptation to post-processing
         if hasattr(self, 'adaptation_system'):
             self.transformer.extension_points["post_processing"] = self.adaptation_system
+        
+        # Connect byte-to-token mapper
+        if hasattr(self, 'byte_token_mapper'):
+            # Create custom handler for connecting BLT output to MVoT input
+            def blt_to_mvot_mapping(hidden_states, attention_mask=None):
+                # Convert byte representations to token representations
+                token_repr, token_mask = self.byte_token_mapper.bytes_to_tokens(
+                    hidden_states, attention_mask
+                )
+                return token_repr, token_mask
+            
+            # Add as connection between BLT and MVoT
+            if hasattr(self, 'byte_processor') and hasattr(self, 'token_processor'):
+                self.transformer.extension_points["blt_to_mvot_mapper"] = blt_to_mvot_mapping
     
     def forward(
         self,

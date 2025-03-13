@@ -16,13 +16,13 @@ This project implements a unified neural architecture that integrates four cutti
 - ✅ **MVoT Visual Codebook** (1.4.1): Framework for loading pretrained VQ-VAE models
 
 ### In Progress:
-- 🔄 **MVoT Decision Mechanism** (1.4.2): Building the text/image generation decision system
-- 🔄 **MVoT Token Mapping** (1.4.3): Creating byte-to-token mappings for BLT compatibility
+- 🔄 **Cross-Component Integration** (2.1.x): Designing component messaging protocol and feedback loops
+- 🔄 **Test-Time Learning Synchronization** (2.2.x): Coordinating learning across components
 
 ### Coming Soon:
-- 📅 **Cross-Component Integration** (2.x): Connecting all components together
-- 📅 **Test-Time Learning Synchronization** (2.2.x): Coordinating learning across components
-- 📅 **Testing Infrastructure** (3.x): Comprehensive evaluation framework
+- 📅 **Hardware-Aware Integration** (2.3.x): Resource allocation and scheduling for components
+- 📅 **Component Testing Framework** (3.1.x): Isolated benchmarks for each component
+- 📅 **Integration Testing Framework** (3.2.x): End-to-end testing of the unified system
 
 The implementation is optimized for both Apple Silicon (M-series) and NVIDIA GPUs, with platform-specific optimizations and fallback mechanisms.
 

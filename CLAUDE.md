@@ -70,6 +70,14 @@
 - **Key Insight 5**: Converting between boolean logic and continuous scores requires careful handling to avoid loss of information.
 - **Key Insight 6**: Explicit diagram requests should override other heuristics, as they represent direct user intent for visualization.
 
+### BLT-MVoT Integration (Completed 1.4.3)
+- **Key Insight 1**: Bidirectional conversion between byte-level and token-level representations requires careful alignment of embedding spaces.
+- **Key Insight 2**: Vector normalization before computing similarity metrics drastically improves the quality of round-trip conversions.
+- **Key Insight 3**: The conversion process should be modular and independent of the specific BLT or MVoT implementation details.
+- **Key Insight 4**: Using an intermediate dimensional space larger than both source and target spaces improves conversion fidelity.
+- **Key Insight 5**: Layer normalization is essential for stabilizing the training dynamics of conversion networks.
+- **Key Insight 6**: Quality assessment of conversions through cosine similarity provides an effective measure for monitoring fidelity loss.
+
 ### Implementation Patterns
 - Use torch.utils.checkpoint.checkpoint for memory-efficient gradient computation
 - Implement fallback mechanisms when operations aren't supported on all platforms

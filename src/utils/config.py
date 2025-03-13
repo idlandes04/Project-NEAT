@@ -156,6 +156,7 @@ class BLTConfig:
     # Architecture parameters
     num_local_layers: int = 2
     num_latent_layers: int = 4
+    latent_hidden_size: int = 768  # Hidden size for latent transformer
     
     # Byte LM configuration
     byte_lm: ByteLMConfig = dataclasses.field(default_factory=ByteLMConfig)

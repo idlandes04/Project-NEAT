@@ -3,8 +3,8 @@ MVoT (Multimodal Visualization-of-Thought) token processor module.
 
 This module provides components for multimodal processing with
 visualization capabilities, implementing the token discrepancy loss,
-visual codebook integration framework, and text/image generation
-decision mechanism.
+visual codebook integration framework, text/image generation
+decision mechanism, and byte-to-token mapping for BLT compatibility.
 """
 from .token_processor import (
     TokenDiscrepancyLoss,
@@ -36,6 +36,17 @@ except ImportError:
     # Decision mechanism components not yet implemented
     pass
 
+try:
+    from .mapping import (
+        ByteToTokenMapper,
+        TokenToByteMapper,
+        BidirectionalMapper,
+        create_mapping_layer
+    )
+except ImportError:
+    # Mapping components not yet implemented
+    pass
+
 __all__ = [
     'TokenDiscrepancyLoss',
     'MVoTTokenProcessor',
@@ -49,5 +60,9 @@ __all__ = [
     'GenerationDecisionMechanism',
     'VisualizationBenefitAssessor',
     'ContextAwareDecider',
-    'create_decision_mechanism'
+    'create_decision_mechanism',
+    'ByteToTokenMapper',
+    'TokenToByteMapper',
+    'BidirectionalMapper',
+    'create_mapping_layer'
 ]

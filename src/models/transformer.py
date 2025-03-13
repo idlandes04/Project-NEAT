@@ -302,6 +302,7 @@ class MemoryEfficientTransformer(nn.Module):
             "post_layer": [None] * config.num_layers,  # For MVoT
             "pre_output": None,  # For custom output processing
             "post_output": None,  # For Transformer²
+            "blt_to_mvot_mapper": None,  # For mapping between BLT and MVoT
         }
         
         # Initialize weights
@@ -438,6 +439,9 @@ class MemoryEfficientTransformer(nn.Module):
             if self.extension_points["pre_layer"][i] is not None:
                 hidden_states = self.extension_points["pre_layer"][i](hidden_states)
             
+            # Define middle layer for BLT-MVoT mapping
+            middle_layer = len(self.layers) // 2
+            
             # Process through transformer layer
             layer_outputs = layer(
                 hidden_states=hidden_states,
@@ -451,7 +455,17 @@ class MemoryEfficientTransformer(nn.Module):
             
             # Post-layer extension point (MVoT)
             if self.extension_points["post_layer"][i] is not None:
-                hidden_states = self.extension_points["post_layer"][i](hidden_states, token_type_ids)
+                # Use byte-to-token mapper if available and we're in the middle layer
+                if i == middle_layer and self.extension_points["blt_to_mvot_mapper"] is not None:
+                    # Convert byte representations to token representations
+                    token_hidden_states, token_attention_mask = self.extension_points["blt_to_mvot_mapper"](
+                        hidden_states, attention_mask
+                    )
+                    # Process with token processor
+                    hidden_states = self.extension_points["post_layer"][i](token_hidden_states, token_type_ids)
+                else:
+                    # Normal processing
+                    hidden_states = self.extension_points["post_layer"][i](hidden_states, token_type_ids)
             
             # Add attention weights to list if needed
             if output_attentions:
