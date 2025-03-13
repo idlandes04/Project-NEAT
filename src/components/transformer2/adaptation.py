@@ -240,12 +240,48 @@ class SVDAdaptation(nn.Module):
         # Generate a unique ID for this weight matrix for caching
         # Use shape and a hash of the values to identify the matrix
         matrix_shape = weight.shape
-        matrix_id = f"svd_{matrix_shape[0]}_{matrix_shape[1]}_{hash(weight.sum().item())}"
         
-        # Check cache first if enabled
-        if self.enable_svd_caching and matrix_id in self.svd_cache:
-            # Return cached SVD components
+        # More robust hashing for better cache hits
+        # We use a combination of shape, sum, and a subset of values
+        weight_sum = weight.sum().item()
+        # Sample a subset of values for a more robust hash
+        if weight.numel() > 100:
+            # Sample 100 values for large matrices
+            stride = weight.numel() // 100
+            flat_indices = torch.arange(0, weight.numel(), stride)[:100]
+            sample_values = weight.flatten()[flat_indices]
+            hash_input = f"{matrix_shape}_{weight_sum:.6f}_{sample_values[:10].tolist()}"
+        else:
+            # Use all values for small matrices
+            hash_input = f"{matrix_shape}_{weight_sum:.6f}_{weight.flatten().tolist()}"
+            
+        # Create a more stable hash
+        hash_obj = hashlib.md5(hash_input.encode())
+        matrix_id = f"svd_{matrix_shape[0]}_{matrix_shape[1]}_{hash_obj.hexdigest()[:16]}"
+        
+        # Check in-memory cache first
+        if matrix_id in self.svd_cache:
             return self.svd_cache[matrix_id]
+            
+        # Check persistent cache if enabled
+        if self.enable_svd_caching:
+            cache_file = os.path.join(self.svd_cache_dir, f"{matrix_id}.pkl")
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, 'rb') as f:
+                        U_cpu, S_cpu, Vh_cpu = pickle.load(f)
+                        # Move tensors to the same device as weight
+                        U = torch.tensor(U_cpu, device=weight.device)
+                        S = torch.tensor(S_cpu, device=weight.device)
+                        Vh = torch.tensor(Vh_cpu, device=weight.device)
+                        
+                        # Store in memory cache too
+                        self.svd_cache[matrix_id] = (U, S, Vh)
+                        return U, S, Vh
+                except (pickle.PickleError, EOFError, RuntimeError) as e:
+                    # If loading fails, just recompute
+                    print(f"Failed to load SVD cache: {e}")
+                    pass
         
         # For really small matrices, always use full SVD
         if min(weight.shape) <= 32:
@@ -297,6 +333,7 @@ class SVDAdaptation(nn.Module):
         
         # Cache SVD components if caching is enabled
         if self.enable_svd_caching:
+            # Store in memory cache
             self.svd_cache[matrix_id] = (U, S, Vh)
             
             # If cache grows too large, remove oldest entries
@@ -304,6 +341,21 @@ class SVDAdaptation(nn.Module):
                 # Remove the first key (oldest)
                 oldest_key = next(iter(self.svd_cache))
                 del self.svd_cache[oldest_key]
+            
+            # Store in persistent cache
+            try:
+                cache_file = os.path.join(self.svd_cache_dir, f"{matrix_id}.pkl")
+                # Convert to CPU tensors for storage - make sure to detach
+                U_cpu = U.detach().cpu().numpy()
+                S_cpu = S.detach().cpu().numpy()
+                Vh_cpu = Vh.detach().cpu().numpy()
+                
+                with open(cache_file, 'wb') as f:
+                    pickle.dump((U_cpu, S_cpu, Vh_cpu), f)
+            except (pickle.PickleError, OSError) as e:
+                # If saving fails, just log and continue
+                print(f"Failed to save SVD cache: {e}")
+                pass
         
         return U, S, Vh
     
@@ -511,7 +563,33 @@ class SVDAdaptation(nn.Module):
         if total_matrices > 0:
             print(f"SVD decomposition complete: {total_matrices} matrices in {total_time:.2f}s "
                   f"(avg: {total_time/total_matrices:.2f}s per matrix)")
-            print(f"SVD cache has {len(self.svd_cache)} entries")
+            print(f"SVD cache has {len(self.svd_cache)} entries in memory")
+            
+            # Count persistent cache entries
+            if self.enable_svd_caching and os.path.exists(self.svd_cache_dir):
+                cache_files = [f for f in os.listdir(self.svd_cache_dir) if f.endswith('.pkl')]
+                print(f"Persistent SVD cache has {len(cache_files)} entries")
+    
+    def clear_svd_cache(self, clear_persistent: bool = False) -> None:
+        """
+        Clear the SVD cache.
+        
+        Args:
+            clear_persistent: Whether to clear the persistent cache on disk as well
+        """
+        # Clear in-memory cache
+        self.svd_cache.clear()
+        
+        # Clear persistent cache if requested
+        if clear_persistent and os.path.exists(self.svd_cache_dir):
+            for cache_file in os.listdir(self.svd_cache_dir):
+                if cache_file.endswith('.pkl'):
+                    try:
+                        os.remove(os.path.join(self.svd_cache_dir, cache_file))
+                    except OSError:
+                        pass
+            
+            print(f"Cleared SVD cache (persistent: {clear_persistent})")
     
     def adapt_matrix(self, weight, matrix_type, layer_idx=None):
         """
@@ -738,6 +816,16 @@ class Transformer2Adaptation(nn.Module):
         if self.svd_adaptation is not None:
             # Decompose model weights
             self.svd_adaptation.decompose_model_weights(model)
+    
+    def clear_svd_cache(self, clear_persistent: bool = False) -> None:
+        """
+        Clear the SVD cache.
+        
+        Args:
+            clear_persistent: Whether to clear the persistent cache on disk as well
+        """
+        if self.svd_adaptation is not None:
+            self.svd_adaptation.clear_svd_cache(clear_persistent)
     
     def apply_adaptation_to_model(self, model) -> None:
         """

@@ -246,6 +246,58 @@ class TestTransformer2Adaptation(unittest.TestCase):
         # Check output shape matches input
         self.assertEqual(output.shape, input_tensor.shape)
     
+    def test_efficient_svd_computation(self):
+        """Test efficient SVD computation with caching."""
+        # Create a small model for testing
+        mini_config = deepcopy(self.config)
+        mini_config.num_layers = 1
+        mini_config.transformer2.layer_specific = False
+        mini_config.transformer2.enable_svd_caching = True
+        
+        # Test with randomized SVD enabled and disabled
+        for use_randomized in [True, False]:
+            mini_config.transformer2.use_randomized_svd = use_randomized
+            
+            # Create SVD adaptation
+            adaptation = SVDAdaptation(mini_config)
+            
+            # Create test weight matrices of different sizes
+            small_weight = torch.randn(10, 10)  # Small matrix
+            medium_weight = torch.randn(64, 64)  # Medium matrix
+            large_weight = torch.randn(256, 256)  # Large matrix
+            
+            # Test efficient SVD computation for small matrix
+            n_components = adaptation._estimate_adaptive_precision(small_weight)
+            U1, S1, Vh1 = adaptation._compute_efficient_svd(small_weight, n_components)
+            
+            # Test shapes of decomposition
+            self.assertEqual(U1.shape[1], min(n_components, 10))
+            self.assertEqual(S1.shape[0], min(n_components, 10))
+            self.assertEqual(Vh1.shape[0], min(n_components, 10))
+            
+            # Test caching - calling again should use cache
+            U2, S2, Vh2 = adaptation._compute_efficient_svd(small_weight, n_components)
+            # Check that they're the same tensors (cached)
+            self.assertTrue(torch.allclose(U1, U2))
+            self.assertTrue(torch.allclose(S1, S2))
+            self.assertTrue(torch.allclose(Vh1, Vh2))
+            
+            # Test clear cache
+            adaptation.clear_svd_cache()
+            self.assertEqual(len(adaptation.svd_cache), 0)
+            
+            # Test on larger matrices if randomized SVD is enabled
+            if use_randomized:
+                # For medium matrix
+                n_components = adaptation._estimate_adaptive_precision(medium_weight)
+                U, S, Vh = adaptation._compute_efficient_svd(medium_weight, n_components)
+                self.assertEqual(U.shape[1], min(n_components, 64))
+                
+                # For large matrix
+                n_components = adaptation._estimate_adaptive_precision(large_weight)
+                U, S, Vh = adaptation._compute_efficient_svd(large_weight, n_components)
+                self.assertEqual(U.shape[1], min(n_components, 256))
+    
     def test_transformer2_adaptation(self):
         """Test the complete Transformer² adaptation."""
         adaptation = Transformer2Adaptation(self.config)
