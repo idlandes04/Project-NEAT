@@ -304,7 +304,7 @@ $$
 
 </details>
 
-## 💻 Installation & Setup
+## Installation & Setup 💻 
 
 ### Requirements
 
@@ -334,7 +334,7 @@ pip install torch torchvision torchaudio --extra-index-url https://download.pyto
 pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
 ```
 
-## 🛠️ Usage Examples
+## Usage Examples 🛠️ 
 
 ### Training
 
@@ -386,7 +386,7 @@ python -m pytest tests/
 python -m pytest tests/test_components.py::TestName::test_method_name
 ```
 
-## ⚡ Performance Optimization
+## Hardware Optimization ⚡ 
 
 <div align="center">
 
@@ -435,7 +435,7 @@ The implementation includes several performance optimization techniques:
    - Entropy calculation caching for BLT
    - Memory update patterns for Titans
 
-## 📁 Project Structure
+## Project Structure 📁
 
 ```
 project-neat/
@@ -481,6 +481,7 @@ project-neat/
 ├── PLAN_MAIN.md                  # Project planning document
 └── TECHNICALd.md                 # Technical details and theory
 ```
+## References
 
 <div align="center">
 
