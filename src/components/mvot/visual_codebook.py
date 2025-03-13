@@ -304,6 +304,10 @@ class VQVAEAdapter:
             if hasattr(checkpoint, 'quantize') and hasattr(checkpoint.quantize, 'embedding'):
                 return checkpoint.quantize.embedding.weight.clone()
             
+            # For mock testing specifically
+            if 'quantize.embedding.weight' in checkpoint:
+                return checkpoint['quantize.embedding.weight']
+            
             # Check common state dict patterns for VQGAN
             if 'state_dict' in checkpoint:
                 state_dict = checkpoint['state_dict']
@@ -328,7 +332,7 @@ class VQVAEAdapter:
                     if 'embedding.weight' in key and ('quantize' in key.lower() or 'codebook' in key.lower()):
                         return checkpoint[key]
                 
-                print(f"No 'state_dict' found in VQGAN checkpoint")
+                print(f"No 'state_dict' found in VQGAN checkpoint keys: {checkpoint.keys()}")
                 return None
         except Exception as e:
             print(f"Error loading VQGAN codebook: {e}")
