@@ -51,6 +51,16 @@ class Transformer2Config:
     adapt_lm_head: bool = False  # Whether to adapt LM head
     layer_specific: bool = True  # Whether to use layer-specific adaptations
     
+    # SVD computation parameters
+    use_randomized_svd: bool = True  # Whether to use randomized SVD for large matrices
+    svd_precision: str = "adaptive"  # "full", "adaptive", or "fixed"
+    svd_n_oversamples: int = 10  # Number of extra samples in randomized SVD
+    svd_n_iter: int = 5  # Number of power iterations in randomized SVD
+    
+    # SVD caching parameters
+    enable_svd_caching: bool = True  # Whether to cache SVD results
+    svd_cache_dir: str = ".svd_cache"  # Directory for persistent SVD cache
+    
     # Two-pass inference parameters
     cache_first_pass: bool = True
     reuse_threshold: float = 0.9

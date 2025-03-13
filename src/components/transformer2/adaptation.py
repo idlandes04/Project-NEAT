@@ -7,11 +7,29 @@ for adapting the model to specific tasks, and two-pass inference for
 efficient adaptation.
 """
 import math
-from typing import Dict, List, Optional, Tuple, Union, Any
+import time
+import os.path
+import pickle
+import hashlib 
+from typing import Dict, List, Optional, Tuple, Union, Any, Callable
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.checkpoint
+
+# Try to import optional modules for efficient SVD
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
+try:
+    from sklearn.utils.extmath import randomized_svd
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
 
 
 class TaskDispatcher(nn.Module):
@@ -175,6 +193,17 @@ class SVDAdaptation(nn.Module):
         # Store SVD decompositions for each weight matrix
         self.svd_components = {}
         
+        # SVD computation parameters
+        self.svd_precision = config.transformer2.svd_precision if hasattr(config.transformer2, "svd_precision") else "full"
+        self.use_randomized_svd = config.transformer2.use_randomized_svd if hasattr(config.transformer2, "use_randomized_svd") else True
+        self.svd_n_oversamples = config.transformer2.svd_n_oversamples if hasattr(config.transformer2, "svd_n_oversamples") else 10
+        self.svd_n_iter = config.transformer2.svd_n_iter if hasattr(config.transformer2, "svd_n_iter") else 5
+        
+        # SVD caching parameters
+        self.enable_svd_caching = config.transformer2.enable_svd_caching if hasattr(config.transformer2, "enable_svd_caching") else True
+        self.svd_cache_dir = config.transformer2.svd_cache_dir if hasattr(config.transformer2, "svd_cache_dir") else ".svd_cache"
+        self.svd_cache = {}
+        
         # Task embedding for the current inference
         self.register_buffer(
             "current_task_embedding",
@@ -197,86 +226,292 @@ class SVDAdaptation(nn.Module):
         # Apply softmax to get task weights
         self.current_task_embedding = F.softmax(task_embedding, dim=-1)
     
+    def _compute_efficient_svd(self, weight: torch.Tensor, n_components: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Compute SVD efficiently using either randomized SVD or full SVD based on matrix size.
+        
+        Args:
+            weight: Weight matrix to decompose
+            n_components: Number of singular values to compute
+            
+        Returns:
+            Tuple of (U, S, Vh) matrices
+        """
+        # Generate a unique ID for this weight matrix for caching
+        # Use shape and a hash of the values to identify the matrix
+        matrix_shape = weight.shape
+        matrix_id = f"svd_{matrix_shape[0]}_{matrix_shape[1]}_{hash(weight.sum().item())}"
+        
+        # Check cache first if enabled
+        if self.enable_svd_caching and matrix_id in self.svd_cache:
+            # Return cached SVD components
+            return self.svd_cache[matrix_id]
+        
+        # For really small matrices, always use full SVD
+        if min(weight.shape) <= 32:
+            U, S, Vh = torch.linalg.svd(weight, full_matrices=False)
+            
+            # Truncate to n_components
+            U = U[:, :min(n_components, U.shape[1])]
+            S = S[:min(n_components, S.shape[0])]
+            Vh = Vh[:min(n_components, Vh.shape[0]), :]
+        
+        # For larger matrices, choose between randomized and full SVD
+        elif self.use_randomized_svd and SKLEARN_AVAILABLE and NUMPY_AVAILABLE and min(weight.shape) > 128:
+            # Use randomized SVD (scikit-learn implementation)
+            # This is much faster for large matrices
+            # Convert to numpy array
+            weight_np = weight.detach().cpu().numpy()
+            
+            # Perform randomized SVD
+            try:
+                U_np, S_np, Vh_np = randomized_svd(
+                    weight_np, 
+                    n_components=min(n_components, min(weight.shape)),
+                    n_oversamples=self.svd_n_oversamples,
+                    n_iter=self.svd_n_iter,
+                    random_state=42
+                )
+                
+                # Convert back to torch tensors and move to the same device as weight
+                U = torch.from_numpy(U_np).to(weight.device)
+                S = torch.from_numpy(S_np).to(weight.device)
+                Vh = torch.from_numpy(Vh_np).to(weight.device)
+            except Exception as e:
+                # Fallback to standard SVD if randomized SVD fails
+                print(f"Randomized SVD failed: {e}. Falling back to standard SVD.")
+                U, S, Vh = torch.linalg.svd(weight, full_matrices=False)
+                
+                # Truncate to n_components
+                U = U[:, :min(n_components, U.shape[1])]
+                S = S[:min(n_components, S.shape[0])]
+                Vh = Vh[:min(n_components, Vh.shape[0]), :]
+        else:
+            # Use standard PyTorch SVD
+            U, S, Vh = torch.linalg.svd(weight, full_matrices=False)
+            
+            # Truncate to n_components
+            U = U[:, :min(n_components, U.shape[1])]
+            S = S[:min(n_components, S.shape[0])]
+            Vh = Vh[:min(n_components, Vh.shape[0]), :]
+        
+        # Cache SVD components if caching is enabled
+        if self.enable_svd_caching:
+            self.svd_cache[matrix_id] = (U, S, Vh)
+            
+            # If cache grows too large, remove oldest entries
+            if len(self.svd_cache) > 100:  # Arbitrary limit to prevent memory issues
+                # Remove the first key (oldest)
+                oldest_key = next(iter(self.svd_cache))
+                del self.svd_cache[oldest_key]
+        
+        return U, S, Vh
+    
+    def _estimate_adaptive_precision(self, weight: torch.Tensor) -> int:
+        """
+        Estimate the appropriate SVD precision based on matrix properties.
+        
+        Args:
+            weight: Weight matrix to analyze
+            
+        Returns:
+            Appropriate number of singular values to use
+        """
+        # Get basic shape information
+        m, n = weight.shape
+        min_dim = min(m, n)
+        
+        # Start with the configured number of singular values
+        n_components = self.num_singular_values
+        
+        # For smaller matrices, use fewer components proportionally
+        if min_dim < self.num_singular_values:
+            n_components = min_dim
+        
+        # For very large matrices, we might want to analyze further
+        # to determine the ideal number of components
+        if min_dim > 1000 and self.svd_precision == "adaptive":
+            # A heuristic approach: take a small sample of the matrix
+            # and analyze its spectral properties
+            sample_size = min(1000, min_dim // 2)
+            
+            if m > sample_size and n > sample_size:
+                # Sample rows and columns
+                sample = weight[:sample_size, :sample_size]
+                
+                # Compute SVD of the sample
+                _, S_sample, _ = torch.linalg.svd(sample, full_matrices=False)
+                
+                # Use the cumulative energy to determine the number of components
+                # that capture ~95% of the variance
+                energy = (S_sample ** 2).cumsum(0) / (S_sample ** 2).sum()
+                significant_components = (energy < 0.95).sum().item() + 1
+                
+                # Scale back to the original matrix size (rough estimate)
+                scale_factor = min_dim / sample_size
+                adjusted_components = int(significant_components * scale_factor)
+                
+                # Cap at the configured number of singular values
+                n_components = min(adjusted_components, self.num_singular_values)
+            
+        return n_components
+    
     def decompose_model_weights(self, model) -> None:
         """
-        Decompose all weight matrices of the model using SVD.
+        Decompose all weight matrices of the model using efficient SVD.
         
         Args:
             model: The transformer model to decompose
         """
         svd_components = {}
         
+        # Create SVD cache directory if it doesn't exist and caching is enabled
+        if self.enable_svd_caching and not os.path.exists(self.svd_cache_dir):
+            try:
+                os.makedirs(self.svd_cache_dir)
+            except:
+                # If directory creation fails, just continue without caching to disk
+                pass
+        
+        # Tracking for performance analysis
+        total_time = 0
+        total_matrices = 0
+        
         # Decompose attention matrices for each layer
         if self.adapt_attention:
             for layer_idx, layer in enumerate(model.layers):
                 for name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
+                    start_time = time.time()
                     weight = getattr(layer.attention, name).weight
-                    U, S, Vh = torch.linalg.svd(weight, full_matrices=False)
+                    
+                    # Determine number of components based on adaptive precision
+                    n_components = self._estimate_adaptive_precision(weight)
+                    
+                    # Compute SVD with efficient method
+                    U, S, Vh = self._compute_efficient_svd(weight, n_components)
                     
                     # Determine matrix key based on layer-specific setting
                     matrix_key = f"layer_{layer_idx}_{name}" if self.layer_specific else name
                     
                     # Store SVD components
                     svd_components[f"attention.{layer_idx}.{name}"] = {
-                        "U": U[:, :self.num_singular_values],
-                        "S": S[:self.num_singular_values],
-                        "Vh": Vh[:self.num_singular_values, :],
+                        "U": U,
+                        "S": S,
+                        "Vh": Vh,
                         "matrix_key": matrix_key
                     }
+                    
+                    # Update performance tracking
+                    end_time = time.time()
+                    total_time += (end_time - start_time)
+                    total_matrices += 1
         
         # Decompose feed-forward matrices for each layer
         if self.adapt_ffn:
             for layer_idx, layer in enumerate(model.layers):
                 for name in ["fc1", "fc2"]:
+                    start_time = time.time()
                     weight = getattr(layer.feed_forward, name).weight
-                    U, S, Vh = torch.linalg.svd(weight, full_matrices=False)
+                    
+                    # Determine number of components based on adaptive precision
+                    n_components = self._estimate_adaptive_precision(weight)
+                    
+                    # Compute SVD with efficient method
+                    U, S, Vh = self._compute_efficient_svd(weight, n_components)
                     
                     # Determine matrix key based on layer-specific setting
                     matrix_key = f"layer_{layer_idx}_{name}" if self.layer_specific else name
                     
                     # Store SVD components
                     svd_components[f"ffn.{layer_idx}.{name}"] = {
-                        "U": U[:, :min(self.num_singular_values, min(U.shape))],
-                        "S": S[:min(self.num_singular_values, min(S.shape))],
-                        "Vh": Vh[:min(self.num_singular_values, min(Vh.shape)), :],
+                        "U": U,
+                        "S": S,
+                        "Vh": Vh,
                         "matrix_key": matrix_key
                     }
+                    
+                    # Update performance tracking
+                    end_time = time.time()
+                    total_time += (end_time - start_time)
+                    total_matrices += 1
         
         # Decompose embedding matrices
         if self.adapt_embeddings:
             # Token embeddings
+            start_time = time.time()
             weight = model.embeddings.weight
-            U, S, Vh = torch.linalg.svd(weight, full_matrices=False)
+            
+            # Determine number of components based on adaptive precision
+            n_components = self._estimate_adaptive_precision(weight)
+            
+            # Compute SVD with efficient method
+            U, S, Vh = self._compute_efficient_svd(weight, n_components)
+            
             svd_components["embeddings"] = {
-                "U": U[:, :min(self.num_singular_values, min(U.shape))],
-                "S": S[:min(self.num_singular_values, min(S.shape))],
-                "Vh": Vh[:min(self.num_singular_values, min(Vh.shape)), :],
+                "U": U,
+                "S": S,
+                "Vh": Vh,
                 "matrix_key": "token_embeddings"
             }
             
+            # Update performance tracking
+            end_time = time.time()
+            total_time += (end_time - start_time)
+            total_matrices += 1
+            
             # Position embeddings
+            start_time = time.time()
             weight = model.position_embeddings.weight
-            U, S, Vh = torch.linalg.svd(weight, full_matrices=False)
+            
+            # Determine number of components based on adaptive precision
+            n_components = self._estimate_adaptive_precision(weight)
+            
+            # Compute SVD with efficient method
+            U, S, Vh = self._compute_efficient_svd(weight, n_components)
+            
             svd_components["position_embeddings"] = {
-                "U": U[:, :min(self.num_singular_values, min(U.shape))],
-                "S": S[:min(self.num_singular_values, min(S.shape))],
-                "Vh": Vh[:min(self.num_singular_values, min(Vh.shape)), :],
+                "U": U,
+                "S": S,
+                "Vh": Vh,
                 "matrix_key": "position_embeddings"
             }
+            
+            # Update performance tracking
+            end_time = time.time()
+            total_time += (end_time - start_time)
+            total_matrices += 1
         
         # Decompose LM head (output) matrix
         if self.adapt_lm_head:
+            start_time = time.time()
             weight = model.lm_head.weight
-            U, S, Vh = torch.linalg.svd(weight, full_matrices=False)
+            
+            # Determine number of components based on adaptive precision
+            n_components = self._estimate_adaptive_precision(weight)
+            
+            # Compute SVD with efficient method
+            U, S, Vh = self._compute_efficient_svd(weight, n_components)
+            
             svd_components["lm_head"] = {
-                "U": U[:, :min(self.num_singular_values, min(U.shape))],
-                "S": S[:min(self.num_singular_values, min(S.shape))],
-                "Vh": Vh[:min(self.num_singular_values, min(Vh.shape)), :],
+                "U": U,
+                "S": S,
+                "Vh": Vh,
                 "matrix_key": "lm_head"
             }
+            
+            # Update performance tracking
+            end_time = time.time()
+            total_time += (end_time - start_time)
+            total_matrices += 1
         
         # Store SVD components
         self.svd_components = svd_components
+        
+        # Print performance summary
+        if total_matrices > 0:
+            print(f"SVD decomposition complete: {total_matrices} matrices in {total_time:.2f}s "
+                  f"(avg: {total_time/total_matrices:.2f}s per matrix)")
+            print(f"SVD cache has {len(self.svd_cache)} entries")
     
     def adapt_matrix(self, weight, matrix_type, layer_idx=None):
         """

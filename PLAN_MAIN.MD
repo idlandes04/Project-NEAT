@@ -132,6 +132,8 @@
   - [ ] Implement efficient task embedding storage
   - [ ] Add similarity-based lookup for cached task embeddings
   - [ ] Create pruning mechanism for embedding cache
+  - [ ] Ensure integration with unified nerual network architecure, align other aspects of project. 
+  - [ ] Double check all tests to prevent sandbagging and ensure code is robust and sound. G=
 
 #### 1.3.0 BLT Core Implementation
 - [ ] 1.3.1 Create training pipeline for byte-level entropy estimator
