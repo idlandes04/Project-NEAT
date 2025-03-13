@@ -81,7 +81,13 @@ class MVoTConfig:
     
     # Token discrepancy loss parameters
     codebook_size: int = 8192
+    embedding_dim: int = 512  # Dimension of the codebook embeddings
     discrepancy_loss_weight: float = 0.1
+    
+    # Visual codebook parameters
+    codebook_model_type: str = "vqvae"  # "vqvae", "vqgan", "dalle"
+    codebook_path: Optional[str] = None
+    use_pretrained_codebook: bool = False
 
 
 @dataclasses.dataclass

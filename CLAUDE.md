@@ -54,6 +54,14 @@
 - **Key Insight 7**: Computation budget management through adaptive entropy thresholds enables balancing between accuracy and performance.
 - **Key Insight 8**: Comprehensive profiling tools are vital for understanding and optimizing patch-based processing systems.
 
+### MVoT Visual Codebook Integration (Completed 1.4.1)
+- **Key Insight 1**: Visual codebook abstractions should support multiple pretrained VQ-VAE model formats (VQVAE, VQGAN, DALL-E) through adapter patterns.
+- **Key Insight 2**: Lazy initialization of the visual codebook prevents unnecessary memory usage when multimodal capabilities aren't required.
+- **Key Insight 3**: Embedding space conversion between model hidden size and codebook embedding size requires careful handling to maintain quality.
+- **Key Insight 4**: Token discrepancy loss calculation can be optimized with batched distance computation rather than element-wise operations.
+- **Key Insight 5**: Different VQ-VAE models use inconsistent naming conventions for codebook embeddings, requiring robust key pattern matching.
+- **Key Insight 6**: Dimension mismatch between codebook embeddings and model spaces can be handled with interpolation techniques when necessary.
+
 ### Implementation Patterns
 - Use torch.utils.checkpoint.checkpoint for memory-efficient gradient computation
 - Implement fallback mechanisms when operations aren't supported on all platforms

@@ -150,10 +150,10 @@
   - [x] Add profiling tools for patch-level computation
 
 #### 1.4.0 MVoT Integration
-- [ ] 1.4.1 Create visual codebook integration framework
-  - [ ] Design interface for pretrained visual codebook loading
-  - [ ] Implement compatibility layer with common VQ-VAE models
-  - [ ] Add conversion utilities between embedding spaces
+- [x] 1.4.1 Create visual codebook integration framework
+  - [x] Design interface for pretrained visual codebook loading
+  - [x] Implement compatibility layer with common VQ-VAE models
+  - [x] Add conversion utilities between embedding spaces
 
 - [ ] 1.4.2 Develop text/image generation decision mechanism
   - [ ] Create heuristics for visualization benefit assessment
