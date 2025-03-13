@@ -134,3 +134,4 @@ outputs/
 # Ignore model checkpoints
 checkpoints/
 *.pkl 
+*.pt
