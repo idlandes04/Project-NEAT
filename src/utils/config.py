@@ -85,6 +85,36 @@ class MVoTConfig:
 
 
 @dataclasses.dataclass
+class ByteLMConfig:
+    """Configuration for the byte-level language model (entropy estimator)."""
+    # Model parameters
+    hidden_size: int = 128
+    num_layers: int = 2
+    num_attention_heads: int = 4
+    intermediate_size: int = 512
+    byte_lm_dropout: float = 0.1
+    byte_lm_max_position: int = 512
+    
+    # Training parameters
+    learning_rate: float = 5e-5
+    batch_size: int = 32
+    block_size: int = 128
+    warmup_steps: int = 1000
+    max_steps: int = 10000
+    eval_steps: int = 500
+    save_steps: int = 500
+    gradient_accumulation_steps: int = 1
+    weight_decay: float = 0.01
+    
+    # Data parameters
+    train_files: List[str] = dataclasses.field(default_factory=list)
+    eval_files: List[str] = dataclasses.field(default_factory=list)
+    cache_dir: str = "./cache"
+    output_dir: str = "./outputs/byte_lm"
+    checkpoint_path: Optional[str] = None
+
+
+@dataclasses.dataclass
 class BLTConfig:
     """Configuration for the BLT byte processor."""
     # Component activation
@@ -98,6 +128,9 @@ class BLTConfig:
     # Architecture parameters
     num_local_layers: int = 2
     num_latent_layers: int = 4
+    
+    # Byte LM configuration
+    byte_lm: ByteLMConfig = dataclasses.field(default_factory=ByteLMConfig)
 
 
 @dataclasses.dataclass
@@ -197,11 +230,23 @@ class ModelConfig:
         hardware_dict = config_dict.pop('hardware', {})
         training_dict = config_dict.pop('training', {})
         
+        # Extract nested ByteLM configuration
+        byte_lm_dict = {}
+        if 'byte_lm' in blt_dict:
+            byte_lm_dict = blt_dict.pop('byte_lm', {})
+        
         # Create component configurations
         titans_config = TitansConfig(**titans_dict)
         transformer2_config = Transformer2Config(**transformer2_dict)
         mvot_config = MVoTConfig(**mvot_dict)
+        
+        # Create ByteLM configuration
+        byte_lm_config = ByteLMConfig(**byte_lm_dict)
+        
+        # Create BLT configuration with ByteLM
         blt_config = BLTConfig(**blt_dict)
+        blt_config.byte_lm = byte_lm_config
+        
         hardware_config = HardwareConfig(**hardware_dict)
         training_config = TrainingConfig(**training_dict)
         

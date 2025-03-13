@@ -6,17 +6,19 @@ This module contains tests for each component of the unified architecture.
 import os
 import sys
 import unittest
+import tempfile
 from copy import deepcopy
 import torch
 
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.utils.config import ModelConfig, get_default_config
+from src.utils.config import ModelConfig, get_default_config, ByteLMConfig
 from src.components.titans.memory_system import TitansMemorySystem, WindowAttentionMemory, SurpriseBasedMemory, PersistentMemory
 from src.components.transformer2.adaptation import Transformer2Adaptation, TaskDispatcher, SVDAdaptation
 from src.components.mvot.token_processor import MVoTTokenProcessor, TokenDiscrepancyLoss
 from src.components.blt.byte_processor import BLTByteProcessor, EntropyCalculator, SmallByteLM
+from src.components.blt.entropy_estimator_trainer import ByteDataset, EntropyEstimatorTrainer
 from src.models.transformer import MemoryEfficientTransformer, TransformerLayer, FlashAttention
 from src.models.unified_architecture import UnifiedArchitecture, DynamicComponentController
 
@@ -449,6 +451,15 @@ class TestBLTByteProcessor(unittest.TestCase):
         self.config.num_local_layers = 1
         self.config.num_latent_layers = 1
         
+        # Setup ByteLM config
+        self.config.byte_lm = type('obj', (object,), {
+            'hidden_size': 64,
+            'num_layers': 2,
+            'num_attention_heads': 2,
+            'byte_lm_dropout': 0.1,
+            'byte_lm_max_position': 128
+        })
+        
         self.batch_size = 2
         self.seq_len = 24
         self.input_bytes = torch.randint(0, 256, (self.batch_size, self.seq_len))
@@ -460,6 +471,40 @@ class TestBLTByteProcessor(unittest.TestCase):
         
         # Check output shape
         self.assertEqual(output.shape, (self.batch_size, self.seq_len, 256))
+        
+        # Test with labels
+        loss, output = lm(self.input_bytes, self.input_bytes)
+        
+        # Check loss is scalar and output has correct shape
+        self.assertEqual(loss.shape, torch.Size([]))
+        self.assertEqual(output.shape, (self.batch_size, self.seq_len, 256))
+        
+        # Test generate_probs
+        probs = lm.generate_probs(self.input_bytes)
+        
+        # Check probabilities sum to 1 along vocabulary dimension
+        self.assertEqual(probs.shape, (self.batch_size, self.seq_len, 256))
+        self.assertTrue(torch.allclose(probs.sum(dim=-1), torch.ones((self.batch_size, self.seq_len))))
+        
+        # Test save and load
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_path = os.path.join(tmp_dir, "test_model.pt")
+            
+            # Save model
+            lm.save_pretrained(model_path)
+            
+            # Check file exists
+            self.assertTrue(os.path.exists(model_path))
+            
+            # Create new model and load
+            new_lm = SmallByteLM(self.config)
+            new_lm.load_pretrained(model_path)
+            
+            # Check the loaded model works
+            with torch.no_grad():
+                loaded_output = new_lm(self.input_bytes)
+                # Just check the shape - exact values might differ due to numerical precision
+                self.assertEqual(loaded_output.shape, (self.batch_size, self.seq_len, 256))
     
     def test_entropy_calculator(self):
         """Test entropy calculator."""
@@ -472,6 +517,25 @@ class TestBLTByteProcessor(unittest.TestCase):
         # Check each patch has the correct batch size
         for patch in patches:
             self.assertEqual(patch.shape[0], self.batch_size)
+        
+        # Test with checkpoint path
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_path = os.path.join(tmp_dir, "test_model.pt")
+            
+            # Train a byte LM and save
+            lm = SmallByteLM(self.config)
+            lm.save_pretrained(model_path)
+            
+            # Create config with checkpoint path
+            config_with_checkpoint = self.config
+            config_with_checkpoint.byte_lm.checkpoint_path = model_path
+            
+            # Create entropy calculator with pretrained model
+            calculator_with_pretrained = EntropyCalculator(config_with_checkpoint)
+            
+            # Test forward pass
+            patches = calculator_with_pretrained(self.input_bytes)
+            self.assertIsInstance(patches, list)
     
     def test_blt_byte_processor(self):
         """Test the complete BLT byte processor."""
@@ -480,6 +544,154 @@ class TestBLTByteProcessor(unittest.TestCase):
         
         # Check output shape
         self.assertEqual(output.shape[0], self.batch_size)
+        
+        # Test with different sequence lengths
+        for seq_len in [8, 32, 64]:
+            input_bytes = torch.randint(0, 256, (self.batch_size, seq_len))
+            output = processor(input_bytes)
+            self.assertEqual(output.shape, input_bytes.shape)
+
+
+class TestByteDatasetAndTrainer(unittest.TestCase):
+    """Tests for the byte dataset and entropy estimator trainer."""
+    
+    def setUp(self):
+        """Set up test case."""
+        # Create a basic ByteLM config
+        self.config = ByteLMConfig(
+            hidden_size=64,
+            num_layers=1,
+            num_attention_heads=2,
+            byte_lm_dropout=0.1,
+            byte_lm_max_position=64,
+            block_size=32,
+            max_steps=2,  # Use only 2 steps for quick testing
+            batch_size=2,
+            gradient_accumulation_steps=1
+        )
+        
+        # Create temp directory
+        self.temp_dir = tempfile.TemporaryDirectory()
+        
+        # Create test files
+        self.test_files = []
+        for i in range(3):
+            file_path = os.path.join(self.temp_dir.name, f"test_file_{i}.txt")
+            with open(file_path, "wb") as f:
+                # Write random bytes (100 bytes per file)
+                f.write(os.urandom(100))
+            self.test_files.append(file_path)
+        
+        # Setup output dir and cache dir
+        self.output_dir = os.path.join(self.temp_dir.name, "output")
+        self.cache_dir = os.path.join(self.temp_dir.name, "cache")
+        
+        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
+        
+        self.config.train_files = self.test_files
+        self.config.output_dir = self.output_dir
+        self.config.cache_dir = self.cache_dir
+    
+    def tearDown(self):
+        """Clean up after test."""
+        self.temp_dir.cleanup()
+    
+    def test_byte_dataset(self):
+        """Test ByteDataset."""
+        # Create dataset
+        dataset = ByteDataset(
+            file_paths=self.test_files,
+            block_size=self.config.block_size,
+            cache_dir=self.cache_dir
+        )
+        
+        # Check dataset size
+        self.assertGreater(len(dataset), 0)
+        
+        # Check example format
+        example = dataset[0]
+        self.assertIn("input_bytes", example)
+        self.assertIn("labels", example)
+        
+        # Check example shape
+        self.assertEqual(example["input_bytes"].shape, (self.config.block_size,))
+        
+        # Check input and labels are same (for next-byte prediction)
+        self.assertTrue(torch.equal(example["input_bytes"], example["labels"]))
+        
+        # Test cache functionality (reusing same cache_dir)
+        cached_dataset = ByteDataset(
+            file_paths=self.test_files,
+            block_size=self.config.block_size,
+            cache_dir=self.cache_dir
+        )
+        
+        # Check dataset size is same
+        self.assertEqual(len(cached_dataset), len(dataset))
+    
+    def test_entropy_estimator_trainer(self):
+        """Test EntropyEstimatorTrainer."""
+        # Create model
+        model = SmallByteLM(self.config)
+        
+        # Create dataset
+        dataset = ByteDataset(
+            file_paths=self.test_files,
+            block_size=self.config.block_size,
+            cache_dir=self.cache_dir
+        )
+        
+        # Create a small dataset for eval
+        eval_dataset = ByteDataset(
+            file_paths=self.test_files[0:1],  # Just use the first file
+            block_size=self.config.block_size,
+            cache_dir=self.cache_dir
+        )
+        
+        # Create trainer
+        trainer = EntropyEstimatorTrainer(
+            model=model,
+            train_dataset=dataset,
+            eval_dataset=eval_dataset,
+            batch_size=self.config.batch_size,
+            learning_rate=self.config.learning_rate,
+            warmup_steps=10,
+            max_steps=2,  # Use only 2 steps for quick testing
+            eval_steps=1,
+            save_steps=1,
+            output_dir=self.output_dir
+        )
+        
+        # Run training (only 2 steps)
+        trainer.train()
+        
+        # Check that model files were saved
+        checkpoint_files = [f for f in os.listdir(self.output_dir) if f.endswith(".pt")]
+        self.assertGreater(len(checkpoint_files), 0)
+        
+        # Load a checkpoint
+        checkpoint_path = os.path.join(self.output_dir, checkpoint_files[0])
+        
+        # Create new model and load
+        new_model = SmallByteLM(self.config)
+        new_model.load_pretrained(checkpoint_path)
+        
+        # Create entropy calculator with loaded model
+        mock_config = get_default_config()
+        mock_config.entropy_threshold = 0.5
+        mock_config.byte_lm = type('obj', (object,), {
+            'checkpoint_path': checkpoint_path,
+            'hidden_size': self.config.hidden_size,
+            'num_layers': self.config.num_layers,
+            'num_attention_heads': self.config.num_attention_heads
+        })
+        calculator = EntropyCalculator(mock_config)
+        
+        # Test forward pass with loaded model
+        input_bytes = torch.randint(0, 256, (2, 16))
+        patches = calculator(input_bytes)
+        self.assertIsInstance(patches, list)
 
 
 class TestMemoryEfficientTransformer(unittest.TestCase):

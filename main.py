@@ -22,7 +22,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Neural Architecture Integration")
     
     # Mode arguments
-    parser.add_argument("--mode", type=str, default="train", choices=["train", "eval", "profile"],
+    parser.add_argument("--mode", type=str, default="train", 
+                        choices=["train", "eval", "profile", "train_byte_lm"],
                         help="Operation mode")
     
     # Model configuration arguments
@@ -70,6 +71,32 @@ def parse_args():
                         help="Output directory")
     parser.add_argument("--model_path", type=str, default=None,
                         help="Path to load model from")
+    
+    # BLT Byte LM training arguments
+    parser.add_argument("--train_data_dir", type=str, default=None,
+                        help="Directory containing training data files for byte LM")
+    parser.add_argument("--train_files", nargs="+", default=None,
+                        help="List of training data files for byte LM")
+    parser.add_argument("--train_glob", type=str, default=None,
+                        help="Glob pattern for training data files for byte LM")
+    parser.add_argument("--eval_data_dir", type=str, default=None,
+                        help="Directory containing evaluation data files for byte LM")
+    parser.add_argument("--eval_files", nargs="+", default=None,
+                        help="List of evaluation data files for byte LM")
+    parser.add_argument("--eval_glob", type=str, default=None,
+                        help="Glob pattern for evaluation data files for byte LM")
+    parser.add_argument("--block_size", type=int, default=128,
+                        help="Block size for byte LM training")
+    parser.add_argument("--byte_lm_hidden_size", type=int, default=128,
+                        help="Hidden size of the byte LM")
+    parser.add_argument("--byte_lm_num_layers", type=int, default=2,
+                        help="Number of layers in the byte LM")
+    parser.add_argument("--byte_lm_dropout", type=float, default=0.1,
+                        help="Dropout probability in the byte LM")
+    parser.add_argument("--cache_dir", type=str, default="./cache",
+                        help="Directory to cache processed data")
+    parser.add_argument("--entropy_threshold", type=float, default=0.5,
+                        help="Entropy threshold for patching")
     
     return parser.parse_args()
 
@@ -270,6 +297,130 @@ def profile(args, config):
         print(f"  {component}: {active}")
 
 
+def train_byte_lm_mode(args):
+    """Run byte-level language model training."""
+    import glob
+    import sys
+    
+    # Import byte LM training modules
+    from src.components.blt.byte_processor import SmallByteLM
+    from src.components.blt.entropy_estimator_trainer import ByteDataset, EntropyEstimatorTrainer
+    from src.utils.config import ByteLMConfig
+    
+    # Get list of training files
+    train_files = []
+    
+    # First priority: explicit file list
+    if args.train_files:
+        train_files.extend(args.train_files)
+    
+    # Second priority: glob pattern
+    if args.train_glob:
+        train_files.extend(glob.glob(args.train_glob, recursive=True))
+    
+    # Third priority: data directory
+    if args.train_data_dir:
+        for root, _, filenames in os.walk(args.train_data_dir):
+            for filename in filenames:
+                train_files.append(os.path.join(root, filename))
+    
+    if not train_files:
+        print("Error: No training files found. Please provide --train_data_dir, --train_files, or --train_glob.")
+        sys.exit(1)
+    
+    # Get list of evaluation files
+    eval_files = []
+    
+    if args.eval_files:
+        eval_files.extend(args.eval_files)
+    
+    if args.eval_glob:
+        eval_files.extend(glob.glob(args.eval_glob, recursive=True))
+    
+    if args.eval_data_dir:
+        for root, _, filenames in os.walk(args.eval_data_dir):
+            for filename in filenames:
+                eval_files.append(os.path.join(root, filename))
+    
+    # Create byte LM config
+    config = ByteLMConfig(
+        hidden_size=args.byte_lm_hidden_size,
+        num_layers=args.byte_lm_num_layers,
+        num_attention_heads=args.num_attention_heads // 3,  # Smaller than main model
+        byte_lm_dropout=args.byte_lm_dropout,
+        byte_lm_max_position=args.block_size,
+        
+        learning_rate=args.learning_rate,
+        batch_size=args.batch_size,
+        block_size=args.block_size,
+        warmup_steps=int(args.max_steps * 0.1),  # 10% of max steps
+        max_steps=args.max_steps,
+        eval_steps=args.max_steps // 20,  # Evaluate 20 times during training
+        save_steps=args.max_steps // 10,  # Save 10 checkpoints
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        weight_decay=args.weight_decay,
+        
+        train_files=train_files,
+        eval_files=eval_files,
+        cache_dir=args.cache_dir,
+        output_dir=args.output_dir,
+        checkpoint_path=args.model_path
+    )
+    
+    # Create output directory if it doesn't exist
+    if args.output_dir and not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+    
+    # Create model
+    model = SmallByteLM(config)
+    
+    # Create datasets
+    print(f"Creating training dataset with {len(train_files)} files")
+    train_dataset = ByteDataset(
+        file_paths=train_files,
+        block_size=config.block_size,
+        cache_dir=config.cache_dir
+    )
+    
+    if eval_files:
+        print(f"Creating evaluation dataset with {len(eval_files)} files")
+        eval_dataset = ByteDataset(
+            file_paths=eval_files,
+            block_size=config.block_size,
+            cache_dir=config.cache_dir
+        )
+    else:
+        print("No evaluation files provided. Skipping evaluation.")
+        eval_dataset = None
+    
+    # Create trainer
+    trainer = EntropyEstimatorTrainer(
+        model=model,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        batch_size=config.batch_size,
+        learning_rate=config.learning_rate,
+        warmup_steps=config.warmup_steps,
+        max_steps=config.max_steps,
+        eval_steps=config.eval_steps,
+        save_steps=config.save_steps,
+        output_dir=config.output_dir,
+        gradient_accumulation_steps=config.gradient_accumulation_steps,
+        weight_decay=config.weight_decay
+    )
+    
+    # Load checkpoint if provided
+    if config.checkpoint_path:
+        print(f"Loading checkpoint from {config.checkpoint_path}")
+        trainer.load_model(config.checkpoint_path)
+    
+    # Train model
+    print("Starting training...")
+    trainer.train()
+    
+    print(f"Training complete. Model saved to {config.output_dir}")
+
+
 def main():
     """Main function."""
     # Parse command-line arguments
@@ -279,16 +430,22 @@ def main():
     if args.output_dir and not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     
-    # Create configuration
-    config = create_config_from_args(args)
-    
     # Run the appropriate mode
     if args.mode == "train":
+        # Create configuration
+        config = create_config_from_args(args)
         train(args, config)
     elif args.mode == "eval":
+        # Create configuration
+        config = create_config_from_args(args)
         evaluate(args, config)
     elif args.mode == "profile":
+        # Create configuration
+        config = create_config_from_args(args)
         profile(args, config)
+    elif args.mode == "train_byte_lm":
+        # Train byte-level language model
+        train_byte_lm_mode(args)
     else:
         raise ValueError(f"Unknown mode: {args.mode}")
 

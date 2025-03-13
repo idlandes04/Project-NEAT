@@ -134,10 +134,10 @@
   - [x] Create pruning mechanism for embedding cache
 
 #### 1.3.0 BLT Core Implementation
-- [ ] 1.3.1 Create training pipeline for byte-level entropy estimator
-  - [ ] Design lightweight byte LM architecture
-  - [ ] Implement training loop with appropriate loss function
-  - [ ] Add checkpoint saving/loading for entropy estimator
+- [x] 1.3.1 Create training pipeline for byte-level entropy estimator
+  - [x] Design lightweight byte LM architecture
+  - [x] Implement training loop with appropriate loss function
+  - [x] Add checkpoint saving/loading for entropy estimator
 
 - [ ] 1.3.2 Develop variable-length patch handling in batched processing
   - [ ] Design data structures for variable-length sequences
