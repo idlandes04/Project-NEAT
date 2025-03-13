@@ -46,6 +46,11 @@ class Transformer2Config:
     num_singular_values: int = 768  # Should match hidden_size
     expert_init_scale: float = 0.1
     
+    # Adaptation control
+    adapt_embeddings: bool = False  # Whether to adapt embedding matrices
+    adapt_lm_head: bool = False  # Whether to adapt LM head
+    layer_specific: bool = True  # Whether to use layer-specific adaptations
+    
     # Two-pass inference parameters
     cache_first_pass: bool = True
     reuse_threshold: float = 0.9
