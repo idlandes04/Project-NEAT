@@ -2,7 +2,7 @@
 
 <div align="center">
   
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
+![Build Status](https://img.shields.io/badge/build-failing-red.svg)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 1.10+](https://img.shields.io/badge/pytorch-1.10+-orange.svg)](https://pytorch.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -304,7 +304,7 @@ $$
 
 </details>
 
-## 💻 Installation & Setup
+## Installation & Setup 💻 
 
 ### Requirements
 
@@ -334,7 +334,7 @@ pip install torch torchvision torchaudio --extra-index-url https://download.pyto
 pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
 ```
 
-## 🛠️ Usage Examples
+## Usage Examples 🛠️ 
 
 ### Training
 
@@ -386,7 +386,7 @@ python -m pytest tests/
 python -m pytest tests/test_components.py::TestName::test_method_name
 ```
 
-## ⚡ Performance Optimization
+## Hardware Optimization ⚡ 
 
 <div align="center">
 
@@ -435,7 +435,7 @@ The implementation includes several performance optimization techniques:
    - Entropy calculation caching for BLT
    - Memory update patterns for Titans
 
-## 📁 Project Structure
+## Project Structure 📁
 
 ```
 project-neat/
@@ -481,6 +481,7 @@ project-neat/
 ├── PLAN_MAIN.md                  # Project planning document
 └── TECHNICALd.md                 # Technical details and theory
 ```
+## References
 
 <div align="center">
 
