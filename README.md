@@ -1,4 +1,4 @@
-# Project NEAT: Neural Adaptive Transformer
+# Project NEAT: Neural Adaptive Transformers
 
 <div align="center">
   
@@ -43,9 +43,9 @@ graph TD
     T2 -.-> MVoT
     
     subgraph "Component Communication"
-        Messaging[Messaging System]
-        State[State Management]
-        Feedback[Feedback Loops]
+        Messaging[Messaging System] --> State[State Management]
+        State[State Management] --> Feedback[Feedback Loops]
+        Feedback[Feedback Loops] --> Messaging[Messaging System]
     end
     
     Titans <--> Messaging
@@ -278,7 +278,7 @@ $$
 BLT processes raw bytes using entropy-based dynamic patching:
 
 $$
-H(x_i) = -\sum_{v \in V} p_e(x_i = v | x_{<i}) \cdot \log p_e(x_i = v | x_{<i})
+H(x_i) = -\sum_{v \in V} p_e(x_i = v \mid x_{i-1}) \cdot \log p_e(x_i = v \mid x_{i-1})
 $$
 
 Patches are formed when entropy exceeds a threshold, leading to a local-global-local processing pipeline:
