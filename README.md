@@ -44,6 +44,8 @@ neural_architecture_integration/
 │   └── utils/              # Utility functions
 ├── tests/                  # Test cases
 └── main.py                 # Main script
+└── PLAN_MAIN.md            # The plan for Cline and Roo to follow
+└── TECHNICALd.md           # The back-bone technical details and basal theory for Cline and Roo to follow
 ```
 
 ## Installation
