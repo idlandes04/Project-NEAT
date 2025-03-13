@@ -123,10 +123,10 @@
   - [x] Implement systematic SVD decomposition across layers
   - [x] Add configuration for selective adaptation of specific layers
 
-- [ ] 1.2.2 Create efficient SVD computation system
-  - [ ] Implement randomized SVD for large matrices
-  - [ ] Add caching system for weight decompositions
-  - [ ] Create adaptive precision mechanism for SVD computations
+- [x] 1.2.2 Create efficient SVD computation system
+  - [x] Implement randomized SVD for large matrices
+  - [x] Add caching system for weight decompositions
+  - [x] Create adaptive precision mechanism for SVD computations
 
 - [ ] 1.2.3 Develop task embedding cache with similarity matching
   - [ ] Implement efficient task embedding storage
