@@ -155,10 +155,10 @@
   - [x] Implement compatibility layer with common VQ-VAE models
   - [x] Add conversion utilities between embedding spaces
 
-- [ ] 1.4.2 Develop text/image generation decision mechanism
-  - [ ] Create heuristics for visualization benefit assessment
-  - [ ] Implement context-aware decision logic
-  - [ ] Add configuration for generation strategy
+- [x] 1.4.2 Develop text/image generation decision mechanism
+  - [x] Create heuristics for visualization benefit assessment
+  - [x] Implement context-aware decision logic
+  - [x] Add configuration for generation strategy
 
 - [ ] 1.4.3 Build byte-to-token mapping for BLT compatibility
   - [ ] Design conversion layer between byte patches and tokens

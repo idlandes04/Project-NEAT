@@ -62,6 +62,14 @@
 - **Key Insight 5**: Different VQ-VAE models use inconsistent naming conventions for codebook embeddings, requiring robust key pattern matching.
 - **Key Insight 6**: Dimension mismatch between codebook embeddings and model spaces can be handled with interpolation techniques when necessary.
 
+### MVoT Decision Mechanism (Completed 1.4.2)
+- **Key Insight 1**: Combining both heuristic and neural approaches for modality decisions creates a more robust system than either approach alone.
+- **Key Insight 2**: Spatial and visual keywords are particularly strong indicators of when visualization would be beneficial to reasoning.
+- **Key Insight 3**: Context-aware decision logic requires looking at the pattern of previous decisions, not just the current token.
+- **Key Insight 4**: Limiting the number of visualizations prevents overuse and focuses them on truly beneficial reasoning steps.
+- **Key Insight 5**: Converting between boolean logic and continuous scores requires careful handling to avoid loss of information.
+- **Key Insight 6**: Explicit diagram requests should override other heuristics, as they represent direct user intent for visualization.
+
 ### Implementation Patterns
 - Use torch.utils.checkpoint.checkpoint for memory-efficient gradient computation
 - Implement fallback mechanisms when operations aren't supported on all platforms

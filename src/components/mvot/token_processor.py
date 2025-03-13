@@ -504,7 +504,11 @@ class MultimodalGenerator(nn.Module):
         self,
         hidden_states: torch.Tensor,
         token_type_ids: torch.Tensor,
-        temperature: float = 1.0
+        temperature: float = 1.0,
+        decision_mechanism: Optional[Any] = None, 
+        input_text: Optional[str] = None,
+        tokens_since_last_image: Optional[int] = None,
+        attention_mask: Optional[torch.Tensor] = None
     ) -> Dict[str, torch.Tensor]:
         """
         Generate tokens from hidden states.
@@ -513,6 +517,10 @@ class MultimodalGenerator(nn.Module):
             hidden_states: Input tensor of shape [batch_size, seq_len, hidden_size]
             token_type_ids: Token type IDs of shape [batch_size, seq_len]
             temperature: Temperature for sampling
+            decision_mechanism: Optional decision mechanism for text/image generation
+            input_text: Optional text context for heuristic assessment
+            tokens_since_last_image: Optional number of tokens generated since the last image
+            attention_mask: Optional attention mask
             
         Returns:
             Dictionary of generated tokens
@@ -520,6 +528,24 @@ class MultimodalGenerator(nn.Module):
         # Initialize visual codebook if needed and there are image tokens
         if torch.any(token_type_ids == 1) and not self.has_visual_codebook:
             self.initialize_visual_codebook()
+        
+        # Determine whether to generate text or image tokens
+        modality_override = None
+        
+        if decision_mechanism is not None:
+            # Use decision mechanism if provided
+            decision = decision_mechanism.forward(
+                hidden_states,
+                token_type_ids,
+                attention_mask,
+                input_text,
+                tokens_since_last_image
+            )
+            
+            if torch.any(decision["should_generate_image"]):
+                modality_override = "image"
+            else:
+                modality_override = "text"
         
         # Get logits
         outputs = self.forward(hidden_states, token_type_ids)
@@ -558,17 +584,32 @@ class MultimodalGenerator(nn.Module):
                 -1
             )
         
-        return {
+        result = {
             "text_tokens": text_tokens,
             "image_tokens": image_tokens,
             "image_embeddings": image_embeddings
         }
         
+        # Add modality decision if available
+        if modality_override is not None:
+            result["selected_modality"] = modality_override
+            
+            # Add decision details if available
+            if decision_mechanism is not None:
+                result["decision_info"] = decision
+        
+        return result
+        
     def generate_visualization(
         self,
         hidden_states: torch.Tensor,
         token_type_ids: torch.Tensor,
-        temperature: float = 1.0
+        temperature: float = 1.0,
+        decision_mechanism: Optional[Any] = None, 
+        input_text: Optional[str] = None,
+        tokens_since_last_image: Optional[int] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        force_image_generation: bool = True
     ) -> Dict[str, torch.Tensor]:
         """
         Generate a visualization from hidden states.
@@ -580,22 +621,49 @@ class MultimodalGenerator(nn.Module):
             hidden_states: Input tensor of shape [batch_size, seq_len, hidden_size]
             token_type_ids: Token type IDs of shape [batch_size, seq_len]
             temperature: Temperature for sampling
+            decision_mechanism: Optional decision mechanism for text/image generation
+            input_text: Optional text context for heuristic assessment
+            tokens_since_last_image: Optional number of tokens generated since the last image
+            attention_mask: Optional attention mask
+            force_image_generation: Whether to force image generation regardless of decision mechanism
             
         Returns:
             Dictionary with "embeddings" and "tokens" keys
         """
-        if not torch.any(token_type_ids == 1):
+        if not torch.any(token_type_ids == 1) and not force_image_generation:
             raise ValueError("No image tokens found in token_type_ids")
         
         # Initialize visual codebook if needed
         if not self.has_visual_codebook:
             self.initialize_visual_codebook()
         
+        # If forcing image generation, ignore decision mechanism
+        if force_image_generation:
+            decision_mechanism = None
+        
         # Generate tokens and embeddings
-        outputs = self.generate(hidden_states, token_type_ids, temperature)
+        outputs = self.generate(
+            hidden_states, 
+            token_type_ids, 
+            temperature,
+            decision_mechanism,
+            input_text,
+            tokens_since_last_image,
+            attention_mask
+        )
         
         # Extract only image-related outputs
-        return {
+        result = {
             "tokens": outputs["image_tokens"],
             "embeddings": outputs["image_embeddings"]
         }
+        
+        # Add decision info if available
+        if "decision_info" in outputs:
+            result["decision_info"] = outputs["decision_info"]
+            
+        # Add selected modality if available
+        if "selected_modality" in outputs:
+            result["selected_modality"] = outputs["selected_modality"]
+        
+        return result

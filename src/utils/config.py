@@ -88,6 +88,28 @@ class MVoTConfig:
     codebook_model_type: str = "vqvae"  # "vqvae", "vqgan", "dalle"
     codebook_path: Optional[str] = None
     use_pretrained_codebook: bool = False
+    
+    # Decision mechanism parameters
+    decision_strategy: str = "hybrid"  # "neural", "heuristic", "hybrid"
+    heuristic_weight: float = 0.5
+    neural_weight: float = 0.5
+    max_images: int = 5
+    min_tokens_between_images: int = 20
+    image_threshold: float = 0.7
+    
+    # Visualization benefit thresholds
+    spatial_threshold: float = 0.15
+    visual_threshold: float = 0.15
+    complexity_threshold: float = 0.10
+    reasoning_threshold: float = 0.20
+    specificity_threshold: float = 0.10
+    
+    # Visualization benefit weights
+    spatial_weight: float = 1.0
+    visual_weight: float = 1.0
+    complexity_weight: float = 0.7
+    reasoning_weight: float = 0.5
+    specificity_weight: float = 0.8
 
 
 @dataclasses.dataclass
