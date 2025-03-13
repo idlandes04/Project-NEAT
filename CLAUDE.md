@@ -27,3 +27,19 @@
 - Follow PyTorch conventions for tensor operations
 - Use absolute imports (from src.utils... not from ..utils...)
 - Return dict for model outputs with keys like "logits", "hidden_states"
+
+## Project Progress and Insights
+
+### Titans Memory System Implementation (Completed 1.1.x)
+- **Key Insight 1**: Test-time learning in Titans requires careful gradient management and safeguards to prevent destabilizing the model.
+- **Key Insight 2**: Memory decay mechanisms need to be adaptive based on context length - longer contexts need slower decay rates.
+- **Key Insight 3**: Platform-agnostic code is critical; Apple Silicon (Metal) may have different capabilities for some autograd operations than CUDA.
+- **Key Insight 4**: Memory management requires balancing between recency, importance, and surprise factors.
+- **Key Insight 5**: Gradient checkpointing significantly reduces memory overhead for long sequence processing.
+
+### Implementation Patterns
+- Use torch.utils.checkpoint.checkpoint for memory-efficient gradient computation
+- Implement fallback mechanisms when operations aren't supported on all platforms
+- Use adaptive parameters that adjust based on training/inference mode
+- Track usage statistics to inform memory management decisions
+- Implement platform-specific device detection and handling

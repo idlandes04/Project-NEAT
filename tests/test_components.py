@@ -47,10 +47,81 @@ class TestTitansMemorySystem(unittest.TestCase):
     def test_surprise_based_memory(self):
         """Test surprise-based memory."""
         memory = SurpriseBasedMemory(self.config)
-        output = memory(self.hidden_states)
         
-        # Check output shape
-        self.assertEqual(output.shape, self.hidden_states.shape)
+        # Test in training mode
+        memory.train()
+        output_train = memory(self.hidden_states)
+        
+        # Check output shape in training mode
+        self.assertEqual(output_train.shape, self.hidden_states.shape)
+        
+        # Test in evaluation mode
+        memory.eval()
+        output_eval = memory(self.hidden_states)
+        
+        # Check output shape in evaluation mode
+        self.assertEqual(output_eval.shape, self.hidden_states.shape)
+        
+        # Test that memory is being updated in both modes
+        # This verifies that we've removed the training-only condition
+        memory_before = memory.memory.clone()
+        
+        # Run forward pass with high surprise inputs to trigger memory updates
+        random_input = torch.randn(self.batch_size, self.seq_len, self.config.hidden_size) * 5.0
+        memory(random_input)
+        
+        # Check that memory has been updated
+        self.assertFalse(torch.allclose(memory_before, memory.memory))
+    
+    def test_adaptive_decay_mechanism(self):
+        """Test adaptive decay mechanism for memory management."""
+        # Create memory with small size for testing
+        self.config.titans.memory_size = 10
+        memory = SurpriseBasedMemory(self.config)
+        
+        # Initialize with some importance scores
+        memory.importance_scores = torch.ones(1, memory.memory_size) * 0.5
+        
+        # Set some memory entries as used
+        memory.memory_usage[0, 0:5] = 10
+        memory.last_access_time[0, 0:5] = memory.global_step + 5
+        
+        # Set some memory entries as old and unused
+        memory.memory_age[0, 5:10] = memory.max_memory_age + 10
+        
+        # Run memory management
+        memory._manage_memory_with_adaptive_decay()
+        
+        # Check that used entries have higher importance than unused ones
+        used_importance = memory.importance_scores[0, 0:5].mean()
+        unused_importance = memory.importance_scores[0, 5:10].mean()
+        self.assertGreater(used_importance, unused_importance)
+    
+    def test_efficient_gradient_computation(self):
+        """Test efficient gradient computation with checkpointing."""
+        memory = SurpriseBasedMemory(self.config)
+        
+        # Create a longer sequence to test checkpointing
+        long_seq_length = 64
+        long_hidden_states = torch.randn(self.batch_size, long_seq_length, self.config.hidden_size)
+        
+        # Enable efficient gradient computation with checkpointing
+        memory.use_efficient_grad = True
+        memory.grad_checkpoint_segments = 4
+        
+        # Ensure we can compute gradients for both short and long sequences
+        short_surprise = memory._compute_efficient_gradient(self.hidden_states)
+        long_surprise = memory._compute_efficient_gradient(long_hidden_states)
+        
+        # Check output shapes
+        self.assertEqual(short_surprise.shape, (self.batch_size, self.seq_len, 1))
+        self.assertEqual(long_surprise.shape, (self.batch_size, long_seq_length, 1))
+        
+        # Check that values are reasonable (non-zero, finite)
+        self.assertTrue(torch.all(torch.isfinite(short_surprise)))
+        self.assertTrue(torch.all(torch.isfinite(long_surprise)))
+        self.assertGreater(short_surprise.abs().mean().item(), 0)
+        self.assertGreater(long_surprise.abs().mean().item(), 0)
     
     def test_persistent_memory(self):
         """Test persistent memory."""

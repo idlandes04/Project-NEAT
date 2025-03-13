@@ -100,22 +100,22 @@
 
 ### 1.0.0 Foundation Fixes Phase
 #### 1.1.0 Titans Test-Time Learning
-- [ ] 1.1.1 Remove training-only condition for memory updates and make platform agnostic
-  - [ ] Modify SurpriseBasedMemory.forward to enable updates during inference
-  - [ ] Ensure gradient computation is properly enabled
-  - [ ] Implement safeguards against destabilizing updates
-  - [ ] Refernce @metal_docs.md and ensure the project is set up to run and train on both apple m3 via pytorch with a metal backend and windows 11 cuda 12x
-  - [ ] Ensure project passes all tests on Mac w/ apple silicon.
+- [x] 1.1.1 Remove training-only condition for memory updates and make platform agnostic
+  - [x] Modify SurpriseBasedMemory.forward to enable updates during inference
+  - [x] Ensure gradient computation is properly enabled
+  - [x] Implement safeguards against destabilizing updates
+  - [x] Refernce @metal_docs.md and ensure the project is set up to run and train on both apple m3 via pytorch with a metal backend and windows 11 cuda 12x
+  - [x] Ensure project passes all tests on Mac w/ apple silicon.
 
-- [ ] 1.1.2 Implement efficient test-time gradient computation
-  - [ ] Design gradient computation with minimal memory overhead
-  - [ ] Utilize checkpointing for memory-efficient backpropagation
-  - [ ] Add gradient clipping for stability during inference
+- [x] 1.1.2 Implement efficient test-time gradient computation
+  - [x] Design gradient computation with minimal memory overhead
+  - [x] Utilize checkpointing for memory-efficient backpropagation
+  - [x] Add gradient clipping for stability during inference
 
-- [ ] 1.1.3 Create adaptive decay mechanism for memory management
-  - [ ] Implement importance-based memory decay
-  - [ ] Add memory usage tracking and management
-  - [ ] Create configurable decay parameters based on context length
+- [x] 1.1.3 Create adaptive decay mechanism for memory management
+  - [x] Implement importance-based memory decay
+  - [x] Add memory usage tracking and management
+  - [x] Create configurable decay parameters based on context length
 
 #### 1.2.0 Transformer² Adaptation Completion
 - [ ] 1.2.1 Extend SVD adaptation to transformer weight matrices
