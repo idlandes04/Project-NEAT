@@ -100,10 +100,12 @@
 
 ### 1.0.0 Foundation Fixes Phase
 #### 1.1.0 Titans Test-Time Learning
-- [ ] 1.1.1 Remove training-only condition for memory updates
+- [ ] 1.1.1 Remove training-only condition for memory updates and make platform agnostic
   - [ ] Modify SurpriseBasedMemory.forward to enable updates during inference
   - [ ] Ensure gradient computation is properly enabled
   - [ ] Implement safeguards against destabilizing updates
+  - [ ] Refernce @metal_docs.md and ensure the project is set up to run and train on both apple m3 via pytorch with a metal backend and windows 11 cuda 12x
+  - [ ] Ensure project passes all tests on Mac w/ apple silicon.
 
 - [ ] 1.1.2 Implement efficient test-time gradient computation
   - [ ] Design gradient computation with minimal memory overhead
@@ -252,34 +254,26 @@
   - [ ] Build forgetting curve analysis tools
 
 #### 3.3.0 Performance Benchmarking
-- [ ] 3.3.1 Create throughput measurement framework
-  - [ ] Design standardized throughput testing methodology
+- [ ] 3.3.1 Create output charachters/s output measurement framework
+  - [ ] Design standardized charachters/s output testing methodology
   - [ ] Implement bytes-per-second measurement tools
-  - [ ] Develop comparison with tokens-per-second metrics
-  - [ ] Build adaptive benchmarking based on input complexity
 
 - [ ] 3.3.2 Implement memory usage profiling
   - [ ] Create detailed memory allocation tracking
   - [ ] Design peak memory usage analysis
   - [ ] Develop component-specific memory profiling
-  - [ ] Build memory scaling projection tools
-
-- [ ] 3.3.3 Develop latency profiling system
-  - [ ] Design end-to-end latency measurement
-  - [ ] Implement component-level latency breakdown
-  - [ ] Create throughput-latency tradeoff analysis
-  - [ ] Build interactive latency visualization tools
+  - [ ] Build a memory scaling projection tool in root/src/utils to predict future progress for the paper we will write on this. 
 
 ### 4.0.0 Cold-Start Training and Validation Phase
 #### 4.1.0 Toy Model Training Infrastructure
-- [ ] 4.1.1 Design synthetic data generation pipeline
-  - [ ] Create mathematical problem generator with complexity levels
+  - [ ] 4.1.1 Modify or use as inspiration   @synthetic_data (file in root) for the data generation pipeline 
+  - [ ] Use/refactor mathematical problem generator with complexity levels
   - [ ] Implement reasoning trace annotation
   - [ ] Develop multimodal data synthesis capabilities
   - [ ] Build progressive difficulty curriculum
 
 - [ ] 4.1.2 Develop small-scale model architecture
-  - [ ] Design scaled-down unified architecture
+  - [ ] Design scaled-down unified architecture (100-500m params?)
   - [ ] Create parameter-efficient component implementations
   - [ ] Implement rapid training configuration
   - [ ] Build checkpoint management for component-wise training
@@ -297,54 +291,25 @@
   - [ ] Develop visualization for reasoning paths
   - [ ] Build comparative analysis with baseline approaches
 
-- [ ] 4.2.2 Create memory-focused math challenges
-  - [ ] Design problems requiring information retention
+- [ ] 4.2.2 Create memory-focused math challenges beased on @synthetic_data
+  - [ ] Design problems requiring information retention as shown in @synthetic_data
   - [ ] Implement context distance measurement
   - [ ] Develop perturbation resistance tests
   - [ ] Build targeted memory evaluation metrics
 
-- [ ] 4.2.3 Develop multimodal reasoning tests
-  - [ ] Create spatial reasoning problem set
-  - [ ] Implement diagram understanding evaluation
-  - [ ] Design visualization quality assessment
-  - [ ] Build text-image coherence metrics
-
 #### 4.3.0 Comparative Model Evaluation
 - [ ] 4.3.1 Implement baseline transformer evaluation
-  - [ ] Create testing infrastructure for standard transformers
+  - [ ] Create testing infrastructure comparing to standard transformers
   - [ ] Design fair comparison methodology
   - [ ] Develop normalized metrics across architectures
-  - [ ] Build performance-to-parameter efficiency analysis
+  - [ ] Attain performance-to-parameter efficiency analysis as a report to be a part of the paper later on
 
-- [ ] 4.3.2 Create ablation testing framework
-  - [ ] Design systematic component ablation methodology
-  - [ ] Implement isolated contribution measurement
-  - [ ] Develop interaction effect analysis
-  - [ ] Build optimal configuration discovery
-
-- [ ] 4.3.3 Develop publication-ready benchmark suite
+- [ ] 4.3.3 Develop small publication-ready benchmark suite
   - [ ] Create standardized evaluation protocols
   - [ ] Implement reproducible testing pipeline
   - [ ] Design comprehensive metrics dashboard
   - [ ] Build automatic report generation
 
-#### 4.4.0 Cold-Start Training Experimental Design
-- [ ] 4.4.1 Create mathematical reasoning training corpus
-  - [ ] Design progressive difficulty mathematical problems
-  - [ ] Implement solution validation system
-  - [ ] Develop reasoning annotation pipeline
-  - [ ] Build curriculum learning framework
 
-- [ ] 4.4.2 Implement component-aware training methodology
-  - [ ] Design phase-based training approach (component by component)
-  - [ ] Create integrated training strategy
-  - [ ] Develop component interaction pretraining
-  - [ ] Build optimization procedure for unified architecture
-
-- [ ] 4.4.3 Design comparative evaluation framework
-  - [ ] Create evaluation protocol comparing to toy baseline LLM
-  - [ ] Implement performance measurement across task types
-  - [ ] Develop efficiency metrics (TPS, BPS, memory usage)
-  - [ ] Build comprehensive reporting system for results
 
 This roadmap provides a comprehensive plan for developing and testing the NEAT architecture, focusing on fixing critical implementation gaps, improving component integration, and creating a robust evaluation framework. The cold-start training with a toy model focused on mathematical reasoning will serve as an excellent validation of the architecture's benefits, even at small scale.

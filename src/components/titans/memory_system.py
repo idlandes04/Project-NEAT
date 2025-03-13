@@ -164,6 +164,11 @@ class SurpriseBasedMemory(nn.Module):
         # Value clipping range
         self.inference_clipping_min = -3.0
         self.inference_clipping_max = 3.0
+        
+        # Gradient computation parameters
+        self.use_efficient_grad = True
+        self.grad_checkpoint_segments = 2
+        self.grad_max_norm = 1.0  # For gradient clipping
     
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
@@ -187,24 +192,10 @@ class SurpriseBasedMemory(nn.Module):
             self.importance_scores = self.importance_scores.to(device)
             self.memory_usage = self.memory_usage.to(device)
         
-        # Calculate surprise measure using platform-agnostic approach
+        # Calculate surprise measure using memory-efficient, platform-agnostic approach
         try:
-            with torch.enable_grad():
-                # Enable gradient computation
-                normalized_hidden_states.requires_grad_(True)
-                
-                # Compute associative memory loss
-                memory_output = self._query_memory(normalized_hidden_states)
-                assoc_loss = F.mse_loss(normalized_hidden_states, memory_output)
-                
-                # Compute gradient of loss with respect to input
-                # Use retain_graph=False and create_graph=False for memory efficiency
-                surprise = torch.autograd.grad(
-                    assoc_loss,
-                    normalized_hidden_states,
-                    create_graph=False,
-                    retain_graph=False
-                )[0].abs().mean(dim=-1, keepdim=True)
+            # Use memory-efficient gradient computation
+            surprise = self._compute_efficient_gradient(normalized_hidden_states)
         except RuntimeError as e:
             # Handle potential exceptions (like Metal not supporting some autograd ops)
             # Log the error for debugging
