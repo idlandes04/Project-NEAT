@@ -1,4 +1,4 @@
-# Project NEAT: Neural Enhancement Architecture Toolkit
+# Project NEAT: Neural Adaptive Transformer
 
 <div align="center">
   
@@ -7,7 +7,7 @@
 [![PyTorch 1.10+](https://img.shields.io/badge/pytorch-1.10+-orange.svg)](https://pytorch.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-**A cutting-edge neural architecture integration framework combining advanced techniques for efficient, adaptive, and multimodal AI systems.**
+**A cutting-edge neural architecture combining several recent advanced techniques for an efficient, adaptive, and multimodal AI system.**
 
 </div>
 
