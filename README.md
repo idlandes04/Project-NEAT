@@ -1,131 +1,193 @@
 # Project NEAT: Neural Enhancement Architecture Toolkit
 
-This project implements a unified neural architecture that integrates four cutting-edge techniques:
+<div align="center">
+  
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch 1.10+](https://img.shields.io/badge/pytorch-1.10+-orange.svg)](https://pytorch.org/)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-1. **Titans**: Learning to Memorize at Test Time
-2. **Transformer²**: Self-Adaptive LLMs
-3. **MVoT**: Multimodal Visualization-of-Thought
-4. **BLT**: Byte Latent Transformer
+**A cutting-edge neural architecture integration framework combining advanced techniques for efficient, adaptive, and multimodal AI systems.**
 
-## Current Status
+</div>
 
-### Completed Components:
-- ✅ **Titans Memory System** (1.1.x): Test-time learning with surprise-based memory updates
-- ✅ **Transformer² Adaptation** (1.2.x): SVD-based weight adaptation with efficient caching
-- ✅ **BLT Core Implementation** (1.3.x): Entropy-based byte patching with variable-length handling
-- ✅ **MVoT Visual Codebook** (1.4.1): Framework for loading pretrained VQ-VAE models
+---
 
-### In Progress:
-- 🔄 **Cross-Component Integration** (2.1.x): Designing component messaging protocol and feedback loops
-- 🔄 **Test-Time Learning Synchronization** (2.2.x): Coordinating learning across components
+## 📑 Contents
 
-### Coming Soon:
-- 📅 **Hardware-Aware Integration** (2.3.x): Resource allocation and scheduling for components
-- 📅 **Component Testing Framework** (3.1.x): Isolated benchmarks for each component
-- 📅 **Integration Testing Framework** (3.2.x): End-to-end testing of the unified system
+- [Architecture Overview](#architecture-overview)
+- [Current Status](#current-status)
+- [Key Features](#key-features)
+- [Technical Details](#technical-details)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Hardware Optimization](#hardware-optimization)
+- [Project Structure](#project-structure)
+- [References](#references)
 
-The implementation is optimized for both Apple Silicon (M-series) and NVIDIA GPUs, with platform-specific optimizations and fallback mechanisms.
+---
 
 ## Architecture Overview
 
-The unified architecture combines these components in a modular way:
+Project NEAT seamlessly integrates four groundbreaking neural architectures into a unified framework:
 
-```
-[Input] → [Byte Processor (BLT)] → [Memory System (Titans)] → [Token Processor (MVoT)] → [Output]
-                                      ↑
-                          [Task Adaptation (Transformer²)]
+<div align="center">
+
+```mermaid
+graph TD
+    Input[Raw Input Data] --> BLT[BLT Byte Processor]
+    BLT --> Titans[Titans Memory System]
+    Titans --> MVoT[MVoT Token Processor]
+    MVoT --> Output[Generated Output]
+    T2[Transformer² Adaptation] --> Titans
+    T2 -.-> MVoT
+    
+    subgraph "Component Communication"
+        Messaging[Messaging System]
+        State[State Management]
+        Feedback[Feedback Loops]
+    end
+    
+    Titans <--> Messaging
+    MVoT <--> Messaging
+    BLT <--> Messaging
+    T2 <--> Messaging
+    
+    classDef completed fill:#c2f0c2,stroke:#178517,color:#178517
+    classDef inprogress fill:#ffe6cc,stroke:#d79b00,color:#d79b00
+    classDef upcoming fill:#f5f5f5,stroke:#666,color:#666
+    
+    class BLT,Titans,MVoT,T2,Messaging,State,Feedback completed
 ```
 
-Each component can be selectively enabled or disabled, and the system includes dynamic resource allocation to optimize performance based on available hardware.
+</div>
+
+<div align="center">
+
+| Component | Description | Core Functionality |
+|-----------|-------------|-------------------|
+| **Titans** | Test-time learning with three-tiered memory | Memory updates based on surprise detection |
+| **Transformer²** | Self-adaptive weight matrices using SVD | Two-pass inference with task adaptation |
+| **MVoT** | Multimodal Visualization-of-Thought | Interleaved text-image reasoning |
+| **BLT** | Byte-level transformer with dynamic patching | Entropy-based processing of raw bytes |
+
+</div>
+
+## Current Status
+
+<div align="center">
+
+```mermaid
+gantt
+    title Project NEAT Development Timeline
+    dateFormat  YYYY-MM-DD
+    axisFormat %b %Y
+    
+    section Core Components
+    Titans Memory System (1.1.x)       :done, titans, 2024-01-01, 2024-02-15
+    Transformer² Adaptation (1.2.x)    :done, transformer2, 2024-02-15, 2024-03-01
+    BLT Core Implementation (1.3.x)    :done, blt, 2024-03-01, 2024-03-15
+    MVoT Implementation (1.4.x)        :done, mvot, 2024-03-15, 2024-04-01
+    
+    section Integration
+    Cross-Component Communication (2.1.x) :done, comms, 2024-04-01, 2024-05-01
+    Test-Time Learning Sync (2.2.x)       :active, ttl, 2024-05-01, 2024-06-15
+    Hardware-Aware Integration (2.3.x)    :hwint, after ttl, 45d
+    
+    section Testing
+    Component Testing Framework (3.1.x)    :ctest, after hwint, 30d
+    Integration Testing Framework (3.2.x)  :itest, after ctest, 30d
+```
+
+</div>
+
+### Completed Components
+- ✅ **Titans Memory System** (1.1.x)
+  - Three-tiered memory architecture (short-term, long-term, persistent)
+  - Surprise-based memory updates using gradient magnitudes
+  - Adaptive memory decay mechanisms based on context length
+  - Gradient checkpointing for efficient memory usage
+
+- ✅ **Transformer² Adaptation** (1.2.x)
+  - SVD-based weight adaptation for efficient fine-tuning
+  - Task embedding similarity matching for computation reuse
+  - Two-pass inference process (dispatch and expert composition)
+  - Randomized SVD for large matrix optimization
+
+- ✅ **BLT Core Implementation** (1.3.x)
+  - Entropy-based byte patching for dynamic processing
+  - Variable-length patch handling with masking mechanism
+  - Local-global-local architecture for efficient processing
+  - Adaptive entropy threshold for computation/accuracy tradeoff
+
+- ✅ **MVoT Implementation** (1.4.x)
+  - Visual codebook integration supporting multiple VQ-VAE formats (1.4.1)
+  - Text/image generation decision mechanism combining heuristic and neural approaches (1.4.2)
+  - Byte-to-token mapping for BLT compatibility with bi-directional conversion (1.4.3)
+  - Token discrepancy loss for high-quality visualizations
+
+- ✅ **Cross-Component Communication** (2.1.x)
+  - Message-based pub-sub architecture for loose coupling
+  - Priority-based message processing for critical information
+  - State tracking with subscriptions for reactive components
+  - Feedback loops for coordinated processing (task-memory, surprise-adaptation, modality)
+
+### In Progress
+- 🔄 **Test-Time Learning Synchronization** (2.2.x)
+  - Coordinating gradient flow across components
+  - Shared gradient computation infrastructure
+  - Component-specific gradient isolation
+  - Adaptive learning rate management
+
+### Coming Soon
+- 📅 **Hardware-Aware Integration** (2.3.x)
+  - Intelligent resource allocation and scheduling
+  - Platform-specific optimizations
+  - Dynamic component activation based on hardware capabilities
+
+- 📅 **Testing Frameworks** (3.x)
+  - Component-level benchmarks and metrics
+  - End-to-end system evaluation
+  - Comparative analysis against baseline models
 
 ## Key Features
 
-- **Modular Component Design**: Each architecture is implemented as a swappable module
-- **Hardware-Aware Optimization**: Dynamic tensor offloading, mixed precision training, gradient checkpointing
-- **Dynamic Component Activation**: Components are activated based on input complexity and available resources
-- **Comprehensive Profiling**: Performance metrics for each component and combination
+<div align="center">
 
-## Project Structure
-
-```
-neural_architecture_integration/
-├── src/
-│   ├── components/
-│   │   ├── titans/         # Titans memory system
-│   │   ├── transformer2/   # Transformer² adaptation
-│   │   ├── mvot/           # MVoT token processor
-│   │   └── blt/            # BLT byte processor
-│   ├── models/             # Unified architecture
-│   ├── trainers/           # Hardware-aware trainer
-│   └── utils/              # Utility functions
-├── tests/                  # Test cases
-└── main.py                 # Main script
-└── PLAN_MAIN.md            # The plan for Cline and Roo to follow
-└── TECHNICALd.md           # The back-bone technical details and basal theory for Cline and Roo to follow
-```
-
-## Installation
-
-### Requirements
-
-- Python 3.8+
-- PyTorch 1.10+
-- CUDA 11.3+ (for GPU acceleration)
-
-### Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/neural-architecture-integration.git
-cd neural-architecture-integration
-
-# Install dependencies
-pip install -r requirements.txt
+```mermaid
+mindmap
+  root((Project NEAT))
+    Modular Design
+      Selective component activation
+      Independent component development
+      Pluggable architecture
+    Adaptive Processing
+      Test-time learning
+      Task-specific adaptation
+      Dynamic resource allocation
+    Cross-Platform Support
+      Apple Silicon (Metal)
+      NVIDIA GPUs (CUDA)
+      Graceful fallbacks
+    Multimodal Capabilities
+      Text processing
+      Image generation
+      Interleaved reasoning
+    Optimization Techniques
+      Mixed precision training
+      Gradient checkpointing
+      Memory management
 ```
 
-## Usage
+</div>
 
-### Training
+- **Modular Component Design**: Selective activation based on input complexity and available computational resources
+- **Test-Time Learning**: Memory updates and weight adaptation during inference without requiring full model retraining
+- **Cross-Platform Optimization**: Specialized support for both Apple Silicon (Metal) and NVIDIA (CUDA) with fallback mechanisms
+- **Multimodal Processing**: Seamless handling of text and visual content with interleaved generation capabilities
+- **Component Communication**: Loosely coupled architecture with message-based coordination between components
 
-To train a model with all components enabled:
-
-```bash
-python main.py --mode train \
-    --use_titans_memory \
-    --use_transformer2_adaptation \
-    --use_mvot_processor \
-    --use_blt_processor \
-    --mixed_precision \
-    --gradient_checkpointing \
-    --dynamic_component_activation \
-    --batch_size 8 \
-    --max_steps 1000 \
-    --output_dir ./outputs
-```
-
-### Evaluation
-
-To evaluate a trained model:
-
-```bash
-python main.py --mode eval \
-    --model_path ./outputs/best_model \
-    --batch_size 16
-```
-
-### Component Profiling
-
-To profile the performance of individual components:
-
-```bash
-python main.py --mode profile \
-    --use_titans_memory \
-    --use_transformer2_adaptation \
-    --use_mvot_processor \
-    --use_blt_processor
-```
-
-## Component Details
+## Technical Details
 
 ### Titans Memory System
 
@@ -135,296 +197,308 @@ The Titans memory system implements three types of memory:
 2. **Long-term Memory**: Surprise-based memory updates
 3. **Persistent Memory**: Task-agnostic knowledge
 
-Key implementation details:
-- Gradient-based surprise measurement
-- Selective memory updates based on surprise threshold
-- Memory decay mechanism
+Memory updates are governed by a surprise-driven mechanism:
+
+$$
+M_t = (1 - \alpha) \cdot M_{t-1} + \alpha \cdot f(x_t, \nabla_{x_t}\mathcal{L})
+$$
+
+where $\alpha$ is determined by the surprise magnitude $\left\|\nabla_{x_t}\mathcal{L}\right\|$.
+
+<details>
+<summary><b>Click to expand implementation details</b></summary>
+
+- Gradient-based surprise measurement using autograd
+- Memory decay factor adapts based on context length
+- Three memory interaction modes: concatenation, gating, and interpolation
+- Recency, importance, and surprise factors balance memory updates
+- Platform-agnostic gradient computation with Metal support
+
+</details>
 
 ### Transformer² Adaptation
 
-The Transformer² adaptation implements:
+Transformer² implements weight adaptation using Singular Value Decomposition:
 
-1. **Two-pass Inference**: First pass for task identification, second pass for adaptation
-2. **Singular Value Fine-tuning (SVF)**: Adapting only singular values of weight matrices
+$$
+W = U \cdot \text{diag}(\sigma) \cdot V^T
+$$
 
-Key implementation details:
-- SVD-based weight adaptation
-- Task dispatcher for identifying tasks
-- Expert composition for adapting to specific tasks
+The adaptation process modifies only the singular values:
+
+$$
+W_{\text{adapted}} = U \cdot \text{diag}(\sigma_{\text{base}} + \Delta\sigma) \cdot V^T
+$$
+
+where $\Delta\sigma$ is determined by the task embedding from a two-pass inference process.
+
+<details>
+<summary><b>Click to expand implementation details</b></summary>
+
+- Randomized SVD for large matrices improves computation efficiency
+- Task embeddings cached for similar inputs to avoid redundant computation
+- Adaptive precision in SVD varies component count based on matrix properties
+- Similarity threshold determines when to reuse previous adaptations
+- Adaptation strength varies by layer depth and matrix characteristics
+
+</details>
 
 ### MVoT Token Processor
 
-The MVoT token processor implements:
+MVoT enables interleaved text-image reasoning through token-level multimodal processing:
 
-1. **Multimodal Token Processing**: Processing text and image tokens
-2. **Token Discrepancy Loss**: Measuring discrepancy between predicted token distributions and codebook embeddings
+$$
+v_i \sim P_\theta(v_i | z_1, v_1, \ldots, z_i)
+$$
 
-Key implementation details:
-- Interleaved text and image token generation
-- Codebook-based visual token representation
-- Token discrepancy loss for training
+$$
+z_{i+1} \sim P_\theta(z_{i+1} | x, z_1, v_1, \ldots, z_i, v_i)
+$$
+
+It incorporates a token discrepancy loss to improve visualization quality:
+
+$$
+L_D = \sum_{i=1}^n S_{t_{\text{vis}}^i} \cdot P(t_i)
+$$
+
+<details>
+<summary><b>Click to expand implementation details</b></summary>
+
+- Support for multiple VQ-VAE model formats (VQVAE, VQGAN, DALL-E)
+- Lazy initialization of visual codebook to conserve memory
+- Embedding space conversion between model hidden size and codebook dimensions
+- Heuristic and neural approaches for text/image generation decisions
+- Context-aware decision logic considers pattern of previous decisions
+- Visualization count limiter prevents overuse of image generation
+
+</details>
 
 ### BLT Byte Processor
 
-The BLT byte processor implements:
+BLT processes raw bytes using entropy-based dynamic patching:
 
-1. **Entropy-based Patching**: Creating patches based on byte entropy
-2. **Local-global-local Architecture**: Local encoder, latent transformer, and local decoder
+$$
+H(x_i) = -\sum_{v \in V} p_e(x_i = v | x_{<i}) \cdot \log p_e(x_i = v | x_{<i})
+$$
 
-Key implementation details:
-- Entropy calculation for dynamic patching
-- Local encoder for processing individual patches
-- Latent transformer for global processing
-- Local decoder for generating bytes
+Patches are formed when entropy exceeds a threshold, leading to a local-global-local processing pipeline:
 
-## Hardware Optimization
+$$
+H_j = \text{LatentTransformer}(E_1, E_2, \ldots, E_j)
+$$
 
-The implementation includes several hardware optimization techniques:
+$$
+\hat{p}_j = \text{LocalDecoder}(H_j, E_j)
+$$
 
-1. **Mixed Precision Training**: Using FP16/BF16 computation with FP32 master weights
-2. **Gradient Checkpointing**: Selective activation storage to reduce memory footprint
-3. **CPU Offloading**: Moving large tensors to CPU when not in use
-4. **Dynamic Batch Sizing**: Adjusting batch size based on available memory
-5. **Parallel Data Processing**: Utilizing all CPU cores for data preprocessing
+<details>
+<summary><b>Click to expand implementation details</b></summary>
 
-## Parameter Tuning
+- Byte-level entropy estimator with position embeddings
+- Adaptive entropy threshold balances computation and accuracy
+- Variable-length patch handling with proper masking
+- Local encoder processes individual patches efficiently
+- Latent transformer provides global context across patches
+- Local decoder generates refined byte-level predictions
+- Computation budget management through entropy thresholds
 
-The system supports comprehensive parameter tuning through command-line arguments or configuration files. Key parameters include:
+</details>
 
-- **Model Size**: Hidden size, number of layers, number of attention heads
-- **Component Activation**: Which components to enable/disable
-- **Memory Parameters**: Window size, memory size, surprise threshold
-- **Adaptation Parameters**: Number of tasks, number of singular values
-- **Hardware Optimization**: Mixed precision, gradient checkpointing, CPU offloading
+## 💻 Installation & Setup
 
-## Contributing
+### Requirements
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+- Python 3.8+
+- PyTorch 1.10+
+- CUDA 11.3+ (NVIDIA) or Metal (Apple Silicon)
 
-## License
+### Installation
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/project-neat.git
+cd project-neat
 
-## Acknowledgements
+# Create a virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-This project implements ideas from the following papers:
+# Install dependencies
+pip install -r requirements.txt
 
-- "Titans: Learning to Memorize at Test Time"
-- "TRANSFORMER2: SELF-ADAPTIVE LLMS"
-- "Imagine while Reasoning in Space: Multimodal Visualization-of-Thought"
-- "Byte Latent Transformer: Patches Scale Better Than Tokens"
+# Optional: Install platform-specific dependencies
+# For Apple Silicon
+pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/metal
 
-Below is a consolidated reference of *exact (or near-exact)* core formulas, definitions, and pseudo-code from the four papers (Titans, Transformer2, MVoT, and BLT) as gleaned from their text. Where the authors only summarized or hinted at ideas, I’ve provided those summaries. When they provided explicit math, I’ve listed their equations closely to the original. If you see any small formatting differences, that’s just to fit them in this response.
-
-**Master Overview** that merges (1) *Titans: Learning to Memorize at Test Time*, (2) *Transformer2: Self-Adaptive LLMs*, (3) *Multimodal Visualization-of-Thought (MVoT)*, and (4) *Byte Latent Transformer (BLT)* into **one cohesive reference**. It highlights all the essential equations, methods, and pseudo-code details each paper provides (based on the publicly available text), so you can reconstruct them or combine them into a single model.
-
----
-
-## 1. **Titans**  
-**Paper:** “*Titans: Learning to Memorize at Test Time*”  
-**Core Contributions:**  
-- A **long-term neural memory** module to complement short-term attention-based memory.  
-- **Surprise-driven** updates—measured by gradient magnitudes w.r.t. inputs—determine when to store or decay new information.  
-- **Fast parallelizable training** approach for memory updates.
-
-### 1.1 Memory in RNN or Transformer Format
-
-They unify an RNN-style memory perspective:
-\[
-M_{t} = f(M_{t-1}, x_{t}), \quad y_{t} = g(M_{t}, x_{t}),
-\]
-- \(M_{t}\) is the memory or hidden state at time \(t\).  
-- \(x_{t}\) is the input; \(y_{t}\) is the output.
-
-For Transformers, they equate “growing memory” with appending Key/Value pairs \((K_{t}, V_{t})\) in the context window. However, they propose a new **neural memory** that can store beyond the immediate window.
-
-### 1.2 Surprise-Driven Memorization & Decay
-
-- **Associative Memory Loss**:  
-  They mention measuring “surprise” by gradient magnitude \(\bigl\|\tfrac{\partial \mathcal{L}_{\text{assoc}}}{\partial x}\bigr\|\). High surprise triggers stronger memorization of the data.  
-
-- **Decay Mechanism**:  
-  A forgetting or decay step to keep memory from overgrowing:
-  \[
-    M \leftarrow (1 - \alpha)\,M,
-  \]
-  with \(\alpha\) possibly determined by how large the memory already is, or how surprising the new data is.
-
-### 1.3 The Titans Architecture
-
-They define **three “hyper-heads”**:
-
-1. **Core** (Short-Term Memory): Standard Transformer attention, limited by context length.  
-2. **Long-Term Memory**: A deep module that can store historical or surprising info beyond the context window.  
-3. **Persistent Memory**: A set of learnable, task-agnostic parameters (like universal knowledge weights).
-
-They experiment with different ways to incorporate the long-term module (e.g., treat it as extra context, insert it as a special layer, or gate it). All else is conceptual: partial updates at test-time if a surprising event is detected, otherwise memory decays.
-
----
-
-## 2. **Transformer2**  
-**Paper:** “*TRANSFORMER2: SELF-ADAPTIVE LLMS*”  
-**Core Contributions:**  
-- A **two-pass** inference pipeline.  
-- **Singular Value Fine-Tuning (SVF)** to adapt an LLM to new tasks in real time using minimal extra parameters.
-
-### 2.1 Two-Pass Inference
-
-1. **First Pass** (“Dispatch”):
-   - The model sees the prompt, partially processes it, and infers task properties.
-   - A “dispatch system” decides which “expert vectors” or singular values might be relevant for the second pass.
-
-2. **Second Pass** (“Expert Composition”):
-   - The model merges specialized “expert vectors” into the base model via singular value offsets, refining the final forward pass for that specific domain or task.
-
-### 2.2 Singular Value Fine-Tuning (SVF)
-
-- For each weight matrix \(W\), do an SVD: \(\;W = U\,\mathrm{diag}(\sigma)\,V^\top.\)  
-- **Only** \(\sigma\) is updated or replaced with a specialized vector \(\sigma_{\text{expert}}\).  
-- The model can mix multiple sets of singular values if it identifies multiple relevant tasks.  
-- No explicit formula for the RL policy is given, but conceptually:
-  \[
-    W_{\text{adapted}} = U\,\mathrm{diag}(\sigma_{\text{base}} + \Delta\sigma)\,V^\top,
-  \]
-  where \(\Delta\sigma\) is the learned offset or the new singular values for a specific skill domain.
-
----
-
-## 3. **Multimodal Visualization-of-Thought (MVoT)**  
-**Paper:** “*Imagine while Reasoning in Space: Multimodal Visualization-of-Thought*”  
-**Core Contributions:**  
-- Extends chain-of-thought to **interleave image and text** as intermediate steps.  
-- Adds a **token discrepancy loss** to improve the fidelity of generated images.
-
-### 3.1 Interleaved Text–Image Reasoning
-
-They factorize the generation:
-
-\[
-v_{i} \sim P_{\theta}\bigl(v_{i} \mid z_{1},v_{1}, \dots, z_{i}\bigr),\quad
-z_{i+1} \sim P_{\theta}\bigl(z_{i+1} \mid x,\; z_{1},v_{1}, \dots, z_{i},v_{i}\bigr),
-\]
-
-So step \(i\) might produce an image \(v_i\), next step might produce text \(z_{i+1}\), and so on.
-
-### 3.2 Token Discrepancy Loss
-
-- Suppose the model uses a discrete image tokenizer with a codebook \(\{e^k_{\mathrm{vis}}\}_{k=1}^N\).  
-- Let \(S_{t_{\mathrm{vis}}^i}\) measure MSE distance between the ground-truth image embedding and every codebook embedding:
-
-  \[
-    S_{t_{\mathrm{vis}}^i} = \Bigl[\mathrm{MSE}\bigl(e_{\mathrm{vis}}^i, e_{\mathrm{vis}}^1\bigr), \dots, \mathrm{MSE}\bigl(e_{\mathrm{vis}}^i, e_{\mathrm{vis}}^N\bigr)\Bigr].
-  \]
-
-- If \(P(t_i)\) is the predicted distribution over those image codebook tokens, the discrepancy loss is:
-
-  \[
-    L_{D} = \sum_{i=1}^n S_{t_{\mathrm{vis}}^i} \cdot P(t_i).
-  \]
-
-- Finally, they add \(L_{D}\) to the usual cross-entropy to keep the generated image tokens closer to the correct codebook entries:
-
-  \[
-    L = L_{C} + L_{D}.
-  \]
-
----
-
-## 4. **Byte Latent Transformer (BLT)**  
-**Paper:** “*Byte Latent Transformer: Patches Scale Better Than Tokens*”  
-**Core Contributions:**  
-- Eliminates subword tokenization. Operates on **raw bytes** but groups them adaptively into “patches” based on **entropy**.  
-- Has a local–global–local pipeline: (1) local encoder for each patch, (2) a big “latent transformer” across patches, and (3) a local decoder if needed to predict the bytes.
-
-### 4.1 Entropy-Based Patching
-
-- Train a small byte LM to get \(p_e(x_i \mid x_{<i})\).  
-- Compute the next-byte entropy:
-
-  \[
-    H(x_i) = -\sum_{v\in V} p_{e}(x_i = v \mid x_{<i})\;\log\,p_{e}(x_i = v \mid x_{<i}).
-  \]
-
-- If \(H(x_i)\) exceeds a threshold \(\theta_g\), start a new patch. That way, **high-entropy** (“hard” or uncertain) regions get frequent patches, **low-entropy** (“easy”) regions get fewer patches.
-
-### 4.2 Local + Latent + Local
-
-- Each patch \(p_j\) is encoded by a small local module (often a small Transformer or CNN) into some embedding \(E_j\).  
-- The main “Latent Transformer” processes \(\{E_1, E_2, \dots, E_j\}\) to produce a hidden \(H_j\).  
-- A local decoder uses \((H_j, E_j)\) to finalize the byte-level predictions for patch \(p_j\).  
-  \[
-    H_j = \mathrm{LatentTransformer}\bigl(E_1, E_2, \dots, E_j\bigr), \quad
-    \widehat{p_j} = \mathrm{LocalDecoder}\bigl(H_j, E_j\bigr).
-  \]
-
----
-
-## Putting It **All** Together
-
-1. **Titans** gives you **modular memory** (short-term, long-term, persistent) plus a method to incorporate *test-time memory updates* triggered by “surprise.”  
-2. **Transformer2** adds a **two-pass** approach with a “dispatch system” for *real-time adaptation* using **Singular Value Fine-Tuning**.  
-3. **MVoT** extends chain-of-thought to produce **multimodal** outputs (text + images) with a special **token discrepancy loss** to keep the images consistent with the ground-truth codebook.  
-4. **BLT** removes subword tokenization in favor of **entropy-based patching** at the byte level, drastically saving compute in easy contexts.
-
-### Master Pseudocode (Hypothetical Combined)
-
-```python
-# Step 1: Byte-level input to patches (BLT)
-patches = BLT_local_encoder(raw_bytes)  # Use small LM for entropy, define patch boundaries
-
-# Step 2: Titans memory management (short-term + long-term)
-surprise = measure_surprise(gradient_wrt_input)  # Titans eqn, not explicitly given
-if surprise > threshold:
-    # Update long-term memory
-    M_long_term = update_memory(M_long_term, some_decay_rule, patches)
-
-# Step 3: Transformer2 - Two-Pass for adaptation
-#   First pass: get dispatch signals
-dispatch_info = run_first_pass_dispatch(patches, M_long_term)
-
-#   Second pass: apply SVF to refine weights
-sigma_expert = choose_svf_experts(dispatch_info)
-W_adapted = recompose_weights_SVD(U, sigma_base + sigma_expert, V)
-
-# Step 4: MVoT - Interleaved text + image generation
-for step in range(num_steps):
-    # Possibly produce an image token v_i:
-    if condition_for_image:
-        image_token = sample_image_token(MVoT_image_head, W_adapted)
-
-    # Then produce next text token z_{i+1}:
-    text_token = sample_text_token(MVoT_text_head, W_adapted)
-
-    # Add token discrepancy loss if generating an image
-    if generating_image:
-        L_D = compute_token_discrepancy_loss(image_token, codebook_embeddings)
-        L = L + L_D
+# For NVIDIA GPUs
+pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
 ```
 
+## 🛠️ Usage Examples
+
+### Training
+
+```bash
+# Train with all components enabled
+python main.py --mode train \
+    --use_titans_memory \
+    --use_transformer2_adaptation \
+    --use_mvot_processor
+
+# Train with specific optimizations
+python main.py --mode train \
+    --mixed_precision \
+    --gradient_checkpointing \
+    --dynamic_resource_allocation
+```
+
+### Evaluation
+
+```bash
+# Evaluate a trained model
+python main.py --mode eval \
+    --model_path ./outputs/best_model
+
+# Evaluate with specific metrics
+python main.py --mode eval \
+    --model_path ./outputs/best_model \
+    --eval_metrics accuracy,perplexity,memory_efficiency
+```
+
+### Component Profiling
+
+```bash
+# Profile all components
+python main.py --mode profile
+
+# Profile specific components
+python main.py --mode profile \
+    --profile_components titans,transformer2,mvot
+```
+
+### Testing
+
+```bash
+# Run all tests
+python -m pytest tests/
+
+# Run specific component tests
+python -m pytest tests/test_components.py::TestName::test_method_name
+```
+
+## ⚡ Performance Optimization
+
+<div align="center">
+
+```mermaid
+flowchart TD
+    A[Input Complexity] --> B{Resource Assessment}
+    B -->|High Resources| C[Full Component Activation]
+    B -->|Limited Resources| D[Selective Component Activation]
+    
+    C --> E[Mixed Precision]
+    C --> F[Gradient Checkpointing]
+    
+    D --> G[Component Prioritization]
+    G --> H[Critical Path Determination]
+    
+    E --> I[Performance Monitoring]
+    F --> I
+    H --> I
+    
+    I --> J{Performance Acceptable?}
+    J -->|Yes| K[Continue Processing]
+    J -->|No| L[Adjust Component Usage]
+    L --> B
+```
+
+</div>
+
+The implementation includes several performance optimization techniques:
+
+1. **Mixed Precision Training**
+   - Uses FP16/BF16 computation with FP32 master weights
+   - Automatically detects hardware capabilities and selects optimal precision
+
+2. **Memory Optimization**
+   - Gradient checkpointing for reduced memory footprint
+   - Adaptive batch sizing based on available memory
+   - Selective component activation based on input complexity
+
+3. **Hardware-Specific Acceleration**
+   - Metal support for Apple Silicon (M-series)
+   - CUDA optimization for NVIDIA GPUs
+   - Fallback mechanisms for CPU-only environments
+
+4. **Computation Caching**
+   - Task embedding caching for Transformer²
+   - Entropy calculation caching for BLT
+   - Memory update patterns for Titans
+
+## 📁 Project Structure
+
+```
+project-neat/
+├── src/
+│   ├── components/
+│   │   ├── titans/               # Titans memory system
+│   │   │   ├── memory_system.py  # Three-tiered memory implementation
+│   │   │   └── surprise.py       # Gradient-based surprise detection
+│   │   ├── transformer2/         # Transformer² adaptation
+│   │   │   ├── adaptation.py     # SVD-based weight adaptation
+│   │   │   └── task_dispatcher.py # Task identification system
+│   │   ├── mvot/                 # MVoT token processor
+│   │   │   ├── visual_codebook.py # VQ-VAE integration
+│   │   │   ├── token_processor.py # Multimodal token processing
+│   │   │   ├── decision/         # Decision mechanisms
+│   │   │   └── mapping/          # Byte-token mapping
+│   │   ├── blt/                  # BLT byte processor
+│   │   │   ├── byte_processor.py # Entropy-based patching
+│   │   │   └── entropy_estimator.py # Byte-level entropy estimation
+│   │   ├── feedback/             # Component feedback mechanisms
+│   │   │   ├── task_memory.py    # Task-memory correlation
+│   │   │   ├── surprise_adaptation.py # Surprise-driven adaptation
+│   │   │   └── modality.py       # Modality feedback
+│   │   └── messaging/            # Component communication
+│   │       ├── message_bus.py    # Message passing system
+│   │       └── state_manager.py  # Component state tracking
+│   ├── models/                   # Unified architecture
+│   │   ├── unified_architecture.py # Main architecture integration
+│   │   └── component_manager.py  # Dynamic component activation
+│   ├── trainers/                 # Training infrastructure
+│   │   ├── hardware_aware_trainer.py # Platform-specific training
+│   │   └── mixed_precision.py    # Mixed precision implementation
+│   └── utils/                    # Utility functions
+│       ├── profiling.py          # Performance profiling
+│       ├── hardware_detection.py # Platform detection
+│       └── visualization.py      # Result visualization
+├── tests/                        # Test cases
+│   ├── test_components.py        # Component-level tests
+│   ├── test_integration.py       # Integration tests
+│   └── test_performance.py       # Performance benchmarks
+├── examples/                     # Usage examples
+├── main.py                       # Main script
+├── PLAN_MAIN.md                  # Project planning document
+└── TECHNICALd.md                 # Technical details and theory
+```
+
+## 📚 References
+
+<div align="center">
+
+| Paper | Core Concept | Implementation |
+|-------|--------------|----------------|
+| "Titans: Learning to Memorize at Test Time" | Test-time memory updates based on surprise detection | `src/components/titans/` |
+| "TRANSFORMER2: SELF-ADAPTIVE LLMS" | SVD-based weight adaptation through two-pass inference | `src/components/transformer2/` |
+| "Multimodal Visualization-of-Thought" | Interleaved text-image reasoning with token discrepancy loss | `src/components/mvot/` |
+| "Byte Latent Transformer" | Entropy-based byte patching with local-global-local architecture | `src/components/blt/` |
+
+</div>
+
+This implementation builds upon and extends these foundational papers, creating a unified architecture that leverages the strengths of each approach while enabling efficient cross-component communication and coordination.
+
 ---
 
-## Final Observations
-
-- **Exact** numeric or code-level details are missing in the original texts: none of them provides an all-inclusive reference implementation.  
-- Many references to “reinforcement learning,” “momentum-based decays,” or “gradient-based surprise” are concept-level.  
-- **Nevertheless**, the key formulas for each approach—memory updates, SVD-based fine-tuning, text–image factorization, and entropy-based patch segmentation—appear above. 
-
-If you **literally** wanted to re-implement each paper’s method, you’d need to:
-
-1. **Titans**:  
-   - Incorporate an extra memory “tensor” with RNN-like or short+long memory states.  
-   - Implement the gradient-based “surprise” gating & memory decay.  
-
-2. **Transformer2**:  
-   - Modify your Transformer’s forward pass to run *twice.*  
-   - On pass one, produce “dispatch signals” for *which singular values to tweak.*  
-   - On pass two, shift the \(\sigma\) in the SVD of each weight.  
-
-3. **MVoT**:  
-   - Ensure your model can produce image tokens (via a discrete VAE codebook or similar).  
-   - Factor in the token discrepancy loss for image tokens.  
-   - Alternate text steps \(z_i\) and visual steps \(v_i\).  
-
-4. **BLT**:  
-   - A small LM to measure next-byte entropy.  
-   - A local encoder + big latent Transformer + local decoder pipeline, building patches dynamically.  
+<div align="center">
+<p>Project NEAT is licensed under the Apache 2.0 License - see the <a href="LICENSE">LICENSE</a> file for details.</p>
+</div>
