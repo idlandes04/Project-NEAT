@@ -44,12 +44,15 @@
 - **Key Insight 4**: Caching decompositions and task embeddings yields dramatic performance improvements for similar inputs.
 - **Key Insight 5**: Task embedding similarity matching enables efficient reuse of previous computations without sacrificing adaptation quality.
 
-### BLT Core Implementation (In Progress)
+### BLT Core Implementation (Completed 1.3.x)
 - **Key Insight 1**: The byte-level entropy estimator is critical for efficient patching - a small but well-trained model significantly improves patch quality.
 - **Key Insight 2**: Position embeddings in the byte LM are essential for capturing contextual patterns in the entropy calculation.
 - **Key Insight 3**: Caching processed data for the byte-level training significantly improves iteration speed during development.
 - **Key Insight 4**: The entropy threshold is the most critical hyperparameter - it directly controls the computation-accuracy tradeoff.
 - **Key Insight 5**: Adaptive loading of pretrained entropy models enables platform-agnostic deployment with graceful fallbacks.
+- **Key Insight 6**: Variable-length patch handling with proper masking is essential for efficient batch processing and handling different sequence lengths.
+- **Key Insight 7**: Computation budget management through adaptive entropy thresholds enables balancing between accuracy and performance.
+- **Key Insight 8**: Comprehensive profiling tools are vital for understanding and optimizing patch-based processing systems.
 
 ### Implementation Patterns
 - Use torch.utils.checkpoint.checkpoint for memory-efficient gradient computation

@@ -139,15 +139,15 @@
   - [x] Implement training loop with appropriate loss function
   - [x] Add checkpoint saving/loading for entropy estimator
 
-- [ ] 1.3.2 Develop variable-length patch handling in batched processing
-  - [ ] Design data structures for variable-length sequences
-  - [ ] Create efficient padding and masking mechanisms
-  - [ ] Implement length-aware attention computation
+- [x] 1.3.2 Develop variable-length patch handling in batched processing
+  - [x] Design data structures for variable-length sequences
+  - [x] Create efficient padding and masking mechanisms
+  - [x] Implement length-aware attention computation
 
-- [ ] 1.3.3 Add computation budget-aware patch boundary optimization
-  - [ ] Implement adaptive entropy threshold based on computation budget
-  - [ ] Create patch boundary post-processing for balanced computation
-  - [ ] Add profiling tools for patch-level computation
+- [x] 1.3.3 Add computation budget-aware patch boundary optimization
+  - [x] Implement adaptive entropy threshold based on computation budget
+  - [x] Create patch boundary post-processing for balanced computation
+  - [x] Add profiling tools for patch-level computation
 
 #### 1.4.0 MVoT Integration
 - [ ] 1.4.1 Create visual codebook integration framework
