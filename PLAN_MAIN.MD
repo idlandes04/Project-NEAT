@@ -118,10 +118,10 @@
   - [x] Create configurable decay parameters based on context length
 
 #### 1.2.0 Transformer² Adaptation Completion
-- [ ] 1.2.1 Extend SVD adaptation to transformer weight matrices
-  - [ ] Identify all weight matrices requiring adaptation
-  - [ ] Implement systematic SVD decomposition across layers
-  - [ ] Add configuration for selective adaptation of specific layers
+- [x] 1.2.1 Extend SVD adaptation to transformer weight matrices
+  - [x] Identify all weight matrices requiring adaptation
+  - [x] Implement systematic SVD decomposition across layers
+  - [x] Add configuration for selective adaptation of specific layers
 
 - [ ] 1.2.2 Create efficient SVD computation system
   - [ ] Implement randomized SVD for large matrices
