@@ -37,9 +37,20 @@
 - **Key Insight 4**: Memory management requires balancing between recency, importance, and surprise factors.
 - **Key Insight 5**: Gradient checkpointing significantly reduces memory overhead for long sequence processing.
 
+### Transformer² Adaptation Implementation (Completed 1.2.x)
+- **Key Insight 1**: SVD decomposition of weight matrices provides an efficient way to adapt models to specific tasks.
+- **Key Insight 2**: Randomized SVD significantly speeds up adaptation for large matrices while maintaining accuracy.
+- **Key Insight 3**: Adaptive precision in SVD (varying component count based on matrix properties) optimizes the computation-accuracy tradeoff.
+- **Key Insight 4**: Caching decompositions and task embeddings yields dramatic performance improvements for similar inputs.
+- **Key Insight 5**: Task embedding similarity matching enables efficient reuse of previous computations without sacrificing adaptation quality.
+
 ### Implementation Patterns
 - Use torch.utils.checkpoint.checkpoint for memory-efficient gradient computation
 - Implement fallback mechanisms when operations aren't supported on all platforms
 - Use adaptive parameters that adjust based on training/inference mode
 - Track usage statistics to inform memory management decisions
 - Implement platform-specific device detection and handling
+- Cache expensive computations (SVD, task embeddings) with appropriate invalidation strategies
+- Use similarity metrics for content-based lookup in caches
+- Apply pruning mechanisms based on recency and frequency for memory management
+- Use randomized algorithms when appropriate to speed up processing of large matrices
