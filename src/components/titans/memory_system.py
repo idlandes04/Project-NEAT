@@ -342,6 +342,111 @@ class SurpriseBasedMemory(nn.Module):
         # Increment memory usage
         self.memory_usage += 1
         
+    def _compute_efficient_gradient(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """
+        Memory-efficient gradient computation for surprise measurement.
+        
+        This method implements several optimizations for efficient gradient computation:
+        1. Gradient checkpointing to reduce memory usage
+        2. Gradient clipping for numerical stability
+        3. Chunked processing for large sequences
+        4. Platform-specific optimizations
+        
+        Args:
+            hidden_states: Input tensor of shape [batch_size, seq_len, hidden_size]
+            
+        Returns:
+            Surprise measure of shape [batch_size, seq_len, 1]
+        """
+        # Enable gradient computation
+        hidden_states.requires_grad_(True)
+        batch_size, seq_length, _ = hidden_states.shape
+        
+        # Use gradient checkpointing for memory efficiency when sequences are long
+        if seq_length > 32 and self.use_efficient_grad:
+            # Split the sequence into chunks for checkpointed processing
+            chunk_size = (seq_length + self.grad_checkpoint_segments - 1) // self.grad_checkpoint_segments
+            chunks = []
+            
+            for i in range(0, seq_length, chunk_size):
+                end_idx = min(i + chunk_size, seq_length)
+                chunk = hidden_states[:, i:end_idx, :]
+                chunks.append(chunk)
+            
+            # Process each chunk with gradient checkpointing
+            surprise_chunks = []
+            for chunk in chunks:
+                # Use torch.utils.checkpoint to save memory
+                chunk_surprise = torch.utils.checkpoint.checkpoint(
+                    self._compute_chunk_gradient,
+                    chunk
+                )
+                surprise_chunks.append(chunk_surprise)
+            
+            # Concatenate the chunks back together
+            surprise = torch.cat(surprise_chunks, dim=1)
+        else:
+            # For short sequences, compute directly
+            memory_output = self._query_memory(hidden_states)
+            assoc_loss = F.mse_loss(hidden_states, memory_output)
+            
+            # Compute gradient with respect to input
+            grads = torch.autograd.grad(
+                assoc_loss, 
+                hidden_states,
+                create_graph=False,
+                retain_graph=False
+            )[0]
+            
+            # Apply gradient clipping for stability
+            if not self.training:
+                # Compute norm and clip
+                grad_norm = torch.norm(grads, p=2)
+                if grad_norm > self.grad_max_norm:
+                    grads = grads * (self.grad_max_norm / (grad_norm + 1e-6))
+            
+            # Compute surprise measure
+            surprise = grads.abs().mean(dim=-1, keepdim=True)
+        
+        return surprise
+    
+    def _compute_chunk_gradient(self, chunk: torch.Tensor) -> torch.Tensor:
+        """
+        Helper method for checkpointed gradient computation on a chunk.
+        
+        Args:
+            chunk: Input tensor chunk of shape [batch_size, chunk_len, hidden_size]
+            
+        Returns:
+            Surprise measure for the chunk
+        """
+        # Ensure gradient is enabled
+        chunk.requires_grad_(True)
+        
+        # Query memory for this chunk
+        memory_output = self._query_memory(chunk)
+        assoc_loss = F.mse_loss(chunk, memory_output)
+        
+        # Compute gradient
+        grads = torch.autograd.grad(
+            assoc_loss,
+            chunk,
+            create_graph=False,
+            retain_graph=False
+        )[0]
+        
+        # Apply gradient clipping for stability
+        if not self.training:
+            # Compute norm and clip
+            grad_norm = torch.norm(grads, p=2)
+            if grad_norm > self.grad_max_norm:
+                grads = grads * (self.grad_max_norm / (grad_norm + 1e-6))
+        
+        # Compute surprise measure
+        surprise = grads.abs().mean(dim=-1, keepdim=True)
+        
+        return surprise
+    
     # Keep original method for backward compatibility
     def _update_memory(self, hidden_states: torch.Tensor, surprise: torch.Tensor) -> None:
         """
