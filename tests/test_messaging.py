@@ -499,13 +499,25 @@ class TestComponentState(unittest.TestCase):
         
     def test_state_subscription(self):
         """Test state subscription."""
-        # Use a simpler approach with a local class to avoid monkeypatching globals
+        # Use a simpler approach with a local class to handle the real StateManager implementation
         class MockStateManager(StateManager):
             def __init__(self):
                 super().__init__()
                 self.notifications = []
                 
-            def _notify_subscribers(self, state):
+            # Instead of mocking _notify_subscribers, override register_state and update_state
+            # since those are the methods that now handle notifications in our new implementation
+            def register_state(self, state):
+                super().register_state(state)
+                self._capture_notifications(state)
+                
+            def update_state(self, state_type, component, value):
+                super().update_state(state_type, component, value)
+                # Find the state we just updated
+                if state_type in self.states and component in self.states[state_type]:
+                    self._capture_notifications(self.states[state_type][component])
+                    
+            def _capture_notifications(self, state):
                 if state.state_type in self.subscribers:
                     for subscriber in self.subscribers[state.state_type]:
                         if subscriber != state.component:

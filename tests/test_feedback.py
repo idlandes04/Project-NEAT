@@ -54,6 +54,9 @@ class MockModel:
         self.byte_processor.enable_entropy_signaling = MagicMock()
 
 
+from tests import add_timeout
+
+@add_timeout
 class TestTaskMemoryFeedback(unittest.TestCase):
     """Tests for the task-memory feedback loop."""
     
@@ -90,6 +93,8 @@ class TestTaskMemoryFeedback(unittest.TestCase):
     def _handle_memory_update(self, message):
         """Handle memory update messages for testing."""
         self.received_messages.append(message)
+        # Log for debugging
+        print(f"TEST: Received memory update message: {message.msg_type} from {message.sender}")
     
     def test_task_identified_handling(self):
         """Test handling of task identification messages."""
@@ -165,6 +170,7 @@ class TestTaskMemoryFeedback(unittest.TestCase):
         self.assertNotIn(13, self.feedback.task_memory_map[task_id])  # Position with low surprise
 
 
+@add_timeout
 class TestAdaptationFeedback(unittest.TestCase):
     """Tests for the adaptation feedback loop."""
     
@@ -287,6 +293,7 @@ class TestAdaptationFeedback(unittest.TestCase):
         self.assertIn(task_id, priority_message.content["adaptation_priorities"])
 
 
+@add_timeout
 class TestModalityFeedback(unittest.TestCase):
     """Tests for the modality feedback loop."""
     
