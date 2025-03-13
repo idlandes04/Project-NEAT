@@ -346,6 +346,56 @@ class TestTransformer2Adaptation(unittest.TestCase):
         # Test the complete two-pass inference
         final_output = adaptation.two_pass_inference(hidden_states)
         self.assertEqual(final_output.shape, hidden_states.shape)
+        
+    def test_task_embedding_cache(self):
+        """Test task embedding cache with similarity matching."""
+        # Create adaptation with task embedding cache
+        mini_config = deepcopy(self.config)
+        mini_config.transformer2.max_task_cache_size = 10
+        mini_config.transformer2.task_similarity_threshold = 0.8
+        adaptation = Transformer2Adaptation(mini_config)
+        
+        # Create some input tensors
+        input1 = torch.randn(1, 5, self.config.hidden_size)
+        input2 = input1 + 0.1 * torch.randn_like(input1)  # Similar to input1
+        input3 = torch.randn(1, 5, self.config.hidden_size)  # Different from input1
+        
+        # Generate task embeddings
+        task_embedding1 = torch.randn(1, mini_config.transformer2.num_tasks)
+        task_embedding2 = torch.randn(1, mini_config.transformer2.num_tasks)
+        
+        # Add to cache
+        pooled_input1 = input1.mean(dim=1)
+        adaptation.add_to_task_cache(pooled_input1, task_embedding1)
+        
+        # Test finding similar task
+        pooled_input2 = input2.mean(dim=1)
+        similar_result = adaptation.find_similar_task(pooled_input2)
+        
+        # Should find a match for input2 (similar to input1)
+        self.assertIsNotNone(similar_result)
+        similar_embedding, metadata = similar_result
+        self.assertTrue(torch.allclose(similar_embedding, task_embedding1))
+        
+        # Test with dissimilar input
+        pooled_input3 = input3.mean(dim=1)
+        dissimilar_result = adaptation.find_similar_task(pooled_input3)
+        
+        # Should not find a match for input3 (different from input1)
+        self.assertIsNone(dissimilar_result)
+        
+        # Test cache pruning
+        for i in range(15):  # Add more entries than max_cache_size
+            test_input = torch.randn(1, 5, self.config.hidden_size)
+            test_embedding = torch.randn(1, mini_config.transformer2.num_tasks)
+            adaptation.add_to_task_cache(test_input.mean(dim=1), test_embedding)
+        
+        # Cache should be pruned to max size
+        self.assertLessEqual(len(adaptation.task_embedding_cache), mini_config.transformer2.max_task_cache_size)
+        
+        # Test clear cache
+        adaptation.clear_task_cache()
+        self.assertEqual(len(adaptation.task_embedding_cache), 0)
 
 
 class TestMVoTTokenProcessor(unittest.TestCase):

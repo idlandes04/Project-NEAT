@@ -210,6 +210,11 @@ class SVDAdaptation(nn.Module):
             torch.zeros(1, self.num_tasks)
         )
         
+        # Task embedding cache parameters
+        self.max_cache_size = 100  # Max number of task embeddings to cache
+        self.similarity_threshold = 0.8  # Minimum similarity for re-using task embeddings
+        self.task_embedding_cache = []  # List of (hidden_states, task_embedding) tuples
+        
         # Layer normalization
         self.layer_norm = nn.LayerNorm(self.hidden_size, eps=1e-12)
         
@@ -769,7 +774,12 @@ class Transformer2Adaptation(nn.Module):
         self.cache_first_pass = config.transformer2.cache_first_pass
         self.reuse_threshold = config.transformer2.reuse_threshold
         
-        # Cache for first pass results
+        # Advanced task embedding cache
+        self.task_embedding_cache = []  # List of (input_repr, task_embedding, metadata) tuples
+        self.max_task_cache_size = config.transformer2.max_task_cache_size if hasattr(config.transformer2, "max_task_cache_size") else 50
+        self.task_similarity_threshold = config.transformer2.task_similarity_threshold if hasattr(config.transformer2, "task_similarity_threshold") else 0.85
+        
+        # Legacy cache (for backward compatibility)
         self.first_pass_cache = {}
     
     def forward(
@@ -826,6 +836,114 @@ class Transformer2Adaptation(nn.Module):
         """
         if self.svd_adaptation is not None:
             self.svd_adaptation.clear_svd_cache(clear_persistent)
+            
+    def clear_task_cache(self) -> None:
+        """Clear the task embedding cache."""
+        self.task_embedding_cache = []
+        self.first_pass_cache = {}  # Also clear legacy cache
+    
+    def find_similar_task(self, input_repr: torch.Tensor) -> Optional[Tuple[torch.Tensor, Dict]]:
+        """
+        Find a similar task in the cache based on input representation.
+        
+        Args:
+            input_repr: Input representation tensor
+            
+        Returns:
+            Tuple of (task_embedding, metadata) if a similar task is found, None otherwise
+        """
+        if not self.task_embedding_cache:
+            return None
+            
+        # Use cosine similarity for fast matching
+        best_similarity = -1.0
+        best_match = None
+        
+        # Normalize input for cosine similarity
+        input_norm = F.normalize(input_repr, p=2, dim=-1)
+        
+        # Check all cached tasks
+        for cached_repr, task_embedding, metadata in self.task_embedding_cache:
+            # Normalize cached representation
+            cached_norm = F.normalize(cached_repr, p=2, dim=-1)
+            
+            # Compute cosine similarity
+            similarity = torch.matmul(input_norm, cached_norm.t()).item()
+            
+            # Update best match if similarity is higher
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match = (task_embedding, metadata)
+        
+        # Return the best match if similarity is above threshold
+        if best_similarity >= self.task_similarity_threshold:
+            return best_match
+        
+        return None
+    
+    def add_to_task_cache(
+        self, 
+        input_repr: torch.Tensor, 
+        task_embedding: torch.Tensor,
+        metadata: Optional[Dict] = None
+    ) -> None:
+        """
+        Add a task embedding to the cache.
+        
+        Args:
+            input_repr: Input representation tensor
+            task_embedding: Task embedding tensor
+            metadata: Optional metadata dict
+        """
+        # Create metadata if not provided
+        if metadata is None:
+            metadata = {
+                "timestamp": time.time(),
+                "usage_count": 0
+            }
+        
+        # Add to cache
+        self.task_embedding_cache.append((
+            input_repr.detach(),
+            task_embedding.detach(),
+            metadata
+        ))
+        
+        # Prune cache if it exceeds max size
+        if len(self.task_embedding_cache) > self.max_task_cache_size:
+            self._prune_task_cache()
+    
+    def _prune_task_cache(self) -> None:
+        """
+        Prune the task embedding cache using a combination of recency and usage.
+        """
+        if not self.task_embedding_cache:
+            return
+            
+        # Compute score for each cache entry based on recency and usage
+        scores = []
+        current_time = time.time()
+        
+        for i, (_, _, metadata) in enumerate(self.task_embedding_cache):
+            # Recency score (inverse of age, normalized)
+            age = current_time - metadata.get("timestamp", 0)
+            recency_score = 1.0 / (1.0 + age / 3600.0)  # Normalize by hour
+            
+            # Usage score (normalized by max usage)
+            usage_count = metadata.get("usage_count", 0)
+            max_usage = max(1, max(m.get("usage_count", 0) for _, _, m in self.task_embedding_cache))
+            usage_score = usage_count / max_usage
+            
+            # Combined score (weighted sum)
+            score = 0.7 * recency_score + 0.3 * usage_score
+            scores.append((i, score))
+            
+        # Sort by score (descending)
+        scores.sort(key=lambda x: x[1], reverse=True)
+        
+        # Keep only top entries
+        keep_indices = [i for i, _ in scores[:self.max_task_cache_size]]
+        self.task_embedding_cache = [self.task_embedding_cache[i] for i in keep_indices]
     
     def apply_adaptation_to_model(self, model) -> None:
         """
@@ -897,15 +1015,45 @@ class Transformer2Adaptation(nn.Module):
         Returns:
             Output tensor of shape [batch_size, seq_len, hidden_size]
         """
-        # Check if we can reuse cached results
+        # Get pooled representation for efficient cache lookups
+        batch_size = hidden_states.shape[0]
+        pooled_hidden_states = hidden_states.mean(dim=1)
+        
+        # Look for similar task in cache
+        cache_result = self.find_similar_task(pooled_hidden_states)
+        
+        if cache_result is not None:
+            # We found a similar task in the cache
+            cached_task_embedding, metadata = cache_result
+            
+            # Update usage count
+            metadata["usage_count"] = metadata.get("usage_count", 0) + 1
+            metadata["last_used"] = time.time()
+            
+            if self.svd_adaptation is not None:
+                self.svd_adaptation.set_task_embedding(cached_task_embedding)
+                
+                # Apply adaptation to model if provided
+                if model is not None:
+                    self.apply_adaptation_to_model(model)
+                    return hidden_states
+                
+                # Log cache hit
+                print(f"Task cache hit (similarity: {metadata.get('similarity', 0):.4f}, "
+                      f"usage count: {metadata.get('usage_count', 0)})")
+                
+                return self.svd_adaptation(hidden_states)
+            else:
+                return hidden_states
+        
+        # For backward compatibility, also check legacy cache
         if self.cache_first_pass and self.first_pass_cache:
             # Compute similarity with cached inputs
             for cache_key, (cached_input, cached_task_embedding) in self.first_pass_cache.items():
                 # Simple similarity measure: cosine similarity of mean pooled representations
-                pooled_input = hidden_states.mean(dim=1)
                 pooled_cached = cached_input.mean(dim=1)
                 
-                similarity = F.cosine_similarity(pooled_input, pooled_cached, dim=1).mean()
+                similarity = F.cosine_similarity(pooled_hidden_states, pooled_cached, dim=1).mean()
                 
                 # If similarity is above threshold, reuse cached task embedding
                 if similarity > self.reuse_threshold:
@@ -915,20 +1063,31 @@ class Transformer2Adaptation(nn.Module):
                         # Apply adaptation to model if provided
                         if model is not None:
                             self.apply_adaptation_to_model(model)
-                            
-                        return hidden_states if model is not None else self.svd_adaptation(hidden_states)
+                            return hidden_states
+                        
+                        return self.svd_adaptation(hidden_states)
                     else:
                         return hidden_states
         
+        # No cache hit, need to perform first pass
         # First pass: identify task
         task_embedding = self.forward(hidden_states, first_pass=True)
         
-        # Cache first pass results
+        # Cache task embedding
+        metadata = {
+            "timestamp": time.time(),
+            "usage_count": 1,
+            "last_used": time.time(),
+            "batch_size": batch_size
+        }
+        self.add_to_task_cache(pooled_hidden_states, task_embedding, metadata)
+        
+        # Also add to legacy cache for backward compatibility
         if self.cache_first_pass:
             cache_key = f"cache_{len(self.first_pass_cache)}"
             self.first_pass_cache[cache_key] = (hidden_states.detach(), task_embedding.detach())
             
-            # Limit cache size
+            # Limit legacy cache size
             if len(self.first_pass_cache) > 10:
                 # Remove oldest entry
                 oldest_key = next(iter(self.first_pass_cache))
@@ -965,14 +1124,11 @@ class OptimizedTwoPassInference:
         # Initialize adaptation with model
         self.adaptation.initialize_with_model(model)
         
-        # Cache for first pass results
-        self.first_pass_cache = {}
+        # Initialize caches
+        # The adaptation system has its own task embedding cache
         
-        # Cache for intermediate activations
-        self.activation_cache = {}
-        
-        # Cache for SVD decompositions
-        self.svd_cache = {}
+        # Additional caches for optimized inference
+        self.activation_cache = {}  # Cache for intermediate activations
     
     def __call__(
         self,

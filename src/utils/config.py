@@ -64,6 +64,10 @@ class Transformer2Config:
     # Two-pass inference parameters
     cache_first_pass: bool = True
     reuse_threshold: float = 0.9
+    
+    # Task embedding cache parameters
+    max_task_cache_size: int = 50  # Maximum number of task embeddings to store
+    task_similarity_threshold: float = 0.85  # Minimum similarity for reusing cached embeddings
 
 
 @dataclasses.dataclass
