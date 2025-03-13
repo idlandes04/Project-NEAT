@@ -122,9 +122,18 @@ class SurpriseBasedMemory(nn.Module):
         self.surprise_threshold = config.titans.surprise_threshold
         self.max_memory_updates_per_step = config.titans.max_memory_updates_per_step
         
-        # Decay rate for importance scores
-        self.training_decay_rate = 0.99
-        self.inference_decay_rate = 0.995
+        # Adaptive decay parameters
+        self.max_context_length = config.max_position_embeddings
+        self.base_decay_rate = 0.99  # Base decay rate for importance scores
+        self.training_decay_rate = self.base_decay_rate
+        self.inference_decay_rate = self.base_decay_rate + 0.005  # Slightly slower decay during inference
+        
+        # Memory management parameters
+        self.memory_prune_threshold = 0.1  # Threshold for pruning low-importance memories
+        self.importance_half_life = 1000  # Steps for importance to decay by half
+        self.usage_weight = 0.3  # Weight of usage in importance calculation
+        self.surprise_weight = 0.7  # Weight of surprise in importance calculation
+        self.max_memory_age = 10000  # Maximum age before forced decay
         
         # Memory storage (initialized on CPU for compatibility, will move to correct device during forward)
         self.register_buffer(
@@ -138,11 +147,26 @@ class SurpriseBasedMemory(nn.Module):
             torch.zeros(1, self.memory_size)
         )
         
-        # Memory usage counter
+        # Memory usage counter - tracks how many times memory has been accessed
         self.register_buffer(
             "memory_usage",
             torch.zeros(1, self.memory_size, dtype=torch.long)
         )
+        
+        # Memory age counter - tracks how long since memory was updated
+        self.register_buffer(
+            "memory_age",
+            torch.zeros(1, self.memory_size, dtype=torch.long)
+        )
+        
+        # Memory access timestamps - for recency calculation
+        self.register_buffer(
+            "last_access_time",
+            torch.zeros(1, self.memory_size, dtype=torch.long)
+        )
+        
+        # Global step counter for decay and timestamp calculations
+        self.register_buffer("global_step", torch.tensor([0], dtype=torch.long))
         
         # Layer normalization
         self.layer_norm = nn.LayerNorm(self.hidden_size, eps=1e-12)
@@ -238,10 +262,112 @@ class SurpriseBasedMemory(nn.Module):
         # Apply softmax to get attention weights
         attention_weights = F.softmax(similarity, dim=-1)
         
+        # Update memory usage statistics
+        # First, get the indices of the top-k accessed memory slots
+        _, top_indices = torch.topk(
+            attention_weights.mean(dim=1),  # Average over sequence length
+            k=min(5, self.memory_size),     # Track top 5 accessed slots
+            dim=-1
+        )
+        
+        # Update usage counter and last access time for accessed memories
+        for i in range(top_indices.size(1)):
+            idx = top_indices[0, i].item()
+            self.memory_usage[0, idx] += 1
+            self.last_access_time[0, idx] = self.global_step.item()
+        
         # Retrieve memory based on attention weights
         retrieved_memory = torch.matmul(attention_weights, self.memory)
         
+        # Increment global step
+        self.global_step += 1
+        
         return retrieved_memory
+        
+    def _calculate_adaptive_decay_rate(self) -> float:
+        """
+        Calculate context-length-aware adaptive decay rate.
+        
+        Returns:
+            Adaptive decay rate based on context length and training mode
+        """
+        # Base decay rate depends on training mode
+        base_rate = self.training_decay_rate if self.training else self.inference_decay_rate
+        
+        # Adjust decay based on context length - longer contexts need slower decay
+        context_factor = math.log(1 + self.max_context_length / 512) * 0.01
+        
+        # Calculate adaptive rate (clamped to reasonable bounds)
+        adaptive_rate = min(0.999, max(0.95, base_rate + context_factor))
+        
+        return adaptive_rate
+    
+    def _manage_memory_with_adaptive_decay(self) -> None:
+        """
+        Apply adaptive memory management and decay based on usage patterns.
+        
+        This method implements:
+        1. Importance-based memory decay
+        2. Age-based memory pruning
+        3. Usage-based importance scoring
+        4. Adaptive decay rate based on context length
+        """
+        # Calculate the adaptive decay rate
+        decay_rate = self._calculate_adaptive_decay_rate()
+        
+        # Age metrics
+        # Increment age for all memory slots
+        self.memory_age += 1
+        
+        # Calculate recency (how recently the memory was accessed)
+        current_step = self.global_step.item()
+        recency = torch.clamp(
+            1.0 - (current_step - self.last_access_time).float() / self.max_memory_age,
+            min=0.0,
+            max=1.0
+        )
+        
+        # Normalize usage for importance calculation
+        normalized_usage = torch.log1p(self.memory_usage.float()) / \
+                          torch.log1p(torch.max(self.memory_usage.float()) + 1e-6)
+        
+        # Compute combined importance score from usage and surprise
+        combined_importance = (
+            self.surprise_weight * self.importance_scores + 
+            self.usage_weight * normalized_usage * recency
+        )
+        
+        # Update importance scores with the combined value
+        self.importance_scores = combined_importance
+        
+        # Apply adaptive decay to importance scores
+        self.importance_scores = self.importance_scores * decay_rate
+        
+        # Reset importance for very old, unused memories
+        old_unused_mask = (self.memory_age > self.max_memory_age) & \
+                           (self.memory_usage < 5)
+        
+        if old_unused_mask.any():
+            # Force decay old unused memories more aggressively
+            old_indices = torch.where(old_unused_mask)[1]
+            for idx in old_indices:
+                # Apply strong decay to old, unused memories
+                self.importance_scores[0, idx] *= 0.5
+                
+                # If truly unused (below threshold), mark for potential reuse
+                if self.importance_scores[0, idx] < self.memory_prune_threshold:
+                    self.importance_scores[0, idx] = 0.0
+                    self.memory_age[0, idx] = 0
+                    
+        # Memory usage statistics
+        memory_fill_percent = (self.importance_scores > 0).float().mean().item() * 100
+        
+        # Optional: Print memory statistics periodically (e.g., every 1000 steps)
+        if self.global_step.item() % 1000 == 0:
+            print(f"Memory stats: Fill={memory_fill_percent:.1f}%, "
+                  f"Max importance={self.importance_scores.max().item():.4f}, "
+                  f"Avg age={self.memory_age.float().mean().item():.1f}, "
+                  f"Decay rate={decay_rate:.4f}")
     
     def _update_memory_with_safeguards(self, hidden_states: torch.Tensor, surprise: torch.Tensor) -> None:
         """
@@ -334,13 +460,8 @@ class SurpriseBasedMemory(nn.Module):
             self.importance_scores[0, idx] = high_surprise_values[i]
             self.memory_usage[0, idx] = 0
         
-        # Decay importance scores
-        # Use slower decay during inference for stability
-        decay_factor = self.training_decay_rate if self.training else self.inference_decay_rate
-        self.importance_scores *= decay_factor
-        
-        # Increment memory usage
-        self.memory_usage += 1
+        # Apply adaptive memory management and decay
+        self._manage_memory_with_adaptive_decay()
         
     def _compute_efficient_gradient(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
