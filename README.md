@@ -482,20 +482,16 @@ project-neat/
 └── TECHNICALd.md                 # Technical details and theory
 ```
 
-## 📚 References
-
 <div align="center">
 
 | Paper | Core Concept | Implementation |
 |-------|--------------|----------------|
-| "Titans: Learning to Memorize at Test Time" | Test-time memory updates based on surprise detection | `src/components/titans/` |
-| "TRANSFORMER2: SELF-ADAPTIVE LLMS" | SVD-based weight adaptation through two-pass inference | `src/components/transformer2/` |
-| "Multimodal Visualization-of-Thought" | Interleaved text-image reasoning with token discrepancy loss | `src/components/mvot/` |
-| "Byte Latent Transformer" | Entropy-based byte patching with local-global-local architecture | `src/components/blt/` |
+| ["Titans: Learning to Memorize at Test Time"](https://arxiv.org/abs/2501.00663) | Test-time memory updates based on surprise detection | `src/components/titans/` |
+| ["TRANSFORMER2: SELF-ADAPTIVE LLMS"](https://arxiv.org/html/2501.06252v2) | SVD-based weight adaptation through two-pass inference | `src/components/transformer2/` |
+| ["Multimodal Visualization-of-Thought"](https://arxiv.org/abs/2501.07542) | Interleaved text-image reasoning with token discrepancy loss | `src/components/mvot/` |
+| ["Byte Latent Transformer"](https://arxiv.org/abs/2412.09871) | Entropy-based byte patching with local-global-local architecture | `src/components/blt/` |
 
 </div>
-
-This implementation builds upon and extends these foundational papers, creating a unified architecture that leverages the strengths of each approach while enabling efficient cross-component communication and coordination.
 
 ---
 
