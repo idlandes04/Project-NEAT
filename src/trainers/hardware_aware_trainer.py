@@ -13,7 +13,9 @@ import torch.optim as optim
 from typing import Dict, List, Optional, Tuple, Union, Any, Callable
 
 from ..utils.memory_optimization import GPUMemoryTracker, ResourceAllocator, GPUMemoryOptimizer, enable_mixed_precision
+from ..utils.component_resource_management import ComponentResourceManager, ResourceType
 from ..models.unified_architecture import UnifiedArchitecture, DynamicComponentController
+from ..models.unified_architecture_resource_adapter import ResourceAwareUnifiedArchitecture
 
 
 class HardwareAwareTrainer:
@@ -31,10 +33,11 @@ class HardwareAwareTrainer:
     
     def __init__(
         self,
-        model: UnifiedArchitecture,
+        model: Union[UnifiedArchitecture, ResourceAwareUnifiedArchitecture],
         config,
         optimizer: Optional[torch.optim.Optimizer] = None,
         lr_scheduler: Optional[Any] = None,
+        use_resource_aware: bool = True
     ):
         """
         Initialize the hardware-aware trainer.
@@ -44,9 +47,20 @@ class HardwareAwareTrainer:
             config: Training configuration
             optimizer: Optimizer (if None, will be created)
             lr_scheduler: Learning rate scheduler (if None, will be created)
+            use_resource_aware: Whether to use resource-aware components
         """
-        self.model = model
+        # Convert to resource-aware model if requested and needed
+        if use_resource_aware and not isinstance(model, ResourceAwareUnifiedArchitecture):
+            self.model = ResourceAwareUnifiedArchitecture(config)
+            # Copy weights from the original model if needed
+            if hasattr(model, 'state_dict'):
+                # Only copy if the model has parameters
+                self.model.load_state_dict(model.state_dict())
+        else:
+            self.model = model
+        
         self.config = config
+        self.use_resource_aware = use_resource_aware
         
         # Move model to device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -63,19 +77,23 @@ class HardwareAwareTrainer:
         self.lr_scheduler = lr_scheduler or self._create_lr_scheduler()
         
         # Set up mixed precision training
-        self.scaler = enable_mixed_precision() if config.mixed_precision else None
+        self.scaler = enable_mixed_precision() if hasattr(config, 'mixed_precision') and config.mixed_precision else None
         
         # Set up memory tracking
         self.memory_tracker = GPUMemoryTracker()
         
         # Set up resource allocation
-        self.resource_allocator = ResourceAllocator(
-            gpu_threshold=config.gpu_memory_threshold,
-            cpu_threshold=config.cpu_memory_threshold
-        )
+        gpu_threshold = getattr(config, 'gpu_memory_threshold', 0.8)
+        cpu_threshold = getattr(config, 'cpu_memory_threshold', 0.7)
+        self.resource_allocator = ResourceAllocator(config)
         
-        # Set up dynamic component controller
-        self.component_controller = DynamicComponentController(model, config)
+        # Use resource manager if available, otherwise use component controller
+        if hasattr(self.model, 'resource_manager'):
+            self.resource_manager = self.model.resource_manager
+            self.component_controller = None
+        else:
+            self.resource_manager = None
+            self.component_controller = DynamicComponentController(model, config)
         
         # Training state
         self.global_step = 0
@@ -183,8 +201,14 @@ class HardwareAwareTrainer:
                 batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
                 
                 # Optimize component activation based on input complexity
-                if self.config.dynamic_component_activation:
-                    self.component_controller.optimize_for_input(batch["input_ids"])
+                if hasattr(self.config, 'dynamic_component_activation') and self.config.dynamic_component_activation:
+                    if self.component_controller:
+                        self.component_controller.optimize_for_input(batch["input_ids"])
+                    elif self.use_resource_aware and hasattr(self.model, 'optimize_for_hardware'):
+                        # Use resource-aware optimization
+                        memory_stats = self.memory_tracker.end_tracking()
+                        available_memory = memory_stats.get("total_memory", 0) - memory_stats.get("used_memory", 0)
+                        self.model.optimize_for_hardware(available_memory)
                 
                 # Training step
                 loss, metrics = self.training_step(batch, batch_idx)
@@ -241,10 +265,25 @@ class HardwareAwareTrainer:
         # Start memory tracking
         self.memory_tracker.start_tracking()
         
+        # Request resources for this step if using resource-aware model
+        train_resources = {}
+        if self.use_resource_aware and hasattr(self.model, 'transformer_resources'):
+            autocast_context = None
+            
+            # Request additional resources for training
+            if hasattr(self.model, 'transformer_resources'):
+                train_resources = self.model.transformer_resources.request_resources(
+                    operations=["training_step"]
+                )
+                autocast_context = train_resources.get("autocast")
+        
         # Forward pass with mixed precision
-        with torch.cuda.amp.autocast(enabled=self.config.mixed_precision):
+        mixed_precision = hasattr(self.config, 'mixed_precision') and self.config.mixed_precision
+        max_grad_norm = getattr(self.config, 'max_grad_norm', 1.0)
+        
+        with torch.cuda.amp.autocast(enabled=mixed_precision):
             outputs = self.model(**batch)
-            loss = outputs["logits"] if isinstance(outputs, dict) and "loss" in outputs else outputs[0]
+            loss = outputs["loss"] if isinstance(outputs, dict) and "loss" in outputs else outputs[0]
             
             # Scale loss for gradient accumulation
             loss = loss / self.gradient_accumulation_steps
@@ -256,7 +295,7 @@ class HardwareAwareTrainer:
             # Optimizer step with gradient accumulation
             if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
                 self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.optimizer.zero_grad()
@@ -269,7 +308,7 @@ class HardwareAwareTrainer:
             
             # Optimizer step with gradient accumulation
             if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
                 self.optimizer.step()
                 self.optimizer.zero_grad()
                 
@@ -280,12 +319,23 @@ class HardwareAwareTrainer:
         # End memory tracking
         memory_stats = self.memory_tracker.end_tracking()
         
+        # Release resources if using resource-aware model
+        if train_resources:
+            if hasattr(self.model, 'transformer_resources'):
+                self.model.transformer_resources.release_resources(train_resources)
+        
+        # Get memory pressure if using resource-aware model
+        memory_pressure = 0.0
+        if self.resource_manager:
+            memory_pressure = self.resource_manager.get_memory_pressure()
+        
         # Collect metrics
         metrics = {
             "loss": loss.item() * self.gradient_accumulation_steps,
             "learning_rate": self.optimizer.param_groups[0]["lr"],
             "memory_used": memory_stats["used_memory"],
             "memory_peak": memory_stats["peak_memory"],
+            "memory_pressure": memory_pressure
         }
         
         return loss.item() * self.gradient_accumulation_steps, metrics
@@ -310,6 +360,13 @@ class HardwareAwareTrainer:
         # Start memory tracking
         self.memory_tracker.start_tracking()
         
+        # Request evaluation resources if using resource-aware model
+        eval_resources = {}
+        if self.use_resource_aware and hasattr(self.model, 'transformer_resources'):
+            eval_resources = self.model.transformer_resources.request_resources(
+                operations=["evaluation_step"]
+            )
+        
         with torch.no_grad():
             for batch in eval_dataloader:
                 # Move batch to device
@@ -317,7 +374,7 @@ class HardwareAwareTrainer:
                 
                 # Forward pass
                 outputs = self.model(**batch)
-                loss = outputs["logits"] if isinstance(outputs, dict) and "loss" in outputs else outputs[0]
+                loss = outputs["loss"] if isinstance(outputs, dict) and "loss" in outputs else outputs[0]
                 
                 # Accumulate loss
                 total_loss += loss.item()
@@ -326,11 +383,21 @@ class HardwareAwareTrainer:
         # End memory tracking
         memory_stats = self.memory_tracker.end_tracking()
         
+        # Release evaluation resources if using resource-aware model
+        if eval_resources and hasattr(self.model, 'transformer_resources'):
+            self.model.transformer_resources.release_resources(eval_resources)
+        
+        # Get memory pressure if using resource-aware model
+        memory_pressure = 0.0
+        if self.resource_manager:
+            memory_pressure = self.resource_manager.get_memory_pressure()
+        
         # Calculate metrics
         metrics = {
             "eval_loss": total_loss / num_batches,
             "eval_memory_used": memory_stats["used_memory"],
             "eval_memory_peak": memory_stats["peak_memory"],
+            "eval_memory_pressure": memory_pressure
         }
         
         return metrics
@@ -399,6 +466,21 @@ class HardwareAwareTrainer:
         Returns:
             Optimal batch size
         """
+        # If using resource-aware model, consider memory pressure
+        if self.resource_manager:
+            memory_pressure = self.resource_manager.get_memory_pressure()
+            
+            # If memory pressure is high, reduce max batch size
+            if memory_pressure > 0.7:
+                adjusted_max = int(max_batch_size * (1.0 - memory_pressure))
+                adjusted_max = max(min_batch_size, adjusted_max)
+                
+                # Use resource allocator with adjusted max
+                return self.resource_allocator.allocate_batch_size(
+                    self.model, sample_batch, min_batch_size, adjusted_max
+                )
+        
+        # Otherwise use standard resource allocator
         return self.resource_allocator.allocate_batch_size(
             self.model, sample_batch, min_batch_size, max_batch_size
         )

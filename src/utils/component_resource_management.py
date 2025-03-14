@@ -1,0 +1,1138 @@
+"""
+Component resource management system for dynamic allocation of memory and compute.
+
+This module implements a resource management system that allows components
+to request and release memory and compute resources based on their importance.
+It provides mechanisms for dynamic budgeting, priority-based allocation,
+and component-specific optimization.
+"""
+import os
+import gc
+import time
+import threading
+import logging
+import numpy as np
+from typing import Dict, List, Optional, Tuple, Union, Any, Callable
+from dataclasses import dataclass
+from enum import Enum
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+from .memory_optimization import GPUMemoryTracker, CPUMemoryTracker, get_memory_stats
+
+
+class ResourceType(Enum):
+    """Resource types that can be managed."""
+    MEMORY_GPU = "memory_gpu"
+    MEMORY_CPU = "memory_cpu"
+    COMPUTE_GPU = "compute_gpu"
+    COMPUTE_CPU = "compute_cpu"
+    PRECISION = "precision"
+
+
+class AllocationPriority(Enum):
+    """Priority levels for resource allocation."""
+    CRITICAL = 5  # Must have resources
+    HIGH = 4      # Important for core functionality
+    MEDIUM = 3    # Enhances performance
+    LOW = 2       # Optional, can function without
+    BACKGROUND = 1  # Lowest priority, can be deferred
+
+
+@dataclass
+class ResourceRequest:
+    """Resource request from a component."""
+    component_id: str
+    resource_type: ResourceType
+    amount: int  # Amount in bytes for memory, milliseconds for compute, bits for precision
+    priority: AllocationPriority
+    flexible: bool = False  # Whether the amount is flexible (can be reduced)
+    minimum_amount: Optional[int] = None  # Minimum acceptable amount if flexible
+
+
+@dataclass
+class ResourceAllocation:
+    """Resource allocation to a component."""
+    component_id: str
+    resource_type: ResourceType
+    amount: int  # Allocated amount
+    allocation_id: str  # Unique ID for this allocation
+    expiration: Optional[float] = None  # Expiration time (None = no expiration)
+
+
+@dataclass
+class ComponentProfile:
+    """Profile of a component's resource usage patterns."""
+    component_id: str
+    typical_memory_usage: Dict[str, int]  # GPU and CPU memory in bytes
+    typical_compute_usage: Dict[str, int]  # GPU and CPU compute in milliseconds
+    precision_requirements: Dict[str, int]  # Operation name to required precision in bits
+    importance_score: float  # 0.0 to 1.0, higher is more important
+    scaling_factor: Dict[str, float]  # Resource type to scaling factor (how well it scales with more resources)
+
+
+class MemoryBudgetManager:
+    """
+    Manages memory budgets for components based on priority and need.
+    
+    This class provides mechanisms for components to request memory resources,
+    tracks current allocations, and optimizes memory usage based on component
+    priorities and system pressure.
+    """
+    
+    def __init__(self, config: Any):
+        """
+        Initialize the memory budget manager.
+        
+        Args:
+            config: Configuration object with memory thresholds and priorities
+        """
+        self.config = config
+        self.logger = logging.getLogger("MemoryBudgetManager")
+        
+        # Initialize memory trackers
+        self.gpu_tracker = GPUMemoryTracker()
+        self.cpu_tracker = CPUMemoryTracker()
+        
+        # Get thresholds from config or use defaults
+        self.gpu_threshold = getattr(config.hardware, "gpu_memory_threshold", 0.8)
+        self.cpu_threshold = getattr(config.hardware, "cpu_memory_threshold", 0.7)
+        
+        # Resource allocations by component {component_id: [ResourceAllocation, ...]}
+        self.allocations = {}
+        
+        # Component profiles {component_id: ComponentProfile}
+        self.component_profiles = {}
+        
+        # Memory pressure detection
+        self.memory_pressure_level = 0.0  # 0.0 to 1.0, higher is more pressure
+        self.pressure_history = []  # Track memory pressure over time
+        
+        # Thread-safe locks
+        self.allocation_lock = threading.RLock()
+        
+        # Start memory pressure monitoring
+        self._start_memory_pressure_monitoring()
+    
+    def _start_memory_pressure_monitoring(self):
+        """Start a background thread to monitor memory pressure."""
+        def _monitor_pressure():
+            while True:
+                try:
+                    # Get current memory stats
+                    stats = get_memory_stats()
+                    
+                    # Calculate pressure level
+                    if TORCH_AVAILABLE and torch.cuda.is_available():
+                        gpu_pressure = stats["gpu_allocated"] / stats["gpu_total"]
+                    else:
+                        gpu_pressure = 0.0
+                    
+                    cpu_pressure = stats["cpu_used"] / stats["cpu_total"]
+                    
+                    # Combine pressures (weighted toward GPU if available)
+                    if gpu_pressure > 0:
+                        self.memory_pressure_level = 0.7 * gpu_pressure + 0.3 * cpu_pressure
+                    else:
+                        self.memory_pressure_level = cpu_pressure
+                    
+                    # Add to pressure history (keep last 10 measurements)
+                    self.pressure_history.append(self.memory_pressure_level)
+                    if len(self.pressure_history) > 10:
+                        self.pressure_history.pop(0)
+                    
+                    # If pressure is high, trigger reallocation
+                    if self.memory_pressure_level > self.gpu_threshold:
+                        self._handle_memory_pressure()
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in memory pressure monitoring: {e}")
+                
+                # Sleep for a short time
+                time.sleep(2.0)
+        
+        # Start monitoring thread
+        thread = threading.Thread(target=_monitor_pressure, daemon=True)
+        thread.start()
+    
+    def _handle_memory_pressure(self):
+        """Handle high memory pressure by reallocating resources."""
+        with self.allocation_lock:
+            self.logger.info(f"Handling high memory pressure: {self.memory_pressure_level:.2f}")
+            
+            # Sort allocations by priority (lowest first)
+            all_allocations = []
+            for component_allocations in self.allocations.values():
+                all_allocations.extend(component_allocations)
+            
+            # Get GPU allocations for reallocation
+            gpu_allocations = [
+                alloc for alloc in all_allocations 
+                if alloc.resource_type == ResourceType.MEMORY_GPU
+            ]
+            
+            # Sort by priority (lowest first) to reduce lowest priority allocations first
+            sorted_gpu_allocations = sorted(
+                gpu_allocations,
+                key=lambda x: self._get_allocation_priority_score(x)
+            )
+            
+            # Reduce allocations until pressure is below threshold
+            target_reduction = int(
+                (self.memory_pressure_level - self.gpu_threshold) * 
+                self.gpu_tracker.get_available_memory() * 1.5  # Add buffer
+            )
+            
+            reduced = 0
+            for allocation in sorted_gpu_allocations:
+                # Skip critical allocations
+                component_profile = self.component_profiles.get(allocation.component_id)
+                if component_profile and component_profile.importance_score > 0.8:
+                    continue
+                
+                # Reduce this allocation
+                reduction = min(int(allocation.amount * 0.3), target_reduction - reduced)
+                if reduction > 0:
+                    self._reduce_allocation(allocation, reduction)
+                    reduced += reduction
+                
+                # Check if we've reduced enough
+                if reduced >= target_reduction:
+                    break
+            
+            # Trigger garbage collection
+            gc.collect()
+            if TORCH_AVAILABLE and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+    
+    def _get_allocation_priority_score(self, allocation: ResourceAllocation) -> float:
+        """Get a score for allocation priority (higher = more important)."""
+        # Base score from component profile
+        component_profile = self.component_profiles.get(allocation.component_id)
+        if component_profile:
+            base_score = component_profile.importance_score
+        else:
+            base_score = 0.5  # Default middle importance
+        
+        # Adjust score based on resource type
+        if allocation.resource_type == ResourceType.MEMORY_GPU:
+            # GPU memory is more valuable
+            return base_score * 1.2
+        else:
+            return base_score
+    
+    def _reduce_allocation(self, allocation: ResourceAllocation, reduction: int):
+        """Reduce an allocation by the specified amount."""
+        self.logger.info(f"Reducing allocation for {allocation.component_id} by {reduction} bytes")
+        
+        # Update allocation amount
+        allocation.amount -= reduction
+        
+        # Notify component of reduction
+        self._notify_component_of_reduction(allocation)
+    
+    def _notify_component_of_reduction(self, allocation: ResourceAllocation):
+        """Notify a component that its allocation has been reduced."""
+        # This would typically call a callback or send a message to the component
+        # For now, we just log the notification
+        self.logger.info(f"Notifying {allocation.component_id} of allocation reduction to {allocation.amount} bytes")
+    
+    def register_component_profile(self, profile: ComponentProfile):
+        """
+        Register a component's resource usage profile.
+        
+        Args:
+            profile: Component resource profile
+        """
+        with self.allocation_lock:
+            self.component_profiles[profile.component_id] = profile
+            self.logger.info(f"Registered profile for component {profile.component_id}")
+    
+    def request_memory(
+        self, 
+        component_id: str, 
+        amount: int, 
+        resource_type: ResourceType = ResourceType.MEMORY_GPU,
+        priority: AllocationPriority = AllocationPriority.MEDIUM,
+        flexible: bool = False,
+        minimum_amount: Optional[int] = None
+    ) -> Optional[ResourceAllocation]:
+        """
+        Request memory resources for a component.
+        
+        Args:
+            component_id: Component identifier
+            amount: Amount of memory in bytes
+            resource_type: Type of memory resource
+            priority: Priority of the request
+            flexible: Whether the amount is flexible
+            minimum_amount: Minimum acceptable amount if flexible
+            
+        Returns:
+            Resource allocation if successful, None otherwise
+        """
+        with self.allocation_lock:
+            # Create resource request
+            request = ResourceRequest(
+                component_id=component_id,
+                resource_type=resource_type,
+                amount=amount,
+                priority=priority,
+                flexible=flexible,
+                minimum_amount=minimum_amount
+            )
+            
+            # Check if we can fulfill the request
+            if self._can_fulfill_request(request):
+                # Create allocation
+                allocation = self._create_allocation(request)
+                
+                # Add to allocations
+                if component_id not in self.allocations:
+                    self.allocations[component_id] = []
+                self.allocations[component_id].append(allocation)
+                
+                self.logger.info(f"Allocated {amount} bytes to {component_id}")
+                return allocation
+            elif flexible and minimum_amount is not None:
+                # Try with minimum amount
+                reduced_request = ResourceRequest(
+                    component_id=component_id,
+                    resource_type=resource_type,
+                    amount=minimum_amount,
+                    priority=priority,
+                    flexible=False
+                )
+                
+                if self._can_fulfill_request(reduced_request):
+                    # Create allocation with reduced amount
+                    allocation = self._create_allocation(reduced_request)
+                    
+                    # Add to allocations
+                    if component_id not in self.allocations:
+                        self.allocations[component_id] = []
+                    self.allocations[component_id].append(allocation)
+                    
+                    self.logger.info(f"Allocated reduced amount {minimum_amount} bytes to {component_id}")
+                    return allocation
+            
+            # Cannot fulfill request
+            self.logger.warning(f"Could not fulfill memory request for {component_id}: {amount} bytes")
+            return None
+    
+    def _can_fulfill_request(self, request: ResourceRequest) -> bool:
+        """Check if we can fulfill a resource request."""
+        # Check current memory availability
+        if request.resource_type == ResourceType.MEMORY_GPU:
+            if not TORCH_AVAILABLE or not torch.cuda.is_available():
+                return False
+            
+            available = self.gpu_tracker.get_available_memory()
+            current_usage = torch.cuda.memory_allocated()
+            total = torch.cuda.get_device_properties(0).total_memory
+            
+            # Check if request would exceed threshold
+            new_usage_ratio = (current_usage + request.amount) / total
+            return new_usage_ratio <= self.gpu_threshold
+        
+        elif request.resource_type == ResourceType.MEMORY_CPU:
+            available = self.cpu_tracker.get_available_memory()
+            total = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+            
+            # Check if request would exceed threshold
+            current_usage = total - available
+            new_usage_ratio = (current_usage + request.amount) / total
+            return new_usage_ratio <= self.cpu_threshold
+        
+        return False
+    
+    def _create_allocation(self, request: ResourceRequest) -> ResourceAllocation:
+        """Create a resource allocation from a request."""
+        import uuid
+        
+        return ResourceAllocation(
+            component_id=request.component_id,
+            resource_type=request.resource_type,
+            amount=request.amount,
+            allocation_id=str(uuid.uuid4()),
+            expiration=None  # No expiration by default
+        )
+    
+    def release_allocation(self, allocation: ResourceAllocation) -> bool:
+        """
+        Release a resource allocation.
+        
+        Args:
+            allocation: Resource allocation to release
+            
+        Returns:
+            True if released successfully, False otherwise
+        """
+        with self.allocation_lock:
+            component_id = allocation.component_id
+            
+            if component_id in self.allocations:
+                allocations = self.allocations[component_id]
+                
+                # Find and remove the allocation
+                for i, alloc in enumerate(allocations):
+                    if alloc.allocation_id == allocation.allocation_id:
+                        allocations.pop(i)
+                        self.logger.info(f"Released allocation {allocation.allocation_id} for {component_id}")
+                        
+                        # Clean up if no more allocations
+                        if not allocations:
+                            del self.allocations[component_id]
+                        
+                        # Trigger garbage collection if significant memory was released
+                        if allocation.amount > 1024 * 1024 * 10:  # 10 MB
+                            gc.collect()
+                            if TORCH_AVAILABLE and torch.cuda.is_available():
+                                torch.cuda.empty_cache()
+                        
+                        return True
+            
+            self.logger.warning(f"Could not find allocation {allocation.allocation_id} for {component_id}")
+            return False
+    
+    def get_component_allocations(self, component_id: str) -> List[ResourceAllocation]:
+        """
+        Get all allocations for a component.
+        
+        Args:
+            component_id: Component identifier
+            
+        Returns:
+            List of resource allocations
+        """
+        with self.allocation_lock:
+            return self.allocations.get(component_id, []).copy()
+    
+    def get_total_allocated(self, resource_type: ResourceType = ResourceType.MEMORY_GPU) -> int:
+        """
+        Get total allocated resources of a specific type.
+        
+        Args:
+            resource_type: Type of resource
+            
+        Returns:
+            Total allocated amount
+        """
+        with self.allocation_lock:
+            total = 0
+            for allocations in self.allocations.values():
+                for allocation in allocations:
+                    if allocation.resource_type == resource_type:
+                        total += allocation.amount
+            return total
+    
+    def get_available_resources(self, resource_type: ResourceType = ResourceType.MEMORY_GPU) -> int:
+        """
+        Get available resources of a specific type.
+        
+        Args:
+            resource_type: Type of resource
+            
+        Returns:
+            Available amount
+        """
+        if resource_type == ResourceType.MEMORY_GPU:
+            if not TORCH_AVAILABLE or not torch.cuda.is_available():
+                return 0
+            return self.gpu_tracker.get_available_memory()
+        
+        elif resource_type == ResourceType.MEMORY_CPU:
+            return self.cpu_tracker.get_available_memory()
+        
+        return 0
+    
+    def get_memory_pressure(self) -> float:
+        """
+        Get current memory pressure level.
+        
+        Returns:
+            Memory pressure level (0.0 to 1.0)
+        """
+        return self.memory_pressure_level
+    
+    def get_pressure_trend(self) -> float:
+        """
+        Get memory pressure trend.
+        
+        Returns:
+            Pressure trend (-1.0 to 1.0, positive = increasing pressure)
+        """
+        if len(self.pressure_history) < 2:
+            return 0.0
+        
+        # Calculate trend from recent history
+        recent = self.pressure_history[-3:]
+        if len(recent) < 2:
+            return 0.0
+        
+        # Linear regression slope
+        x = np.arange(len(recent))
+        y = np.array(recent)
+        A = np.vstack([x, np.ones(len(x))]).T
+        m, _ = np.linalg.lstsq(A, y, rcond=None)[0]
+        
+        # Normalize to -1.0 to 1.0
+        return np.clip(m * 10, -1.0, 1.0)
+
+
+class ComputationDistributor:
+    """
+    Distributes computational resources among components based on priority.
+    
+    This class manages computational resources like CUDA streams, threads,
+    and execution priorities to ensure efficient utilization of hardware.
+    """
+    
+    def __init__(self, config: Any):
+        """
+        Initialize the computation distributor.
+        
+        Args:
+            config: Configuration object with compute settings
+        """
+        self.config = config
+        self.logger = logging.getLogger("ComputationDistributor")
+        
+        # Compute resource pools
+        self.gpu_streams = {}
+        self.thread_pools = {}
+        
+        # Component compute allocations
+        self.compute_allocations = {}
+        
+        # Compute priorities (higher = more important)
+        self.compute_priorities = {}
+        
+        # Thread-safe lock
+        self.compute_lock = threading.RLock()
+        
+        # Initialize GPU streams if available
+        self._init_gpu_streams()
+        
+        # Initialize thread pools
+        self._init_thread_pools()
+    
+    def _init_gpu_streams(self):
+        """Initialize GPU streams for parallel computation."""
+        if not TORCH_AVAILABLE or not torch.cuda.is_available():
+            return
+        
+        max_streams = getattr(self.config.hardware, "max_gpu_streams", 8)
+        
+        # Create streams with different priorities
+        for i in range(max_streams):
+            # Alternate between high and normal priority
+            priority = torch.cuda.Stream.Priority.HIGH if i % 2 == 0 else torch.cuda.Stream.Priority.NORMAL
+            stream = torch.cuda.Stream(priority=priority)
+            self.gpu_streams[f"stream_{i}"] = {
+                "stream": stream,
+                "in_use": False,
+                "priority": priority
+            }
+        
+        self.logger.info(f"Initialized {len(self.gpu_streams)} GPU streams")
+    
+    def _init_thread_pools(self):
+        """Initialize thread pools for CPU computation."""
+        import multiprocessing
+        from concurrent.futures import ThreadPoolExecutor
+        
+        max_workers = getattr(self.config.hardware, "max_cpu_threads", multiprocessing.cpu_count())
+        
+        # Create thread pools with different priorities
+        self.thread_pools["high"] = ThreadPoolExecutor(max_workers=max_workers // 3)
+        self.thread_pools["medium"] = ThreadPoolExecutor(max_workers=max_workers // 3)
+        self.thread_pools["low"] = ThreadPoolExecutor(max_workers=max_workers // 3)
+        
+        self.logger.info(f"Initialized thread pools with {max_workers} total workers")
+    
+    def register_component_priority(self, component_id: str, priority: float):
+        """
+        Register a component's compute priority.
+        
+        Args:
+            component_id: Component identifier
+            priority: Priority value (0.0 to 1.0, higher is more important)
+        """
+        with self.compute_lock:
+            self.compute_priorities[component_id] = priority
+            self.logger.info(f"Registered priority {priority} for component {component_id}")
+    
+    def get_gpu_stream(self, component_id: str) -> Optional[torch.cuda.Stream]:
+        """
+        Get a GPU stream for a component's computation.
+        
+        Args:
+            component_id: Component identifier
+            
+        Returns:
+            CUDA stream or None if unavailable
+        """
+        if not TORCH_AVAILABLE or not torch.cuda.is_available():
+            return None
+        
+        with self.compute_lock:
+            priority = self.compute_priorities.get(component_id, 0.5)
+            
+            # Check if component already has a stream
+            if component_id in self.compute_allocations:
+                stream_id = self.compute_allocations[component_id].get("gpu_stream")
+                if stream_id and stream_id in self.gpu_streams:
+                    return self.gpu_streams[stream_id]["stream"]
+            
+            # Find an available stream
+            available_streams = sorted(
+                [(id, info) for id, info in self.gpu_streams.items() if not info["in_use"]],
+                key=lambda x: abs(priority - (1.0 if x[1]["priority"] == torch.cuda.Stream.Priority.HIGH else 0.5))
+            )
+            
+            if available_streams:
+                stream_id, stream_info = available_streams[0]
+                stream_info["in_use"] = True
+                
+                # Register allocation
+                if component_id not in self.compute_allocations:
+                    self.compute_allocations[component_id] = {}
+                self.compute_allocations[component_id]["gpu_stream"] = stream_id
+                
+                return stream_info["stream"]
+            
+            # No streams available, return default stream
+            self.logger.warning(f"No GPU streams available for {component_id}, using default stream")
+            return torch.cuda.default_stream()
+    
+    def release_gpu_stream(self, component_id: str):
+        """
+        Release a GPU stream allocation.
+        
+        Args:
+            component_id: Component identifier
+        """
+        if not TORCH_AVAILABLE:
+            return
+        
+        with self.compute_lock:
+            if component_id in self.compute_allocations:
+                stream_id = self.compute_allocations[component_id].get("gpu_stream")
+                if stream_id and stream_id in self.gpu_streams:
+                    # Mark stream as available
+                    self.gpu_streams[stream_id]["in_use"] = False
+                    
+                    # Remove from allocations
+                    del self.compute_allocations[component_id]["gpu_stream"]
+                    if not self.compute_allocations[component_id]:
+                        del self.compute_allocations[component_id]
+                    
+                    self.logger.info(f"Released GPU stream {stream_id} for {component_id}")
+    
+    def get_thread_pool(self, component_id: str) -> Any:
+        """
+        Get a thread pool for a component's computation.
+        
+        Args:
+            component_id: Component identifier
+            
+        Returns:
+            Thread pool executor
+        """
+        with self.compute_lock:
+            priority = self.compute_priorities.get(component_id, 0.5)
+            
+            # Determine which pool to use based on priority
+            if priority >= 0.7:
+                return self.thread_pools["high"]
+            elif priority >= 0.4:
+                return self.thread_pools["medium"]
+            else:
+                return self.thread_pools["low"]
+    
+    def synchronize_component(self, component_id: str):
+        """
+        Synchronize computation for a component.
+        
+        Args:
+            component_id: Component identifier
+        """
+        if not TORCH_AVAILABLE or not torch.cuda.is_available():
+            return
+        
+        with self.compute_lock:
+            if component_id in self.compute_allocations:
+                stream_id = self.compute_allocations[component_id].get("gpu_stream")
+                if stream_id and stream_id in self.gpu_streams:
+                    # Synchronize stream
+                    self.gpu_streams[stream_id]["stream"].synchronize()
+                    self.logger.debug(f"Synchronized GPU stream for {component_id}")
+
+
+class PrecisionSelector:
+    """
+    Selects appropriate computational precision for different operations.
+    
+    This class manages precision selection based on hardware capabilities,
+    component requirements, and system pressure to optimize the trade-off
+    between accuracy and performance.
+    """
+    
+    def __init__(self, config: Any):
+        """
+        Initialize the precision selector.
+        
+        Args:
+            config: Configuration object with precision settings
+        """
+        self.config = config
+        self.logger = logging.getLogger("PrecisionSelector")
+        
+        # Available precision modes
+        self.available_precisions = self._detect_available_precisions()
+        
+        # Component precision requirements
+        self.component_precisions = {}
+        
+        # Operation precision overrides
+        self.operation_precisions = {}
+        
+        # Thread-safe lock
+        self.precision_lock = threading.RLock()
+    
+    def _detect_available_precisions(self) -> Dict[str, bool]:
+        """Detect available precision modes on the hardware."""
+        precisions = {
+            "float16": False,
+            "float32": True,  # Always available
+            "bfloat16": False,
+            "int8": False,
+            "mixed": False
+        }
+        
+        if not TORCH_AVAILABLE:
+            return precisions
+        
+        # Check for float16 support
+        precisions["float16"] = True  # Most modern GPUs support this
+        
+        # Check for bfloat16 support
+        try:
+            if hasattr(torch, "bfloat16") and torch.cuda.is_available():
+                x = torch.tensor([1.0], dtype=torch.bfloat16, device="cuda")
+                precisions["bfloat16"] = True
+        except Exception:
+            pass
+        
+        # Check for int8 support
+        try:
+            if torch.cuda.is_available():
+                x = torch.tensor([1], dtype=torch.int8, device="cuda")
+                precisions["int8"] = True
+        except Exception:
+            pass
+        
+        # Check for mixed precision support
+        if torch.cuda.is_available() and hasattr(torch.cuda, "amp"):
+            precisions["mixed"] = True
+        
+        self.logger.info(f"Detected available precisions: {precisions}")
+        return precisions
+    
+    def register_component_precision(self, component_id: str, precision_requirements: Dict[str, str]):
+        """
+        Register a component's precision requirements.
+        
+        Args:
+            component_id: Component identifier
+            precision_requirements: Dictionary mapping operation names to precision
+                requirements (e.g., {"matmul": "float32", "attention": "float16"})
+        """
+        with self.precision_lock:
+            self.component_precisions[component_id] = precision_requirements
+            self.logger.info(f"Registered precision requirements for {component_id}")
+    
+    def get_operation_precision(self, component_id: str, operation: str, fallback: str = "float32") -> str:
+        """
+        Get the appropriate precision for an operation.
+        
+        Args:
+            component_id: Component identifier
+            operation: Operation name
+            fallback: Fallback precision if not specified
+            
+        Returns:
+            Precision to use for the operation
+        """
+        with self.precision_lock:
+            # Check operation-specific override
+            operation_key = f"{component_id}:{operation}"
+            if operation_key in self.operation_precisions:
+                return self.operation_precisions[operation_key]
+            
+            # Check component precision requirements
+            if component_id in self.component_precisions:
+                precision = self.component_precisions[component_id].get(operation)
+                if precision and precision in self.available_precisions and self.available_precisions[precision]:
+                    return precision
+            
+            # Check if fallback is available
+            if fallback in self.available_precisions and self.available_precisions[fallback]:
+                return fallback
+            
+            # Ultimate fallback to float32
+            return "float32"
+    
+    def override_operation_precision(self, component_id: str, operation: str, precision: str):
+        """
+        Override precision for a specific operation.
+        
+        Args:
+            component_id: Component identifier
+            operation: Operation name
+            precision: Precision to use
+        """
+        with self.precision_lock:
+            operation_key = f"{component_id}:{operation}"
+            
+            # Validate precision
+            if precision not in self.available_precisions or not self.available_precisions[precision]:
+                self.logger.warning(f"Precision {precision} not available, ignoring override")
+                return
+            
+            self.operation_precisions[operation_key] = precision
+            self.logger.info(f"Set precision {precision} for {operation_key}")
+    
+    def clear_operation_override(self, component_id: str, operation: str):
+        """
+        Clear precision override for a specific operation.
+        
+        Args:
+            component_id: Component identifier
+            operation: Operation name
+        """
+        with self.precision_lock:
+            operation_key = f"{component_id}:{operation}"
+            if operation_key in self.operation_precisions:
+                del self.operation_precisions[operation_key]
+                self.logger.info(f"Cleared precision override for {operation_key}")
+    
+    def create_autocast_context(self, component_id: str, operations: List[str]) -> Any:
+        """
+        Create an autocast context for a set of operations.
+        
+        Args:
+            component_id: Component identifier
+            operations: List of operations to be performed
+            
+        Returns:
+            Autocast context manager or None if not available
+        """
+        if not TORCH_AVAILABLE or not hasattr(torch.cuda, "amp") or not torch.cuda.is_available():
+            return None
+        
+        # Determine best precision for operations
+        precisions = [self.get_operation_precision(component_id, op) for op in operations]
+        
+        # If any operation requires float32, use that
+        if "float32" in precisions:
+            return torch.cuda.amp.autocast(enabled=False)
+        
+        # If bfloat16 is available and any operation can use it, prefer that
+        if "bfloat16" in precisions and self.available_precisions["bfloat16"]:
+            return torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16)
+        
+        # Otherwise use float16 if available
+        if self.available_precisions["float16"]:
+            return torch.cuda.amp.autocast(enabled=True, dtype=torch.float16)
+        
+        # Fallback to no autocast
+        return torch.cuda.amp.autocast(enabled=False)
+    
+    def get_optimal_dtypes(self, component_id: str) -> Dict[str, Any]:
+        """
+        Get optimal data types for a component.
+        
+        Args:
+            component_id: Component identifier
+            
+        Returns:
+            Dictionary mapping data purposes to PyTorch data types
+        """
+        if not TORCH_AVAILABLE:
+            return {}
+        
+        # Default to conservative precision settings
+        dtypes = {
+            "weights": torch.float32,
+            "activations": torch.float32,
+            "gradients": torch.float32,
+            "optimizer_states": torch.float32
+        }
+        
+        # Platform-specific optimizations
+        if torch.cuda.is_available():
+            # CUDA optimizations
+            dtypes["activations"] = torch.float16 if self.available_precisions["float16"] else torch.float32
+            
+            if self.available_precisions["bfloat16"]:
+                dtypes["gradients"] = torch.bfloat16
+            elif self.available_precisions["float16"]:
+                dtypes["gradients"] = torch.float16
+        else:
+            # CPU optimizations
+            # More conservative since CPU often needs higher precision
+            pass
+        
+        # Apply component-specific requirements
+        if component_id in self.component_precisions:
+            requirements = self.component_precisions[component_id]
+            
+            if "weights" in requirements:
+                weight_prec = requirements["weights"]
+                if weight_prec == "float16" and self.available_precisions["float16"]:
+                    dtypes["weights"] = torch.float16
+                elif weight_prec == "bfloat16" and self.available_precisions["bfloat16"]:
+                    dtypes["weights"] = torch.bfloat16
+            
+            if "activations" in requirements:
+                act_prec = requirements["activations"]
+                if act_prec == "float16" and self.available_precisions["float16"]:
+                    dtypes["activations"] = torch.float16
+                elif act_prec == "bfloat16" and self.available_precisions["bfloat16"]:
+                    dtypes["activations"] = torch.bfloat16
+        
+        return dtypes
+
+
+class ComponentResourceManager:
+    """
+    Central manager for component resources.
+    
+    This class provides a unified interface for components to request and
+    manage memory, compute, and precision resources. It coordinates the
+    memory budget manager, computation distributor, and precision selector.
+    """
+    
+    def __init__(self, config: Any):
+        """
+        Initialize the component resource manager.
+        
+        Args:
+            config: Configuration object
+        """
+        self.config = config
+        self.logger = logging.getLogger("ComponentResourceManager")
+        
+        # Initialize sub-managers
+        self.memory_manager = MemoryBudgetManager(config)
+        self.compute_distributor = ComputationDistributor(config)
+        self.precision_selector = PrecisionSelector(config)
+        
+        # Component registry
+        self.registered_components = set()
+        
+        # Thread-safe lock
+        self.manager_lock = threading.RLock()
+    
+    def register_component(
+        self, 
+        component_id: str, 
+        memory_profile: Dict[str, Any] = None,
+        compute_priority: float = 0.5,
+        precision_requirements: Dict[str, str] = None
+    ):
+        """
+        Register a component with the resource manager.
+        
+        Args:
+            component_id: Component identifier
+            memory_profile: Memory usage profile
+            compute_priority: Compute priority (0.0 to 1.0)
+            precision_requirements: Precision requirements
+        """
+        with self.manager_lock:
+            # Create and register component profile for memory
+            if memory_profile:
+                profile = ComponentProfile(
+                    component_id=component_id,
+                    typical_memory_usage=memory_profile.get("memory_usage", {"gpu": 0, "cpu": 0}),
+                    typical_compute_usage=memory_profile.get("compute_usage", {"gpu": 0, "cpu": 0}),
+                    precision_requirements=precision_requirements or {},
+                    importance_score=compute_priority,
+                    scaling_factor=memory_profile.get("scaling_factor", {
+                        "memory_gpu": 1.0,
+                        "memory_cpu": 1.0,
+                        "compute_gpu": 1.0,
+                        "compute_cpu": 1.0
+                    })
+                )
+                self.memory_manager.register_component_profile(profile)
+            
+            # Register compute priority
+            self.compute_distributor.register_component_priority(component_id, compute_priority)
+            
+            # Register precision requirements
+            if precision_requirements:
+                self.precision_selector.register_component_precision(component_id, precision_requirements)
+            
+            # Add to registered components
+            self.registered_components.add(component_id)
+            self.logger.info(f"Registered component {component_id}")
+    
+    def request_resources(
+        self, 
+        component_id: str, 
+        memory_gpu: int = 0, 
+        memory_cpu: int = 0,
+        need_gpu_stream: bool = False,
+        operations: List[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Request resources for a component.
+        
+        Args:
+            component_id: Component identifier
+            memory_gpu: GPU memory in bytes
+            memory_cpu: CPU memory in bytes
+            need_gpu_stream: Whether a GPU stream is needed
+            operations: List of operations to be performed
+            
+        Returns:
+            Dictionary with allocated resources
+        """
+        # Check if component is registered
+        if component_id not in self.registered_components:
+            self.register_component(component_id)
+        
+        resources = {}
+        
+        # Request GPU memory
+        if memory_gpu > 0:
+            gpu_alloc = self.memory_manager.request_memory(
+                component_id=component_id,
+                amount=memory_gpu,
+                resource_type=ResourceType.MEMORY_GPU,
+                priority=AllocationPriority.MEDIUM,
+                flexible=True,
+                minimum_amount=memory_gpu // 2
+            )
+            if gpu_alloc:
+                resources["memory_gpu"] = gpu_alloc
+        
+        # Request CPU memory
+        if memory_cpu > 0:
+            cpu_alloc = self.memory_manager.request_memory(
+                component_id=component_id,
+                amount=memory_cpu,
+                resource_type=ResourceType.MEMORY_CPU,
+                priority=AllocationPriority.MEDIUM,
+                flexible=True,
+                minimum_amount=memory_cpu // 2
+            )
+            if cpu_alloc:
+                resources["memory_cpu"] = cpu_alloc
+        
+        # Request GPU stream
+        if need_gpu_stream:
+            stream = self.compute_distributor.get_gpu_stream(component_id)
+            if stream:
+                resources["gpu_stream"] = stream
+        
+        # Create autocast context if operations are specified
+        if operations:
+            autocast = self.precision_selector.create_autocast_context(component_id, operations)
+            if autocast:
+                resources["autocast"] = autocast
+            
+            # Get optimal dtypes
+            resources["dtypes"] = self.precision_selector.get_optimal_dtypes(component_id)
+        
+        return resources
+    
+    def release_resources(self, component_id: str, resources: Dict[str, Any]):
+        """
+        Release resources allocated to a component.
+        
+        Args:
+            component_id: Component identifier
+            resources: Dictionary of resources to release
+        """
+        # Release GPU memory
+        if "memory_gpu" in resources:
+            self.memory_manager.release_allocation(resources["memory_gpu"])
+        
+        # Release CPU memory
+        if "memory_cpu" in resources:
+            self.memory_manager.release_allocation(resources["memory_cpu"])
+        
+        # Release GPU stream
+        if "gpu_stream" in resources:
+            self.compute_distributor.release_gpu_stream(component_id)
+        
+        # No need to release autocast context or dtypes as they're just context managers/values
+    
+    def get_component_resources(self, component_id: str) -> Dict[str, Any]:
+        """
+        Get resources currently allocated to a component.
+        
+        Args:
+            component_id: Component identifier
+            
+        Returns:
+            Dictionary of allocated resources
+        """
+        resources = {}
+        
+        # Get memory allocations
+        gpu_allocations = [
+            alloc for alloc in self.memory_manager.get_component_allocations(component_id)
+            if alloc.resource_type == ResourceType.MEMORY_GPU
+        ]
+        cpu_allocations = [
+            alloc for alloc in self.memory_manager.get_component_allocations(component_id)
+            if alloc.resource_type == ResourceType.MEMORY_CPU
+        ]
+        
+        if gpu_allocations:
+            resources["memory_gpu"] = gpu_allocations
+        
+        if cpu_allocations:
+            resources["memory_cpu"] = cpu_allocations
+        
+        # Get optimal dtypes
+        resources["dtypes"] = self.precision_selector.get_optimal_dtypes(component_id)
+        
+        return resources
+    
+    def synchronize_component(self, component_id: str):
+        """
+        Synchronize computation for a component.
+        
+        Args:
+            component_id: Component identifier
+        """
+        self.compute_distributor.synchronize_component(component_id)
+    
+    def get_memory_pressure(self) -> float:
+        """
+        Get current memory pressure level.
+        
+        Returns:
+            Memory pressure level (0.0 to 1.0)
+        """
+        return self.memory_manager.get_memory_pressure()
+    
+    def get_pressure_trend(self) -> float:
+        """
+        Get memory pressure trend.
+        
+        Returns:
+            Pressure trend (-1.0 to 1.0, positive = increasing pressure)
+        """
+        return self.memory_manager.get_pressure_trend()
