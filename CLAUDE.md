@@ -122,6 +122,18 @@
 - **Key Insight 9**: Floating-point precision management is critical for consistent optimization quality assessment.
 - **Key Insight 10**: Parameter reset capabilities provide an essential emergency mechanism when incremental corrections fail.
 
+### Component-Specific Resource Allocation (Completed 2.3.1)
+- **Key Insight 1**: Memory pressure-aware allocation prevents OOM errors by dynamically redistributing resources.
+- **Key Insight 2**: Prioritizing critical components during resource constraints maintains core functionality.
+- **Key Insight 3**: Component importance scoring requires both static design-time metrics and dynamic runtime feedback.
+- **Key Insight 4**: Thread-safe resource management is essential for preventing deadlocks in component resource requests.
+- **Key Insight 5**: Memory resource requests should be flexible with minimum viable allocations to handle pressure.
+- **Key Insight 6**: Monitoring pressure trends enables proactive resource reallocation before critical situations occur.
+- **Key Insight 7**: Unified resource APIs across CPU and GPU simplifies component implementations.
+- **Key Insight 8**: Component-specific optimal precision varies by operation type, not just by component.
+- **Key Insight 9**: Resource-aware architecture allows centralized decisions that individual components cannot make.
+- **Key Insight 10**: Memory, compute, and precision resources have different allocation patterns and require different APIs.
+
 ### Hardware-Aware Integration (In Progress 2.3.x)
 - **Key Insight 1**: Different components have distinct memory and computation requirements that vary dynamically during execution.
 - **Key Insight 2**: Priority-based resource allocation enables focusing limited resources on the most important components.

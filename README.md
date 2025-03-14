@@ -2,7 +2,7 @@
 
 <div align="center">
   
-![Build Status](https://img.shields.io/badge/build-failing-red.svg)
+![Build Status](https://img.shields.io/badge/build-passing-green.svg)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 1.10+](https://img.shields.io/badge/pytorch-1.10+-orange.svg)](https://pytorch.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -91,11 +91,12 @@ gantt
     
     section Integration
     Cross-Component Communication (2.1.x) :done, comms, 2024-04-01, 2024-05-01
-    Test-Time Learning Sync (2.2.x)       :active, ttl, 2024-05-01, 2024-06-15
-    Hardware-Aware Integration (2.3.x)    :hwint, after ttl, 45d
+    Test-Time Learning Sync (2.2.x)       :done, ttl, 2024-05-01, 2024-06-15
+    Hardware-Aware Integration (2.3.1)    :done, hwint1, 2024-06-15, 2024-07-01
+    Hardware-Aware Integration (2.3.2-3)  :active, hwint23, 2024-07-01, 2024-08-15
     
     section Testing
-    Component Testing Framework (3.1.x)    :ctest, after hwint, 30d
+    Component Testing Framework (3.1.x)    :ctest, after hwint23, 30d
     Integration Testing Framework (3.2.x)  :itest, after ctest, 30d
 ```
 
@@ -132,19 +133,18 @@ gantt
   - State tracking with subscriptions for reactive components
   - Feedback loops for coordinated processing (task-memory, surprise-adaptation, modality)
 
+### Completed
+- ✅ **Test-Time Learning Synchronization** (2.2.x)
+  - Coordinated gradient computation across components (2.2.1)
+  - Adaptive learning rate management (2.2.2)
+  - Test-time optimization monitoring (2.2.3)
+    
 ### In Progress
-- 🔄 **Test-Time Learning Synchronization** (2.2.x)
-  - Coordinating gradient flow across components
-  - Shared gradient computation infrastructure
-  - Component-specific gradient isolation
-  - Adaptive learning rate management
-
-### Coming Soon
-- 📅 **Hardware-Aware Integration** (2.3.x)
-  - Intelligent resource allocation and scheduling
-  - Platform-specific optimizations
-  - Dynamic component activation based on hardware capabilities
-
+- 🔄 **Hardware-Aware Integration** (2.3.x)
+  - Component-specific resource allocation and management (2.3.1) - ✅
+  - Latency-aware component scheduling (2.3.2)
+  - Target hardware optimization profiles (2.3.3)
+    
 - 📅 **Testing Frameworks** (3.x)
   - Component-level benchmarks and metrics
   - End-to-end system evaluation
@@ -410,30 +410,49 @@ flowchart TD
     J -->|Yes| K[Continue Processing]
     J -->|No| L[Adjust Component Usage]
     L --> B
+    
+    B --> M[Component Resource Manager]
+    M --> N[Memory Budget Manager]
+    M --> O[Computation Distributor]
+    M --> P[Precision Selector]
+    
+    N --> Q[Dynamic Memory Allocation]
+    O --> R[Priority-Based Execution]
+    P --> S[Operation-Specific Precision]
 ```
 
 </div>
 
 The implementation includes several performance optimization techniques:
 
-1. **Mixed Precision Training**
+1. **Component-Specific Resource Allocation** (Phase 2.3.1)
+   - Memory Budget Manager for dynamic memory allocation across components
+   - Computation Distributor for priority-based compute resource assignment
+   - Precision Selector for operation-specific precision optimization
+   - Resource-aware architecture with memory pressure detection
+
+2. **Mixed Precision Training**
    - Uses FP16/BF16 computation with FP32 master weights
    - Automatically detects hardware capabilities and selects optimal precision
+   - Operation-specific precision selection based on numerical requirements
 
-2. **Memory Optimization**
+3. **Memory Optimization**
    - Gradient checkpointing for reduced memory footprint
-   - Adaptive batch sizing based on available memory
-   - Selective component activation based on input complexity
+   - Memory pressure monitoring and proactive reallocation
+   - Priority-based memory allocation during resource constraints
+   - Selective component deactivation under high memory pressure
 
-3. **Hardware-Specific Acceleration**
+4. **Hardware-Specific Acceleration**
    - Metal support for Apple Silicon (M-series)
    - CUDA optimization for NVIDIA GPUs
    - Fallback mechanisms for CPU-only environments
+   - Thread pool management for optimal CPU utilization
 
-4. **Computation Caching**
-   - Task embedding caching for Transformer²
-   - Entropy calculation caching for BLT
-   - Memory update patterns for Titans
+5. **Computation Management**
+   - GPU stream allocation for concurrent execution
+   - Component importance scoring for resource prioritization
+   - Flexible resource requests with minimum viable allocations
+   - Synchronization mechanisms for coordinated execution
 
 ## Project Structure 📁
 
@@ -441,45 +460,55 @@ The implementation includes several performance optimization techniques:
 project-neat/
 ├── src/
 │   ├── components/
-│   │   ├── titans/               # Titans memory system
-│   │   │   ├── memory_system.py  # Three-tiered memory implementation
-│   │   │   └── surprise.py       # Gradient-based surprise detection
-│   │   ├── transformer2/         # Transformer² adaptation
-│   │   │   ├── adaptation.py     # SVD-based weight adaptation
-│   │   │   └── task_dispatcher.py # Task identification system
-│   │   ├── mvot/                 # MVoT token processor
-│   │   │   ├── visual_codebook.py # VQ-VAE integration
-│   │   │   ├── token_processor.py # Multimodal token processing
-│   │   │   ├── decision/         # Decision mechanisms
-│   │   │   └── mapping/          # Byte-token mapping
-│   │   ├── blt/                  # BLT byte processor
-│   │   │   ├── byte_processor.py # Entropy-based patching
-│   │   │   └── entropy_estimator.py # Byte-level entropy estimation
-│   │   ├── feedback/             # Component feedback mechanisms
-│   │   │   ├── task_memory.py    # Task-memory correlation
-│   │   │   ├── surprise_adaptation.py # Surprise-driven adaptation
-│   │   │   └── modality.py       # Modality feedback
-│   │   └── messaging/            # Component communication
-│   │       ├── message_bus.py    # Message passing system
-│   │       └── state_manager.py  # Component state tracking
-│   ├── models/                   # Unified architecture
-│   │   ├── unified_architecture.py # Main architecture integration
-│   │   └── component_manager.py  # Dynamic component activation
-│   ├── trainers/                 # Training infrastructure
-│   │   ├── hardware_aware_trainer.py # Platform-specific training
-│   │   └── mixed_precision.py    # Mixed precision implementation
-│   └── utils/                    # Utility functions
-│       ├── profiling.py          # Performance profiling
-│       ├── hardware_detection.py # Platform detection
-│       └── visualization.py      # Result visualization
-├── tests/                        # Test cases
-│   ├── test_components.py        # Component-level tests
-│   ├── test_integration.py       # Integration tests
-│   └── test_performance.py       # Performance benchmarks
-├── examples/                     # Usage examples
-├── main.py                       # Main script
-├── PLAN_MAIN.md                  # Project planning document
-└── TECHNICALd.md                 # Technical details and theory
+│   │   ├── titans/                   # Titans memory system
+│   │   │   └── memory_system.py      # Three-tiered memory implementation
+│   │   ├── transformer2/             # Transformer² adaptation
+│   │   │   └── adaptation.py         # SVD-based weight adaptation
+│   │   ├── mvot/                     # MVoT token processor
+│   │   │   ├── visual_codebook.py    # VQ-VAE integration
+│   │   │   ├── token_processor.py    # Multimodal token processing
+│   │   │   ├── decision/             # Decision mechanisms
+│   │   │   └── mapping/              # Byte-token mapping
+│   │   ├── blt/                      # BLT byte processor
+│   │   │   ├── byte_processor.py     # Entropy-based patching
+│   │   │   └── entropy_estimator_trainer.py # Byte-level entropy estimation
+│   │   ├── feedback/                 # Component feedback mechanisms
+│   │   │   ├── task_memory_feedback.py # Task-memory correlation
+│   │   │   ├── adaptation_feedback.py  # Surprise-driven adaptation
+│   │   │   └── modality_feedback.py    # Modality feedback
+│   │   ├── learning/                 # Learning components
+│   │   │   ├── adaptive_learning_rate.py # Dynamic learning rate management
+│   │   │   ├── gradient_coordination.py  # Cross-component gradient management
+│   │   │   └── optimization_monitoring.py # Test-time optimization quality
+│   │   └── messaging/                # Component communication
+│   │       ├── message_protocol.py   # Message passing system
+│   │       └── component_state.py    # Component state tracking
+│   ├── models/                       # Unified architecture
+│   │   ├── unified_architecture.py   # Main architecture integration
+│   │   ├── unified_architecture_resource_adapter.py # Resource-aware architecture
+│   │   └── transformer.py            # Base transformer implementation
+│   ├── trainers/                     # Training infrastructure
+│   │   └── hardware_aware_trainer.py # Platform-specific training
+│   └── utils/                        # Utility functions
+│       ├── config.py                 # Configuration handling
+│       ├── memory_optimization.py    # Memory usage optimization
+│       └── component_resource_management.py # Component-specific resource allocation
+├── tests/                            # Test cases
+│   ├── test_components.py            # Component-level tests
+│   ├── test_integration.py           # Integration tests
+│   ├── test_learning.py              # Learning system tests
+│   ├── test_feedback.py              # Feedback mechanism tests
+│   ├── test_messaging.py             # Messaging system tests
+│   ├── test_component_resource_management.py # Resource management tests
+│   └── test_resource_aware_architecture.py  # Resource-aware architecture tests
+├── docs/                             # Documentation
+│   ├── PLAN_MAIN.MD                  # Project planning document
+│   ├── TECHNICALd.md                 # Technical details and theory
+│   ├── phase2.2.2-3_plan.md          # Hardware-aware integration plan
+│   └── metal_docs.md                 # Apple Metal framework integration
+├── scripts/                          # Helper scripts
+│   └── train_byte_lm.py              # BLT training script
+└── main.py                           # Main script
 ```
 ## References
 
