@@ -133,18 +133,18 @@ gantt
   - State tracking with subscriptions for reactive components
   - Feedback loops for coordinated processing (task-memory, surprise-adaptation, modality)
 
-### In Progress
-- 🔄 **Hardware-Aware Integration** (2.3.x)
-  - Component-specific resource allocation and management (2.3.1) - ✅
-  - Latency-aware component scheduling (2.3.2)
-  - Target hardware optimization profiles (2.3.3)
-
 ### Completed
 - ✅ **Test-Time Learning Synchronization** (2.2.x)
   - Coordinated gradient computation across components (2.2.1)
   - Adaptive learning rate management (2.2.2)
   - Test-time optimization monitoring (2.2.3)
-
+    
+### In Progress
+- 🔄 **Hardware-Aware Integration** (2.3.x)
+  - Component-specific resource allocation and management (2.3.1) - ✅
+  - Latency-aware component scheduling (2.3.2)
+  - Target hardware optimization profiles (2.3.3)
+    
 - 📅 **Testing Frameworks** (3.x)
   - Component-level benchmarks and metrics
   - End-to-end system evaluation
