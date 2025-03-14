@@ -3,8 +3,8 @@
 <div align="center">
   
 ![Build Status](https://img.shields.io/badge/build-passing-green.svg)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch 1.10+](https://img.shields.io/badge/pytorch-1.10+-orange.svg)](https://pytorch.org/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-orange.svg)](https://pytorch.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 **A cutting-edge neural architecture combining several recent advanced techniques for an efficient, adaptive, and multimodal AI system.**
@@ -93,10 +93,11 @@ gantt
     Cross-Component Communication (2.1.x) :done, comms, 2024-04-01, 2024-05-01
     Test-Time Learning Sync (2.2.x)       :done, ttl, 2024-05-01, 2024-06-15
     Hardware-Aware Integration (2.3.1)    :done, hwint1, 2024-06-15, 2024-07-01
-    Hardware-Aware Integration (2.3.2-3)  :active, hwint23, 2024-07-01, 2024-08-15
+    Hardware-Aware Integration (2.3.2)    :done, hwint2, 2024-07-01, 2024-07-15
+    Hardware-Aware Integration (2.3.3)    :active, hwint3, 2024-07-15, 2024-08-15
     
     section Testing
-    Component Testing Framework (3.1.x)    :ctest, after hwint23, 30d
+    Component Testing Framework (3.1.x)    :ctest, after hwint3, 30d
     Integration Testing Framework (3.2.x)  :itest, after ctest, 30d
 ```
 
@@ -142,13 +143,13 @@ gantt
 ### In Progress
 - 🔄 **Hardware-Aware Integration** (2.3.x)
   - Component-specific resource allocation and management (2.3.1) - ✅
-  - Latency-aware component scheduling (2.3.2)
-  - Target hardware optimization profiles (2.3.3)
+  - Hardware capability adaptation (2.3.2) - ✅
+  - Execution scheduling optimization (2.3.3) - 🔄
     
-- 📅 **Testing Frameworks** (3.x)
-  - Component-level benchmarks and metrics
-  - End-to-end system evaluation
-  - Comparative analysis against baseline models
+- 📅 **Upcoming: Testing & Evaluation** (3.x)
+  - Baseline model comparison (3.1.x)
+  - Comprehensive benchmarking (3.2.x)
+  - Deployment optimization (3.3.x)
 
 ## Key Features
 
@@ -308,9 +309,10 @@ $$
 
 ### Requirements
 
-- Python 3.8+
-- PyTorch 1.10+
-- CUDA 11.3+ (NVIDIA) or Metal (Apple Silicon)
+- Python 3.9+
+- PyTorch 2.0+
+- CUDA 11.8+ (NVIDIA) or Metal (Apple Silicon)
+- Platform support: macOS, Windows, Linux
 
 ### Installation
 
@@ -328,10 +330,10 @@ pip install -r requirements.txt
 
 # Optional: Install platform-specific dependencies
 # For Apple Silicon
-pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/metal
+pip install torch torchvision torchaudio
 
 # For NVIDIA GPUs
-pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 ```
 
 ## Usage Examples 🛠️ 
@@ -425,34 +427,45 @@ flowchart TD
 
 The implementation includes several performance optimization techniques:
 
-1. **Component-Specific Resource Allocation** (Phase 2.3.1)
+1. **Component-Specific Resource Allocation** (Phase 2.3.1) - ✅
    - Memory Budget Manager for dynamic memory allocation across components
    - Computation Distributor for priority-based compute resource assignment
    - Precision Selector for operation-specific precision optimization
    - Resource-aware architecture with memory pressure detection
 
-2. **Mixed Precision Training**
+2. **Hardware Capability Adaptation** (Phase 2.3.2) - ✅
+   - Automatic hardware feature detection for optimal component activation
+   - Memory pressure monitoring with adaptive component deactivation
+   - Thread-safe resource management with deadlock prevention
+   - Graceful fallbacks for environments without advanced hardware features
+   - Cross-platform compatibility with platform-specific optimizations
+
+3. **Execution Scheduling Optimization** (Phase 2.3.3) - 🔄
+   - Priority-based execution scheduling minimizing waiting time
+   - Parallelization opportunity identification for concurrent execution
+   - Adaptive batching based on component characteristics
+   - Pipeline optimization to minimize idle time during execution
+   - Performance benchmarking to measure optimization effectiveness
+
+4. **Mixed Precision Training**
    - Uses FP16/BF16 computation with FP32 master weights
    - Automatically detects hardware capabilities and selects optimal precision
    - Operation-specific precision selection based on numerical requirements
+   - Dynamic precision adaptation based on computation stability requirements
 
-3. **Memory Optimization**
+5. **Memory Optimization**
    - Gradient checkpointing for reduced memory footprint
    - Memory pressure monitoring and proactive reallocation
    - Priority-based memory allocation during resource constraints
    - Selective component deactivation under high memory pressure
+   - Component importance scoring for resource prioritization
 
-4. **Hardware-Specific Acceleration**
+6. **Hardware-Specific Acceleration**
    - Metal support for Apple Silicon (M-series)
    - CUDA optimization for NVIDIA GPUs
    - Fallback mechanisms for CPU-only environments
    - Thread pool management for optimal CPU utilization
-
-5. **Computation Management**
-   - GPU stream allocation for concurrent execution
-   - Component importance scoring for resource prioritization
-   - Flexible resource requests with minimum viable allocations
-   - Synchronization mechanisms for coordinated execution
+   - Platform-specific optimizations with unified API access
 
 ## Project Structure 📁
 

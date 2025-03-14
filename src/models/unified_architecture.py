@@ -81,7 +81,7 @@ class UnifiedArchitecture(nn.Module):
         
         # Two-pass inference handler
         if config.use_two_pass_inference:
-            self.two_pass_inference = TwoPassInference(self)
+            self.two_pass_inference = TwoPassInference(self, config)
             
         # Initialize cross-component feedback loops if enabled
         if self.active_components['cross_component_feedback']:
@@ -203,6 +203,8 @@ class UnifiedArchitecture(nn.Module):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         process_feedback: bool = True,
+        _skip_two_pass: bool = False,  # Special parameter to prevent recursion
+        **kwargs,  # Allow for any additional parameters
     ):
         """
         Forward pass through the unified architecture.
@@ -217,22 +219,27 @@ class UnifiedArchitecture(nn.Module):
             output_hidden_states: Whether to output all hidden states
             return_dict: Whether to return a dictionary
             process_feedback: Whether to process feedback messages
+            _skip_two_pass: Whether to skip two-pass inference (internal parameter)
             
         Returns:
             Model outputs
         """
-        # Apply two-pass inference if active
-        if self.active_components['two_pass_inference'] and hasattr(self, 'two_pass_inference'):
-            return self.two_pass_inference(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                pixel_values=pixel_values,
-                token_type_ids=token_type_ids,
-                past_key_values=past_key_values,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
-            )
+        # Apply two-pass inference if active and not skipped
+        if not _skip_two_pass and self.active_components['two_pass_inference'] and hasattr(self, 'two_pass_inference'):
+            # Collect all passed parameters into a dictionary
+            forward_kwargs = {}
+            for param_name, param_value in locals().items():
+                if param_name not in ('self', 'forward_kwargs', 'kwargs') and param_value is not None:
+                    forward_kwargs[param_name] = param_value
+                    
+            # Add any additional kwargs
+            forward_kwargs.update(kwargs)
+            
+            # Remove the _skip_two_pass parameter
+            if '_skip_two_pass' in forward_kwargs:
+                del forward_kwargs['_skip_two_pass']
+                
+            return self.two_pass_inference(**forward_kwargs)
         
         # Dynamically update extension points based on active components
         self._update_extension_points()

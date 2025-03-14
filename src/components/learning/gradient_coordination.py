@@ -527,6 +527,9 @@ class GradientCoordinator:
         # Component-specific optimizers
         self.component_optimizers = {}
         
+        # Registered models for gradient coordination
+        self.models = {}
+        
         # Shared optimization settings
         self.shared_optimization = getattr(config.learning, "shared_optimization", True)
         
@@ -918,6 +921,67 @@ class GradientCoordinator:
             if param.grad is not None:
                 param.grad.detach_()
                 param.grad.zero_()
+    
+    def register_model(self, model: nn.Module, model_id: str) -> None:
+        """
+        Register a model for gradient coordination.
+        
+        Args:
+            model: The model to register
+            model_id: The ID to use for this model
+        """
+        with self.component_lock:
+            # Store the model
+            self.models[model_id] = model
+            
+            # Register model as a component
+            params = list(model.parameters())
+            self.register_component(
+                component_id=model_id,
+                default_parameters=params,
+                default_priority=GradientPriority.HIGH
+            )
+    
+    def coordinate_gradients(self, model_id: str):
+        """
+        Context manager for coordinated gradient computation with a specific model.
+        
+        Args:
+            model_id: The ID of the model to coordinate
+            
+        Returns:
+            A context manager for gradient computation
+        """
+        class CoordinationContext:
+            def __init__(self, coordinator, model_id):
+                self.coordinator = coordinator
+                self.model_id = model_id
+                self.context = None
+                
+            def __enter__(self):
+                if self.model_id not in self.coordinator.models:
+                    raise ValueError(f"Model {self.model_id} not registered")
+                
+                # Create gradient context
+                self.context = self.coordinator.create_context()
+                
+                # Register model parameters
+                model = self.coordinator.models[self.model_id]
+                request = self.coordinator.create_gradient_request(
+                    component_id=self.model_id,
+                    parameters=list(model.parameters())
+                )
+                self.context.watch_parameters(request)
+                
+                return self
+                
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                if self.context:
+                    # Will be handled by the context's own __exit__
+                    pass
+                return False
+        
+        return CoordinationContext(self, model_id)
     
     def get_component_stats(self, component_id: str) -> Dict[str, Any]:
         """
