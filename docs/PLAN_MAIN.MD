@@ -168,10 +168,19 @@ All of these components have been integrated with a sophisticated messaging syst
 ### Phase 3.1.0: Testing Infrastructure and Baseline Implementation
 
 **Task 3.1.1: Synthetic Data Generator Integration**
-- [ ] Integrate existing mathematical problem generator
-- [ ] Extend generator to create progressive difficulty levels
+- [ ] CREATE TEST SCENARIO WITH A 100M PARAMETER MODEL. BUT FIRST DOWNLOAD THE DATA SETS WE NEED AND TRAIN THE SMALL MVoT Visual Codebook Training AND BLT Entropy Estimator Pre-Training MODELS AND LOAD THEM INTO THE FRAMEWORK. IF YOU NEED THE USER TO HELP DOWNLOAD FILES FROM THE WEB YOU CAN REQEUST IT 
+- [ ] Integrate existing mathematical problem generator in </Users/isaac/Documents/GitHub/Project-NEAT/docs/synthetic_data.py> THIS IS PULLED FROM A RELATED PROJECT OF MINE, YOU CAN EITHER EDIT IT, OR JUST TAKE INSPIRATION FROM IT AND WRITE YOUR OWN THAT IS INTEGRATED INTO THE PROJECT.
+- [ ] Extend generator to create progressive difficulty levels in training if stabiliy and convergence allows. 
 - [ ] Implement controlled distribution shifts for generalization testing
-- [ ] Create data pipeline for component-specific training data
+- [ ] Create data pipeline for component-specific training data and validation when trining, integrate with rest of codebase. 
+- [ ] Generate a data set of sufficent size for a 100m model. * Start with a balanced parameter budget across components
+* ~40M for core transformer
+* ~20M for Titans memory system
+* ~20M for transformer² adaptation components
+* ~10M for BLT processor
+* ~10M for MVoT processor
+
+then train the model and monitor it along the way, we will probobly have to do ALOT of tuning to this model's parameters and metrics and controls to get it to be stable esp with choosing which data sets to train with and the training parameters.
 
 
 **Task 3.1.2: Baseline Transformer Implementation**
