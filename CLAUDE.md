@@ -15,6 +15,7 @@
 - Train model: `python3 main.py --mode train --use_titans_memory --use_transformer2_adaptation --use_mvot_processor`
 - Evaluate model: `python3 main.py --mode eval --model_path ./outputs/best_model`
 - Profile components: `python3 main.py --mode profile`
+- Train BLT entropy estimator: `python3 main.py --mode train_byte_lm --train_data_dir ./data/byte_training --eval_data_dir ./data/byte_eval --batch_size 64 --max_steps 10000 --byte_lm_hidden_size 128 --byte_lm_num_layers 2`
 
 ## Code Style Guidelines
 - Use type hints (from typing import Dict, List, Optional, Union, Any)
@@ -29,6 +30,18 @@
 - Return dict for model outputs with keys like "logits", "hidden_states"
 
 ## Project Progress and Insights
+
+**March 16, 2025 Update:** Successfully completed Phase 3.1.1 (Synthetic Data Generator Integration) and currently working on Phase 3.1.2 (Baseline Transformer Implementation). The synthetic data generator now produces mathematical problems of varying difficulty levels, including specialized problems to test each NEAT component. All tests are passing, and we've created mock models for the BLT entropy estimator and MVoT visual codebook to facilitate testing without requiring full training.
+
+### Synthetic Data Generator (Completed 3.1.1)
+- **Key Insight 1**: Progressive difficulty levels are essential for evaluating architecture scaling properties.
+- **Key Insight 2**: Component-specific test problems provide targeted evaluation of each architectural innovation.
+- **Key Insight 3**: Controlled distribution shifts between training and test data enable measuring generalization capabilities.
+- **Key Insight 4**: Test formatting variations improve robustness by preventing overfitting to specific problem formats.
+- **Key Insight 5**: Transformation patterns in Transformer² tests require careful design to balance challenge and learnability.
+- **Key Insight 6**: Mock model implementations enable rapid prototyping without requiring full component training.
+- **Key Insight 7**: Comprehensive testing of all problem types ensures data generator reliability.
+- **Key Insight 8**: String templates need careful validation to ensure consistent question formats across all problem types.
 
 ### Titans Memory System Implementation (Completed 1.1.x)
 - **Key Insight 1**: Test-time learning in Titans requires careful gradient management and safeguards to prevent destabilizing the model.
@@ -134,7 +147,7 @@
 - **Key Insight 9**: Resource-aware architecture allows centralized decisions that individual components cannot make.
 - **Key Insight 10**: Memory, compute, and precision resources have different allocation patterns and require different APIs.
 
-### Hardware-Aware Integration (In Progress 2.3.x)
+### Hardware-Aware Integration (Completed 2.3.x)
 - **Key Insight 1**: Different components have distinct memory and computation requirements that vary dynamically during execution.
 - **Key Insight 2**: Priority-based resource allocation enables focusing limited resources on the most important components.
 - **Key Insight 3**: Hardware-specific optimizations with fallback paths are essential for consistent cross-platform performance.
@@ -143,6 +156,37 @@
 - **Key Insight 6**: Dynamic batch sizing based on component characteristics improves throughput on diverse hardware.
 - **Key Insight 7**: Execution pipeline optimization minimizes idle time by coordinating component scheduling.
 - **Key Insight 8**: Hardware profiling and fingerprinting enable selecting the most appropriate optimization strategies.
+
+### Hardware Capability Adaptation (Completed 2.3.2)
+- **Key Insight 1**: Unified hardware detection with singleton pattern ensures consistent capability information across components.
+- **Key Insight 2**: SVD implementation requires different handling across PyTorch versions and platforms (CUDA vs. MPS vs. CPU).
+- **Key Insight 3**: Progressive memory pressure monitoring with threshold-based actions provides more controlled component deactivation.
+- **Key Insight 4**: Memory usage profiling on Apple Silicon requires different approaches than CUDA due to lack of direct memory tracking.
+- **Key Insight 5**: Platform-specific optimizations with graceful fallbacks ensure robust cross-platform operation.
+- **Key Insight 6**: Component reactivation strategies after memory pressure decreases are essential for maintaining functionality.
+- **Key Insight 7**: Hardware-specific optimal configurations need to balance performance and feature availability adaptively.
+- **Key Insight 8**: Test cases for hardware detection and operations must handle potential unavailability of specific hardware.
+- **Key Insight 9**: Library API compatibility checks (e.g., torch.linalg.svd parameters) prevent runtime errors across environments.
+- **Key Insight 10**: Comprehensive profiling across platforms requires adaptive metrics collection based on available capabilities.
+
+### Execution Scheduling Optimization (Completed 2.3.3)
+- **Key Insight 1**: Priority-based scheduling with preemption enables critical operations to execute promptly without being blocked by lower-priority tasks.
+- **Key Insight 2**: Directed acyclic graph (DAG) representation of operation dependencies enables efficient topological sorting and parallel execution planning.
+- **Key Insight 3**: Work stealing algorithms significantly improve thread utilization by redistributing tasks from busy threads to idle ones.
+- **Key Insight 4**: Thread-safe data structures with proper locking granularity are essential for preventing race conditions without sacrificing concurrency.
+- **Key Insight 5**: Adaptive batch sizing based on both memory pressure and computation efficiency creates an optimal balance for different hardware configurations.
+- **Key Insight 6**: Component-specific batch profiles enable more accurate prediction of optimal batch sizes based on historical performance data.
+- **Key Insight 7**: Execution pipeline optimization through operation reordering can significantly reduce idle time between dependent operations.
+- **Key Insight 8**: Memory-aware thread pool management prevents excessive thread creation that could lead to memory pressure and context switching overhead.
+- **Key Insight 9**: API design with backward compatibility aliases enables smooth integration with existing codebase while improving method naming.
+- **Key Insight 10**: Comprehensive benchmarking across different execution strategies provides data-driven optimization decisions for scheduling policies.
+
+### Testing and Benchmarking Framework (Phase 3.1.x - Current Focus)
+- **Key Insight 1**: Synthetic data generation requires progressive difficulty levels to properly test the model's ability to learn and generalize.
+- **Key Insight 2**: Controlled distribution shifts between training and test data are essential for evaluating generalization capabilities.
+- **Key Insight 3**: Baseline models must have equivalent parameter counts and training data access for fair comparison.
+- **Key Insight 4**: Component-specific ablation testing is crucial for isolating the contribution of each architectural innovation.
+- **Key Insight 5**: Comprehensive evaluation metrics should cover accuracy, efficiency, memory usage, and inference throughput.
 
 ### Implementation Patterns
 - Use torch.utils.checkpoint.checkpoint for memory-efficient gradient computation
@@ -170,11 +214,25 @@
 - Apply correction mechanisms proportional to the severity of detected issues
 - Implement cross-component coordination for learning rate synchronization
 - Use automatic quality assessment and correction for self-adaptive learning
+- Use directed acyclic graphs (DAGs) for modeling operation dependencies
+- Implement topological sorting for determining execution order of dependent operations
+- Use priority queues for scheduling operations based on importance
+- Implement work stealing algorithms for load balancing in parallel execution
+- Design APIs with backward compatibility to ensure smooth integration
+- Use thread pools with dynamic worker counts based on hardware capabilities
+- Implement adaptive batching strategies with component-specific profiling
+- Use memory pressure feedback to dynamically adjust batch sizes
+- Provide tensor batch splitting utilities for memory-constrained environments
+- Design synthetic data generation with progressive difficulty levels
+- Create component-wise ablation testing to isolate benefits
+- Implement comparative evaluation frameworks for baseline models
 
 ## Project Reflections and Planning
 
-### Current State Assessment (Updated: 2025-03-13)
-We've successfully completed all phases through 2.2.3, implementing a comprehensive test-time learning system with coordinated gradient computation, adaptive learning rate management, and optimization quality monitoring. All core architectural components are fully implemented and integrated through robust cross-component communication.
+### Current State Assessment (Updated: 2025-03-16)
+We've successfully completed all phases through 2.3.3, implementing a comprehensive platform-agnostic architecture with robust test-time learning, cross-component communication, and hardware-aware resource management. All tests now pass across diverse environments, demonstrating the robustness of our implementation to handle varying hardware configurations from Apple Silicon to NVIDIA GPUs to systems without dedicated graphics acceleration.
+
+We are now beginning Phase 3.1.x (Testing and Benchmarking) to demonstrate the benefits of our architecture compared to traditional approaches.
 
 Key achievements to date include:
 
@@ -202,63 +260,145 @@ Key achievements to date include:
    - **Optimization Quality Monitoring**: Comprehensive quality assessment system (2.2.3)
    - **Cross-Component Correction**: Coordinated correction mechanisms for harmonious learning (2.2.3)
 
-These achievements demonstrate our key architectural innovations: loose coupling with controlled interactions, efficient cross-component communication, coordinated behavior through feedback mechanisms, synchronized test-time learning, and robust stability management for test-time adaptation.
+4. **Hardware-Aware Integration**:
+   - **Component Resource Management**: Dynamic resource allocation based on component importance (2.3.1)
+   - **Platform-Agnostic Implementation**: Robust fallback paths ensuring compatibility across hardware (2.3.1)
+   - **Memory Pressure Adaptation**: Automatic component deactivation under system constraints (2.3.2)
+   - **Hardware Capability Detection**: Intelligent feature detection enabling optimal hardware utilization (2.3.2)
+   - **Priority-Based Execution**: Scheduling system ensuring critical operations execute promptly (2.3.3)
+   - **Parallel Execution Optimization**: Identification and execution of independent operations concurrently (2.3.3)
+   - **Adaptive Batching System**: Dynamic batch size adjustment based on hardware and component characteristics (2.3.3)
+   - **End-to-End Integration Testing**: Comprehensive test suite validating the full system pipeline
+   - **Cross-Platform Testing**: Verified operation on both Apple Silicon and x86 architectures
 
-### Lessons Learned from Implementation
-1. **Component Architecture**:
-   - Loose coupling with well-defined interfaces enables independent development and testing
-   - Message-based communication provides flexibility for evolving component needs
-   - Component-specific optimizations with shared infrastructure balance specialization and code reuse
+These achievements represent significant progress in our architectural vision: loose coupling with controlled interactions, efficient cross-component communication, coordinated behavior through feedback mechanisms, synchronized test-time learning, and robust hardware-aware resource management.
 
-2. **Test-Time Learning**:
-   - Coordinated gradient computation requires careful threading and synchronization
-   - Different components require tailored learning strategies for optimal performance
-   - Stability monitoring with multiple metrics enables early detection of potential issues
-   - Parameter backup and emergency recovery mechanisms are essential safeguards
+### Current Focus: Testing and Benchmarking Framework (Phase 3.1.x)
 
-3. **Integration Challenges**:
-   - Thread synchronization requires timeout mechanisms to prevent deadlocks
-   - Byte-level and token-level representations need careful dimension alignment
-   - Cross-component feedback loops must be carefully designed to prevent oscillation
-   - Platform-specific code requires robust fallback mechanisms for cross-platform compatibility
+We are now beginning Phase 3.1.x - Testing and Benchmarking. Our immediate priorities are:
 
-4. **Testing and Validation**:
-   - Comprehensive tests with appropriate timeouts are crucial for complex systems
-   - Mock implementations enable testing components in isolation
-   - Floating-point precision handling requires special attention in test assertions
-   - Component tests must cover both normal operation and emergency recovery scenarios
+1. **Synthetic Data Generator Integration** (Task 3.1.1)
+   - Integrate existing mathematical problem generator from synthetic_data.py
+   - Extend the generator to create progressive difficulty levels
+   - Implement controlled distribution shifts for testing generalization
+   - Create component-specific training data pipelines
+   - Pre-train the BLT Entropy Estimator and MVoT Visual Codebook models
 
-### Current Focus: Hardware-Aware Integration (Phase 2.3.x)
-Building on our successful test-time learning framework, we've begun Phase 2.3.x focusing on hardware-aware integration to optimize performance across different platforms. This phase consists of three main components:
+2. **Baseline Transformer Implementation** (Task 3.1.2)
+   - Create parameter-matched vanilla transformer for fair comparison
+   - Implement shared evaluation harness for consistent benchmarking
+   - Design metrics for measuring component-specific benefits
+   - Create visualization tools for performance comparison
 
-1. **Component-Specific Resource Allocation** (Task 2.3.1):
-   - Dynamic memory budgeting across components based on priority and needs
-   - Computation distribution that allocates resources to the most critical components
-   - Adaptive precision selection that balances accuracy and performance
-   - Platform-specific optimizations for Metal (Apple Silicon) and CUDA (NVIDIA GPUs)
+3. **Component-Wise Ablation Testing** (Task 3.1.3)
+   - Design test suite for isolating component contributions
+   - Implement controlled experiments for measuring synergistic effects
+   - Create visualization of component interactions and benefits
+   - Develop automated testing pipeline for continuous evaluation
 
-2. **Latency-Aware Component Scheduling** (Task 2.3.2):
-   - Priority-based execution scheduling that minimizes waiting time
-   - Parallelization opportunity identification for concurrent execution
-   - Adaptive batching based on component characteristics and hardware capabilities
-   - Execution pipeline optimization to minimize idle time
+### Testing Strategy
 
-3. **Target Hardware Optimization Profiles** (Task 2.3.3):
-   - Hardware-specific profiles for different target platforms
-   - Dynamic feature detection to identify hardware capabilities
-   - Fallback mechanisms for graceful degradation on limited hardware
-   - Performance benchmarking to measure optimization effectiveness
+To effectively evaluate our NEAT architecture's benefits compared to traditional approaches, we need:
 
-These efforts will enable Project NEAT to efficiently utilize available hardware resources while maintaining consistent behavior across platforms, ultimately improving both performance and scalability.
+1. **A robust synthetic data generator** that can:
+   - Create mathematical problems at varying difficulty levels
+   - Generate controlled distribution shifts between training and test sets
+   - Support both in-distribution and out-of-distribution testing
 
-### Long-Term Vision
-Our ultimate goal remains demonstrating that coordinated components offer superior efficiency and capability compared to monolithic scaling. We aim to prove that:
+2. **A two-phase training and evaluation approach**:
+   - Initial training on in-distribution data to establish baseline capability
+   - Evaluation on both in-distribution and out-of-distribution problems
+   - Comparison of performance drop between in-distribution and out-of-distribution problems
 
-1. **Efficient Computation**: Dynamic component activation saves computation while maintaining quality
-2. **Improved Generalization**: Test-time learning provides better generalization on long contexts and novel tasks
-3. **Synergistic Interaction**: Cross-component communication improves overall system performance
-4. **Versatility**: The combined system handles a wider array of tasks than any single component alone
+3. **Component-wise ablation testing**:
+   - Test performance with individual components enabled/disabled
+   - Measure synergistic effects of component combinations
+   - Quantify memory usage and computational efficiency
 
-By completing Phase 2.1 and moving into Phase 2.2, we're making significant progress toward realizing this vision. The successful integration of all four components and their communication systems creates a solid foundation for the more sophisticated test-time learning coordination we'll implement next.
+4. **Comprehensive metrics covering**:
+   - Accuracy on mathematical problem-solving
+   - Memory usage efficiency
+   - Computational throughput
+   - Generalization capability
 
-As we continue development, we'll maintain our focus on both theoretical soundness and practical implementation, ensuring that Project NEAT demonstrates clear advantages over conventional approaches while remaining deployable on diverse hardware platforms.
+### Next Steps
+
+Our immediate next steps are:
+
+1. **Integrate the synthetic data generator**:
+   - Adapt code from synthetic_data.py to work with our NEAT architecture
+   - Create a component for generating mathematical problems at various difficulty levels
+   - Implement data loaders for efficient training
+
+2. **Pre-train the necessary component models**:
+   - Set up the byte-level entropy estimator training
+   - Configure the MVoT visual codebook training
+   - Create a training pipeline for these foundational models
+
+3. **Implement a baseline transformer model**:
+   - Design a parameter-matched vanilla transformer
+   - Ensure it uses the same training data and evaluation metrics
+   - Create a fair comparison framework
+
+By following this strategy, we'll systematically demonstrate the benefits of our component-based NEAT architecture over traditional monolithic approaches, especially in terms of adaptability, efficiency, and generalization capability.
+
+project-neat/
+├── src/
+│   ├── components/
+│   │   ├── titans/                   # Titans memory system
+│   │   │   └── memory_system.py      # Three-tiered memory implementation
+│   │   ├── transformer2/             # Transformer² adaptation
+│   │   │   └── adaptation.py         # SVD-based weight adaptation
+│   │   ├── mvot/                     # MVoT token processor
+│   │   │   ├── visual_codebook.py    # VQ-VAE integration
+│   │   │   ├── token_processor.py    # Multimodal token processing
+│   │   │   ├── decision/             # Decision mechanisms
+│   │   │   └── mapping/              # Byte-token mapping
+│   │   ├── blt/                      # BLT byte processor
+│   │   │   ├── byte_processor.py     # Entropy-based patching
+│   │   │   └── entropy_estimator_trainer.py # Byte-level entropy estimation
+│   │   ├── feedback/                 # Component feedback mechanisms
+│   │   │   ├── task_memory_feedback.py # Task-memory correlation
+│   │   │   ├── adaptation_feedback.py  # Surprise-driven adaptation
+│   │   │   └── modality_feedback.py    # Modality feedback
+│   │   ├── learning/                 # Learning components
+│   │   │   ├── adaptive_learning_rate.py # Dynamic learning rate management
+│   │   │   ├── gradient_coordination.py  # Cross-component gradient management
+│   │   │   └── optimization_monitoring.py # Test-time optimization quality
+│   │   └── messaging/                # Component communication
+│   │       ├── message_protocol.py   # Message passing system
+│   │       └── component_state.py    # Component state tracking
+│   ├── models/                       # Unified architecture
+│   │   ├── unified_architecture.py   # Main architecture integration
+│   │   ├── unified_architecture_resource_adapter.py # Resource-aware architecture
+│   │   └── transformer.py            # Base transformer implementation
+│   ├── trainers/                     # Training infrastructure
+│   │   └── hardware_aware_trainer.py # Platform-specific training
+│   ├── data/                         # Data handling (new for Phase 3.1.1)
+│   │   ├── synthetic/                # Synthetic data generation
+│   │   │   └── math_generator.py     # Mathematical problem generator
+│   │   └── loaders/                  # Data loading utilities
+│   └── utils/                        # Utility functions
+│       ├── config.py                 # Configuration handling
+│       ├── memory_optimization.py    # Memory usage optimization
+│       └── component_resource_management.py # Component-specific resource allocation
+├── tests/                            # Test cases
+│   ├── test_components.py            # Component-level tests
+│   ├── test_integration.py           # Integration tests
+│   ├── test_learning.py              # Learning system tests
+│   ├── test_feedback.py              # Feedback mechanism tests
+│   ├── test_messaging.py             # Messaging system tests
+│   ├── test_component_resource_management.py # Resource management tests
+│   ├── test_resource_aware_architecture.py  # Resource-aware architecture tests
+│   └── test_synthetic_data.py        # Tests for synthetic data generator (new)
+├── docs/                             # Documentation
+│   ├── PLAN_MAIN.MD                  # Project planning document
+│   ├── TECHNICAL.md                  # Technical details and theory
+│   ├── phase2.2.2-3_plan.md          # Hardware-aware integration plan
+│   ├── synthetic_data.py             # Original synthetic data implementation
+│   └── metal_docs.md                 # Apple Metal framework integration
+├── scripts/                          # Helper scripts
+│   ├── train_byte_lm.py              # BLT training script
+│   └── train_baseline.py             # Baseline model training script (new)
+└── main.py                           # Main script
+```

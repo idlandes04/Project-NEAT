@@ -13,7 +13,7 @@ import threading
 import logging
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Union, Any, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 try:
@@ -65,6 +65,17 @@ class ResourceAllocation:
 
 
 @dataclass
+class ComponentUsageStats:
+    """Track runtime usage statistics for a component."""
+    activation_count: int = 0  # Number of times the component has been activated
+    total_gpu_time: float = 0.0  # Total GPU time used in milliseconds
+    total_cpu_time: float = 0.0  # Total CPU time used in milliseconds
+    peak_memory_usage: Dict[str, int] = field(default_factory=lambda: {"gpu": 0, "cpu": 0})  # Peak memory usage
+    last_activation: float = 0.0  # Timestamp of last activation
+    activation_history: List[float] = field(default_factory=list)  # Recent activation timestamps
+    resource_usage_history: List[Dict[str, float]] = field(default_factory=list)  # Recent resource usage
+
+@dataclass
 class ComponentProfile:
     """Profile of a component's resource usage patterns."""
     component_id: str
@@ -73,6 +84,8 @@ class ComponentProfile:
     precision_requirements: Dict[str, int]  # Operation name to required precision in bits
     importance_score: float  # 0.0 to 1.0, higher is more important
     scaling_factor: Dict[str, float]  # Resource type to scaling factor (how well it scales with more resources)
+    usage_stats: ComponentUsageStats = field(default_factory=ComponentUsageStats)  # Runtime statistics
+    task_affinities: Dict[str, float] = field(default_factory=dict)  # Task type to relevance score
 
 
 class MemoryBudgetManager:
@@ -108,9 +121,15 @@ class MemoryBudgetManager:
         # Component profiles {component_id: ComponentProfile}
         self.component_profiles = {}
         
+        # Dynamic importance scores for allocation decisions
+        self.component_dynamic_scores = {}
+        
         # Memory pressure detection
         self.memory_pressure_level = 0.0  # 0.0 to 1.0, higher is more pressure
         self.pressure_history = []  # Track memory pressure over time
+        
+        # Component memory usage tracking
+        self.component_memory_usage = {}  # {component_id: {ResourceType: usage}}
         
         # Thread-safe locks
         self.allocation_lock = threading.RLock()
@@ -158,6 +177,211 @@ class MemoryBudgetManager:
         # Start monitoring thread
         thread = threading.Thread(target=_monitor_pressure, daemon=True)
         thread.start()
+        
+        # Start progressive monitoring for more granular control
+        self.start_progressive_monitoring()
+    
+    def start_progressive_monitoring(self):
+        """Start progressive memory pressure monitoring."""
+        def _monitor_progressive_pressure():
+            pressure_levels = [0.7, 0.8, 0.9, 0.95]
+            current_level_index = -1  # No level triggered yet
+            
+            while True:
+                try:
+                    # Get current memory stats
+                    stats = get_memory_stats()
+                    
+                    # Calculate pressure level
+                    if TORCH_AVAILABLE and torch.cuda.is_available():
+                        gpu_pressure = stats["gpu_allocated"] / stats["gpu_total"]
+                    elif TORCH_AVAILABLE and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                        # For Apple Silicon MPS, we don't have direct memory stats
+                        # We'll use a heuristic based on process memory growth
+                        import psutil
+                        process_rss = psutil.Process().memory_info().rss
+                        if not hasattr(self, '_base_process_memory'):
+                            self._base_process_memory = process_rss
+                        
+                        # Estimate GPU pressure based on process memory growth
+                        # This is a rough approximation
+                        memory_growth = max(0, process_rss - self._base_process_memory)
+                        estimated_total = 4 * 1024 * 1024 * 1024  # 4GB estimate for Apple Silicon
+                        gpu_pressure = min(0.95, memory_growth / estimated_total)
+                    else:
+                        gpu_pressure = 0.0
+                    
+                    cpu_pressure = stats["cpu_used"] / stats["cpu_total"]
+                    
+                    # Combine pressures (weighted toward GPU if available)
+                    if gpu_pressure > 0:
+                        current_pressure = 0.7 * gpu_pressure + 0.3 * cpu_pressure
+                    else:
+                        current_pressure = cpu_pressure
+                    
+                    # Update memory pressure level
+                    self.memory_pressure_level = current_pressure
+                    
+                    # Add to pressure history (keep last 10 measurements)
+                    self.pressure_history.append(current_pressure)
+                    if len(self.pressure_history) > 10:
+                        self.pressure_history.pop(0)
+                    
+                    # Detect level transitions
+                    new_level_index = -1
+                    for i, level in enumerate(pressure_levels):
+                        if current_pressure >= level:
+                            new_level_index = i
+                    
+                    # If we've moved to a higher level, trigger progressive deactivation
+                    if new_level_index > current_level_index:
+                        self._handle_pressure_level_increase(pressure_levels[new_level_index])
+                        current_level_index = new_level_index
+                    # If we've moved to a lower level, trigger reactivation
+                    elif new_level_index < current_level_index and new_level_index == -1:
+                        # Only reactivate when below all levels
+                        self._handle_pressure_level_decrease()
+                        current_level_index = new_level_index
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in progressive memory pressure monitoring: {e}")
+                
+                # Sleep for a short time
+                time.sleep(1.0)
+        
+        # Start monitoring thread
+        thread = threading.Thread(target=_monitor_progressive_pressure, daemon=True)
+        thread.start()
+    
+    def _handle_pressure_level_increase(self, pressure_level):
+        """
+        Handle increase in memory pressure level with progressive component deactivation.
+        
+        Args:
+            pressure_level: The current pressure level threshold that was crossed
+        """
+        self.logger.warning(f"Memory pressure level increased to {pressure_level:.2f}")
+        
+        # Get current component activation state from universal_architecture
+        try:
+            # Import here to avoid circular imports
+            from src.components.messaging.component_state import get_state, StateType
+            
+            arch_state = get_state(StateType.MEMORY_CONTENT, "unified_architecture")
+            if arch_state and "active_components" in arch_state.value:
+                active_components = arch_state.value.get("active_components", {})
+                
+                # Define component priorities (higher is more important)
+                component_priorities = {
+                    'byte_processor': 0.6,
+                    'memory_system': 0.9,
+                    'token_processor': 0.7,
+                    'adaptation_system': 0.8,
+                    'two_pass_inference': 0.5,
+                }
+                
+                # Sort components by priority (lowest first)
+                sorted_components = sorted(
+                    active_components.items(),
+                    key=lambda x: component_priorities.get(x[0], 0.5) if x[1] else 0.0
+                )
+                
+                # Progressive deactivation based on pressure level
+                components_to_deactivate = {}
+                
+                if pressure_level >= 0.95:  # Critical pressure
+                    # Keep only the most essential components
+                    for component, active in sorted_components:
+                        if component not in ['memory_system', 'transformer'] and active:
+                            components_to_deactivate[component] = False
+                    
+                elif pressure_level >= 0.9:  # Severe pressure
+                    # Disable all but the top 2 priority components
+                    for component, active in sorted_components[:-2]:
+                        if component != 'transformer' and active:
+                            components_to_deactivate[component] = False
+                
+                elif pressure_level >= 0.8:  # High pressure
+                    # Disable lowest priority components
+                    for component, active in sorted_components[:2]:
+                        if component != 'transformer' and active:
+                            components_to_deactivate[component] = False
+                
+                elif pressure_level >= 0.7:  # Moderate pressure
+                    # Disable lowest priority component
+                    if sorted_components and sorted_components[0][1]:
+                        component = sorted_components[0][0]
+                        if component != 'transformer':
+                            components_to_deactivate[component] = False
+                
+                # Apply deactivation if needed
+                if components_to_deactivate:
+                    # Import here to avoid circular imports
+                    from src.components.messaging.message_protocol import send_message, Message, MessageType
+                    
+                    # Track deactivated components for potential reactivation later
+                    if not hasattr(self, "_deactivated_components"):
+                        self._deactivated_components = {}
+                    
+                    # Update deactivated components record
+                    for component, active in components_to_deactivate.items():
+                        self._deactivated_components[component] = True
+                    
+                    # Send message to deactivate components
+                    send_message(Message(
+                        msg_type=MessageType.COMPONENT_CONTROL,
+                        sender="memory_budget_manager",
+                        content={
+                            "action": "deactivate",
+                            "components": components_to_deactivate,
+                            "reason": f"Memory pressure level {pressure_level:.2f}"
+                        },
+                        priority=10  # High priority
+                    ))
+                    
+                    self.logger.warning(f"Deactivated components due to high memory pressure: {list(components_to_deactivate.keys())}")
+                    
+                    # Perform garbage collection
+                    gc.collect()
+                    if TORCH_AVAILABLE and torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+        
+        except Exception as e:
+            self.logger.error(f"Error handling pressure level increase: {e}")
+    
+    def _handle_pressure_level_decrease(self):
+        """Handle decrease in memory pressure level with component reactivation."""
+        self.logger.info("Memory pressure decreased below all thresholds")
+        
+        # Check if we have a record of deactivated components
+        if not hasattr(self, "_deactivated_components"):
+            return
+        
+        # Reactivate components if pressure has decreased significantly
+        if self.memory_pressure_level < 0.5:
+            try:
+                # Import here to avoid circular imports
+                from src.components.messaging.message_protocol import send_message, Message, MessageType
+                
+                # Send message to reactivate components
+                send_message(Message(
+                    msg_type=MessageType.COMPONENT_CONTROL,
+                    sender="memory_budget_manager",
+                    content={
+                        "action": "reactivate",
+                        "components": self._deactivated_components,
+                        "reason": "Memory pressure decreased"
+                    },
+                    priority=5  # Medium priority
+                ))
+                
+                self.logger.info(f"Reactivated components due to decreased memory pressure")
+                
+                # Clear deactivated components record
+                self._deactivated_components = {}
+            
+            except Exception as e:
+                self.logger.error(f"Error handling pressure level decrease: {e}")
     
     def _handle_memory_pressure(self):
         """Handle high memory pressure by reallocating resources."""
@@ -210,20 +434,137 @@ class MemoryBudgetManager:
                 torch.cuda.empty_cache()
     
     def _get_allocation_priority_score(self, allocation: ResourceAllocation) -> float:
-        """Get a score for allocation priority (higher = more important)."""
-        # Base score from component profile
-        component_profile = self.component_profiles.get(allocation.component_id)
-        if component_profile:
-            base_score = component_profile.importance_score
+        """
+        Get a score for allocation priority (higher = more important).
+        
+        This method computes a dynamic importance score based on:
+        1. Base component importance from profile
+        2. Current usage patterns and system state
+        3. Task relevance (if available)
+        4. Surprise and entropy metrics (if available)
+        """
+        # Check if we have a dynamic score for this component
+        component_id = allocation.component_id
+        if component_id in self.component_dynamic_scores:
+            # Use pre-computed dynamic score
+            base_score = self.component_dynamic_scores[component_id]
         else:
-            base_score = 0.5  # Default middle importance
+            # Fallback to static importance score from profile
+            component_profile = self.component_profiles.get(component_id)
+            if component_profile:
+                base_score = component_profile.importance_score
+            else:
+                base_score = 0.5  # Default middle importance
         
         # Adjust score based on resource type
+        resource_factor = 1.0
         if allocation.resource_type == ResourceType.MEMORY_GPU:
             # GPU memory is more valuable
-            return base_score * 1.2
-        else:
-            return base_score
+            resource_factor = 1.2
+        
+        # Get additional dynamic factors from runtime conditions
+        dynamic_factors = self._get_dynamic_importance_factors(component_id)
+        
+        # Compute final score - combine base importance with dynamic factors
+        final_score = base_score * resource_factor * dynamic_factors
+        
+        # Apply memory pressure adjustments
+        if self.memory_pressure_level > 0.7:
+            # Under high pressure, critical allocations get priority boost
+            if component_id in ["titans_memory_system", "transformer2_adaptation"]:
+                final_score *= 1.3
+            elif component_id in ["blt_processor"]:
+                # BLT is moderately important
+                final_score *= 1.1
+            elif "feedback" in component_id.lower() or "message" in component_id.lower():
+                # Communication components are essential
+                final_score *= 1.2
+        
+        # Ensure score is within reasonable bounds
+        return min(max(final_score, 0.1), 2.0)
+        
+    def _get_dynamic_importance_factors(self, component_id: str) -> float:
+        """
+        Calculate dynamic importance factors based on runtime conditions.
+        
+        Args:
+            component_id: Component identifier
+            
+        Returns:
+            Combined dynamic importance factor
+        """
+        # Import message protocol here to avoid circular imports
+        from src.components.messaging.component_state import get_state
+        from src.components.messaging.message_protocol import MessageType
+        
+        # Start with neutral factor
+        activity_factor = 1.0
+        task_relevance_factor = 1.0
+        surprise_factor = 1.0
+        memory_pressure_response = 1.0
+        
+        try:
+            # 1. Check component activity
+            arch_state = get_state(StateType.MEMORY_CONTENT, "unified_architecture")
+            if arch_state and "active_components" in arch_state.value:
+                active_components = arch_state.value.get("active_components", {})
+                
+                # Component activation state
+                if component_id in active_components:
+                    if active_components[component_id]:
+                        # Currently active components get a boost
+                        activity_factor = 1.3
+                    else:
+                        # Inactive components get reduced priority
+                        activity_factor = 0.7
+            
+            # 2. Check task relevance
+            task_state = get_state(StateType.TASK_INFO, "unified_architecture")
+            if task_state and "task_type" in task_state.value:
+                task_type = task_state.value.get("task_type")
+                
+                # Task-specific importance adjustments
+                if task_type in ["visual_reasoning", "multimodal"] and component_id == "mvot_processor":
+                    # MVoT processor is critical for visual tasks
+                    task_relevance_factor = 1.5
+                elif task_type in ["long_context"] and component_id == "titans_memory_system":
+                    # Memory system is critical for long context tasks
+                    task_relevance_factor = 1.5
+                elif task_type in ["complex_reasoning"] and component_id == "transformer2_adaptation":
+                    # Adaptation system is critical for complex reasoning tasks
+                    task_relevance_factor = 1.4
+                elif task_type in ["compression", "byte_processing"] and component_id == "blt_processor":
+                    # BLT processor is critical for byte-level tasks
+                    task_relevance_factor = 1.5
+            
+            # 3. Check surprise and entropy metrics
+            surprise_state = get_state(StateType.SURPRISE_INFO, "titans_memory_system")
+            if surprise_state and component_id == "titans_memory_system":
+                surprise_values = surprise_state.value.get("surprise_values", [])
+                if surprise_values and max(surprise_values) > 0.7:
+                    # High surprise means memory system needs resources
+                    surprise_factor = 1.4
+            
+            entropy_state = get_state(StateType.ENTROPY_INFO, "blt_processor")
+            if entropy_state and component_id == "blt_processor":
+                entropy_values = entropy_state.value.get("entropy_values", [])
+                if entropy_values and max(entropy_values) > 0.7:
+                    # High entropy means BLT processor needs resources
+                    surprise_factor = 1.3
+            
+            # 4. Memory pressure response - reduce importance of non-critical components
+            critical_components = {"titans_memory_system", "transformer2_adaptation"}
+            if self.memory_pressure_level > 0.7 and component_id not in critical_components:
+                # Under high pressure, reduce importance of non-critical components
+                memory_pressure_response = 0.7
+            
+        except Exception as e:
+            # Fallback to basic scoring on any error
+            self.logger.warning(f"Error in dynamic importance scoring: {e}")
+            return 1.0
+        
+        # Combine all factors - multiply to get final importance factor
+        return activity_factor * task_relevance_factor * surprise_factor * memory_pressure_response
     
     def _reduce_allocation(self, allocation: ResourceAllocation, reduction: int):
         """Reduce an allocation by the specified amount."""
@@ -936,16 +1277,120 @@ class ComponentResourceManager:
         
         # Component registry
         self.registered_components = set()
+        self.component_profiles = {}
+        
+        # Usage tracking
+        self.component_usage = {}
+        self.last_update_time = time.time()
         
         # Thread-safe lock
         self.manager_lock = threading.RLock()
+        
+        # Start usage monitoring thread
+        self._start_usage_monitoring()
+    
+    def _start_usage_monitoring(self):
+        """Start a background thread to monitor component usage."""
+        def _monitor_usage():
+            while True:
+                try:
+                    # Update component usage statistics every 5 seconds
+                    time.sleep(5.0)
+                    current_time = time.time()
+                    
+                    with self.manager_lock:
+                        # Update usage history for active components
+                        self._update_component_usage_stats()
+                        
+                        # Update dynamic importance scores
+                        self._update_importance_scores()
+                        
+                except Exception as e:
+                    self.logger.error(f"Error in usage monitoring: {e}")
+        
+        # Start monitoring thread
+        thread = threading.Thread(target=_monitor_usage, daemon=True)
+        thread.start()
+    
+    def _update_component_usage_stats(self):
+        """Update component usage statistics based on recent activity."""
+        # Import here to avoid circular imports
+        from src.components.messaging.component_state import get_state, StateType
+        
+        current_time = time.time()
+        
+        # Get active components from architecture state if available
+        active_components = {}
+        try:
+            arch_state = get_state(StateType.MEMORY_CONTENT, "unified_architecture")
+            if arch_state and "active_components" in arch_state.value:
+                active_components = arch_state.value.get("active_components", {})
+        except Exception:
+            pass
+        
+        # Update usage stats for all registered components
+        for component_id in self.registered_components:
+            if component_id in self.component_profiles:
+                profile = self.component_profiles[component_id]
+                
+                # Update activation timestamp if component is active
+                if component_id in active_components and active_components[component_id]:
+                    profile.usage_stats.activation_count += 1
+                    profile.usage_stats.last_activation = current_time
+                    
+                    # Add to activation history (keep last 10 activations)
+                    profile.usage_stats.activation_history.append(current_time)
+                    if len(profile.usage_stats.activation_history) > 10:
+                        profile.usage_stats.activation_history.pop(0)
+    
+    def _update_importance_scores(self):
+        """Update dynamic importance scores for all components."""
+        # Import here to avoid circular imports
+        from src.components.messaging.component_state import get_state, StateType
+        
+        # Get current task type if available
+        current_task = None
+        try:
+            task_state = get_state(StateType.TASK_INFO, "unified_architecture")
+            if task_state and "task_type" in task_state.value:
+                current_task = task_state.value["task_type"]
+        except Exception:
+            pass
+        
+        # Update importance scores based on recency, activity, and task
+        for component_id, profile in self.component_profiles.items():
+            # Base importance - unchanged
+            base_importance = profile.importance_score
+            
+            # Recency factor - boost recently active components
+            recency_factor = 1.0
+            if profile.usage_stats.activation_history:
+                time_since_last = time.time() - profile.usage_stats.last_activation
+                if time_since_last < 10.0:  # Within last 10 seconds
+                    recency_factor = 1.2
+                elif time_since_last < 30.0:  # Within last 30 seconds
+                    recency_factor = 1.1
+            
+            # Task relevance factor
+            task_factor = 1.0
+            if current_task and current_task in profile.task_affinities:
+                task_factor = profile.task_affinities[current_task]
+            
+            # Don't update the base importance_score directly, as it's the configured default
+            # Instead, store the dynamic score in memory manager for allocation decisions
+            dynamic_score = base_importance * recency_factor * task_factor
+            
+            # Store this for the memory manager to use in allocation decisions
+            if component_id in self.memory_manager.component_profiles:
+                self.memory_manager.component_dynamic_scores[component_id] = dynamic_score
     
     def register_component(
         self, 
         component_id: str, 
         memory_profile: Dict[str, Any] = None,
         compute_priority: float = 0.5,
-        precision_requirements: Dict[str, str] = None
+        precision_requirements: Dict[str, str] = None,
+        task_affinities: Dict[str, float] = None
     ):
         """
         Register a component with the resource manager.
@@ -955,10 +1400,25 @@ class ComponentResourceManager:
             memory_profile: Memory usage profile
             compute_priority: Compute priority (0.0 to 1.0)
             precision_requirements: Precision requirements
+            task_affinities: Dictionary mapping task types to relevance scores (0.0-2.0)
         """
         with self.manager_lock:
             # Create and register component profile for memory
             if memory_profile:
+                # Initialize with default task affinities if not provided
+                task_affs = task_affinities or {}
+                
+                # Set default task affinities based on component type
+                if not task_affs and component_id:
+                    if "memory" in component_id.lower():
+                        task_affs = {"long_context": 1.5, "few_shot": 1.2}
+                    elif "adapt" in component_id.lower():
+                        task_affs = {"complex_reasoning": 1.4, "few_shot": 1.3}
+                    elif "mvot" in component_id.lower():
+                        task_affs = {"visual_reasoning": 1.5, "multimodal": 1.5}
+                    elif "blt" in component_id.lower():
+                        task_affs = {"compression": 1.5, "byte_processing": 1.5}
+                
                 profile = ComponentProfile(
                     component_id=component_id,
                     typical_memory_usage=memory_profile.get("memory_usage", {"gpu": 0, "cpu": 0}),
@@ -970,9 +1430,23 @@ class ComponentResourceManager:
                         "memory_cpu": 1.0,
                         "compute_gpu": 1.0,
                         "compute_cpu": 1.0
-                    })
+                    }),
+                    usage_stats=ComponentUsageStats(),
+                    task_affinities=task_affs
                 )
+                
+                # Store profile locally
+                self.component_profiles[component_id] = profile
+                
+                # Register with memory manager
                 self.memory_manager.register_component_profile(profile)
+                
+                # Initialize dynamic scores dictionary if needed
+                if not hasattr(self.memory_manager, 'component_dynamic_scores'):
+                    self.memory_manager.component_dynamic_scores = {}
+                
+                # Set initial dynamic score equal to base score
+                self.memory_manager.component_dynamic_scores[component_id] = compute_priority
             
             # Register compute priority
             self.compute_distributor.register_component_priority(component_id, compute_priority)
@@ -991,7 +1465,8 @@ class ComponentResourceManager:
         memory_gpu: int = 0, 
         memory_cpu: int = 0,
         need_gpu_stream: bool = False,
-        operations: List[str] = None
+        operations: List[str] = None,
+        priority: AllocationPriority = None  # Add priority parameter
     ) -> Dict[str, Any]:
         """
         Request resources for a component.
@@ -1002,6 +1477,7 @@ class ComponentResourceManager:
             memory_cpu: CPU memory in bytes
             need_gpu_stream: Whether a GPU stream is needed
             operations: List of operations to be performed
+            priority: Optional priority for this request (overrides component's default priority)
             
         Returns:
             Dictionary with allocated resources
@@ -1014,11 +1490,14 @@ class ComponentResourceManager:
         
         # Request GPU memory
         if memory_gpu > 0:
+            # Determine priority to use
+            request_priority = priority if priority is not None else AllocationPriority.MEDIUM
+            
             gpu_alloc = self.memory_manager.request_memory(
                 component_id=component_id,
                 amount=memory_gpu,
                 resource_type=ResourceType.MEMORY_GPU,
-                priority=AllocationPriority.MEDIUM,
+                priority=request_priority,
                 flexible=True,
                 minimum_amount=memory_gpu // 2
             )
@@ -1027,11 +1506,14 @@ class ComponentResourceManager:
         
         # Request CPU memory
         if memory_cpu > 0:
+            # Determine priority to use (reuse the same variable or get it again)
+            request_priority = priority if priority is not None else AllocationPriority.MEDIUM
+            
             cpu_alloc = self.memory_manager.request_memory(
                 component_id=component_id,
                 amount=memory_cpu,
                 resource_type=ResourceType.MEMORY_CPU,
-                priority=AllocationPriority.MEDIUM,
+                priority=request_priority,
                 flexible=True,
                 minimum_amount=memory_cpu // 2
             )

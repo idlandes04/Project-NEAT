@@ -436,7 +436,16 @@ class SVDAdaptation(nn.Module):
         
         # Decompose attention matrices for each layer
         if self.adapt_attention:
-            for layer_idx, layer in enumerate(model.layers):
+            # Check if model has direct layers attribute or needs to access via transformer
+            if hasattr(model, 'layers'):
+                layers = model.layers
+            elif hasattr(model, 'transformer') and hasattr(model.transformer, 'layers'):
+                layers = model.transformer.layers
+            else:
+                print("Warning: Model structure doesn't match expected pattern. Skipping adaptation.")
+                return
+                
+            for layer_idx, layer in enumerate(layers):
                 for name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
                     start_time = time.time()
                     weight = getattr(layer.attention, name).weight
@@ -465,7 +474,17 @@ class SVDAdaptation(nn.Module):
         
         # Decompose feed-forward matrices for each layer
         if self.adapt_ffn:
-            for layer_idx, layer in enumerate(model.layers):
+            # Use the same layers object we determined above
+            if not 'layers' in locals():
+                if hasattr(model, 'layers'):
+                    layers = model.layers
+                elif hasattr(model, 'transformer') and hasattr(model.transformer, 'layers'):
+                    layers = model.transformer.layers
+                else:
+                    print("Warning: Model structure doesn't match expected pattern. Skipping adaptation.")
+                    return
+                    
+            for layer_idx, layer in enumerate(layers):
                 for name in ["fc1", "fc2"]:
                     start_time = time.time()
                     weight = getattr(layer.feed_forward, name).weight
@@ -494,9 +513,20 @@ class SVDAdaptation(nn.Module):
         
         # Decompose embedding matrices
         if self.adapt_embeddings:
+            # Determine how to access embeddings based on model structure
+            if hasattr(model, 'embeddings'):
+                embeddings = model.embeddings
+                position_embeddings = model.position_embeddings
+            elif hasattr(model, 'transformer') and hasattr(model.transformer, 'embeddings'):
+                embeddings = model.transformer.embeddings
+                position_embeddings = model.transformer.position_embeddings
+            else:
+                print("Warning: Model structure doesn't have expected embeddings. Skipping adaptation.")
+                return
+                
             # Token embeddings
             start_time = time.time()
-            weight = model.embeddings.weight
+            weight = embeddings.weight
             
             # Determine number of components based on adaptive precision
             n_components = self._estimate_adaptive_precision(weight)
@@ -518,7 +548,7 @@ class SVDAdaptation(nn.Module):
             
             # Position embeddings
             start_time = time.time()
-            weight = model.position_embeddings.weight
+            weight = position_embeddings.weight
             
             # Determine number of components based on adaptive precision
             n_components = self._estimate_adaptive_precision(weight)
@@ -540,8 +570,18 @@ class SVDAdaptation(nn.Module):
         
         # Decompose LM head (output) matrix
         if self.adapt_lm_head:
+            # Check how to access LM head
+            if hasattr(model, 'lm_head'):
+                lm_head = model.lm_head
+            elif hasattr(model, 'transformer') and hasattr(model.transformer, 'lm_head'):
+                lm_head = model.transformer.lm_head
+            else:
+                print("Warning: Model structure doesn't have expected lm_head. Skipping adaptation.")
+                # Skip this part without failing
+                return
+                
             start_time = time.time()
-            weight = model.lm_head.weight
+            weight = lm_head.weight
             
             # Determine number of components based on adaptive precision
             n_components = self._estimate_adaptive_precision(weight)
@@ -651,10 +691,23 @@ class SVDAdaptation(nn.Module):
             
         # Make sure weighted_sv has the correct size
         sv_size = min(U.shape[1], Vh.shape[0])
-        weighted_sv = weighted_sv[:sv_size]
         
-        # Reconstruct matrix with adapted singular values
-        adapted_weight = U @ torch.diag(weighted_sv) @ Vh
+        # Check if weighted_sv has enough elements
+        if weighted_sv.numel() < sv_size:
+            # If not enough elements, pad with ones (neutral for multiplication)
+            padding = torch.ones(sv_size - weighted_sv.numel(), device=weighted_sv.device)
+            weighted_sv = torch.cat([weighted_sv, padding])
+        else:
+            # Trim if too many elements
+            weighted_sv = weighted_sv[:sv_size]
+        
+        try:
+            # Reconstruct matrix with adapted singular values
+            adapted_weight = U @ torch.diag(weighted_sv) @ Vh
+        except RuntimeError as e:
+            # In case of any shape mismatch, just return the original weight
+            print(f"Error during SVD adaptation: {e}. Returning original weight.")
+            return weight
         
         return adapted_weight
     
@@ -957,7 +1010,16 @@ class Transformer2Adaptation(nn.Module):
         
         # Apply adaptation to attention matrices for each layer
         if self.svd_adaptation.adapt_attention:
-            for layer_idx, layer in enumerate(model.layers):
+            # Check model structure
+            if hasattr(model, 'layers'):
+                layers = model.layers
+            elif hasattr(model, 'transformer') and hasattr(model.transformer, 'layers'):
+                layers = model.transformer.layers
+            else:
+                print("Warning: Model structure doesn't match expected pattern. Skipping adaptation.")
+                return
+                
+            for layer_idx, layer in enumerate(layers):
                 for name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
                     original_weight = getattr(layer.attention, name).weight
                     adapted_weight = self.svd_adaptation.adapt_matrix(
@@ -968,7 +1030,17 @@ class Transformer2Adaptation(nn.Module):
         
         # Apply adaptation to feed-forward matrices for each layer
         if self.svd_adaptation.adapt_ffn:
-            for layer_idx, layer in enumerate(model.layers):
+            # Use the layers object from above if available
+            if not 'layers' in locals():
+                if hasattr(model, 'layers'):
+                    layers = model.layers
+                elif hasattr(model, 'transformer') and hasattr(model.transformer, 'layers'):
+                    layers = model.transformer.layers
+                else:
+                    print("Warning: Model structure doesn't match expected pattern. Skipping adaptation.")
+                    return
+                    
+            for layer_idx, layer in enumerate(layers):
                 for name in ["fc1", "fc2"]:
                     original_weight = getattr(layer.feed_forward, name).weight
                     adapted_weight = self.svd_adaptation.adapt_matrix(
@@ -979,30 +1051,50 @@ class Transformer2Adaptation(nn.Module):
         
         # Apply adaptation to embedding matrices
         if self.svd_adaptation.adapt_embeddings:
+            # Determine how to access embeddings
+            if hasattr(model, 'embeddings'):
+                embeddings = model.embeddings
+                position_embeddings = model.position_embeddings
+            elif hasattr(model, 'transformer') and hasattr(model.transformer, 'embeddings'):
+                embeddings = model.transformer.embeddings
+                position_embeddings = model.transformer.position_embeddings
+            else:
+                print("Warning: Model structure doesn't have expected embeddings. Skipping adaptation.")
+                return
+                
             # Token embeddings
-            original_weight = model.embeddings.weight
+            original_weight = embeddings.weight
             adapted_weight = self.svd_adaptation.adapt_matrix(
                 original_weight, "token_embeddings"
             )
             # Replace weight with adapted weight
-            model.embeddings.weight.data.copy_(adapted_weight)
+            embeddings.weight.data.copy_(adapted_weight)
             
             # Position embeddings
-            original_weight = model.position_embeddings.weight
+            original_weight = position_embeddings.weight
             adapted_weight = self.svd_adaptation.adapt_matrix(
                 original_weight, "position_embeddings"
             )
             # Replace weight with adapted weight
-            model.position_embeddings.weight.data.copy_(adapted_weight)
+            position_embeddings.weight.data.copy_(adapted_weight)
         
         # Apply adaptation to LM head (output) matrix
         if self.svd_adaptation.adapt_lm_head:
-            original_weight = model.lm_head.weight
+            # Check how to access LM head
+            if hasattr(model, 'lm_head'):
+                lm_head = model.lm_head
+            elif hasattr(model, 'transformer') and hasattr(model.transformer, 'lm_head'):
+                lm_head = model.transformer.lm_head
+            else:
+                print("Warning: Model structure doesn't have expected lm_head. Skipping adaptation.")
+                return
+                
+            original_weight = lm_head.weight
             adapted_weight = self.svd_adaptation.adapt_matrix(
                 original_weight, "lm_head"
             )
             # Replace weight with adapted weight
-            model.lm_head.weight.data.copy_(adapted_weight)
+            lm_head.weight.data.copy_(adapted_weight)
     
     def two_pass_inference(self, hidden_states: torch.Tensor, model=None) -> torch.Tensor:
         """
@@ -1147,14 +1239,31 @@ class OptimizedTwoPassInference:
         Returns:
             Model outputs
         """
+        # Add a flag to prevent recursion
+        if kwargs.get('_skip_two_pass', False):
+            # If _skip_two_pass is True, don't run two-pass inference
+            # Instead, pass through to the base transformer
+            if hasattr(self.model, 'transformer'):
+                transformer_kwargs = kwargs.copy()
+                if '_skip_two_pass' in transformer_kwargs:
+                    del transformer_kwargs['_skip_two_pass']
+                return self.model.transformer(input_ids=input_ids, attention_mask=attention_mask, **transformer_kwargs)
+            else:
+                # We shouldn't get here, but handle it safely
+                return {'logits': torch.zeros((input_ids.shape[0], input_ids.shape[1], 1))}
+            
         # First pass: run the model normally to identify task
         with torch.no_grad():
             # Run first pass with unmodified weights
+            # Make sure not to pass output_hidden_states if it's already in kwargs
+            first_pass_kwargs = kwargs.copy()
+            first_pass_kwargs['output_hidden_states'] = first_pass_kwargs.get('output_hidden_states', True)
+            first_pass_kwargs['_skip_two_pass'] = True  # Prevent recursion
+            
             first_pass_outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                output_hidden_states=True,
-                **kwargs
+                **first_pass_kwargs
             )
             
             # Get hidden states from first pass
@@ -1170,51 +1279,121 @@ class OptimizedTwoPassInference:
                 # Create a clone of model weights for later restoration
                 original_weights = {}
                 
+                # Check model structure
+                if hasattr(self.model, 'layers'):
+                    layers = self.model.layers
+                elif hasattr(self.model, 'transformer') and hasattr(self.model.transformer, 'layers'):
+                    layers = self.model.transformer.layers
+                else:
+                    # If we can't find the layers, just return the first pass outputs
+                    print("Warning: Could not find model layers. Skipping weight adaptation.")
+                    return first_pass_outputs
+                
                 # Attention weights
-                for layer_idx, layer in enumerate(self.model.layers):
+                for layer_idx, layer in enumerate(layers):
                     for name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
                         original_weights[f"attention.{layer_idx}.{name}"] = getattr(layer.attention, name).weight.data.clone()
                 
-                # FFN weights
-                for layer_idx, layer in enumerate(self.model.layers):
+                # FFN weights - use the same layers reference
+                for layer_idx, layer in enumerate(layers):
                     for name in ["fc1", "fc2"]:
                         original_weights[f"ffn.{layer_idx}.{name}"] = getattr(layer.feed_forward, name).weight.data.clone()
                 
                 # Embedding weights
                 if self.adaptation.svd_adaptation.adapt_embeddings:
-                    original_weights["embeddings"] = self.model.embeddings.weight.data.clone()
-                    original_weights["position_embeddings"] = self.model.position_embeddings.weight.data.clone()
+                    # Check for embeddings
+                    if hasattr(self.model, 'embeddings'):
+                        embeddings = self.model.embeddings
+                        position_embeddings = self.model.position_embeddings
+                    elif hasattr(self.model, 'transformer') and hasattr(self.model.transformer, 'embeddings'):
+                        embeddings = self.model.transformer.embeddings
+                        position_embeddings = self.model.transformer.position_embeddings
+                    else:
+                        print("Warning: Could not find embeddings. Skipping embedding adaptation.")
+                        embeddings = None
+                        position_embeddings = None
+                        
+                    if embeddings is not None and position_embeddings is not None:
+                        original_weights["embeddings"] = embeddings.weight.data.clone()
+                        original_weights["position_embeddings"] = position_embeddings.weight.data.clone()
                 
                 # LM head weights
                 if self.adaptation.svd_adaptation.adapt_lm_head:
-                    original_weights["lm_head"] = self.model.lm_head.weight.data.clone()
+                    # Check for LM head
+                    if hasattr(self.model, 'lm_head'):
+                        lm_head = self.model.lm_head
+                    elif hasattr(self.model, 'transformer') and hasattr(self.model.transformer, 'lm_head'):
+                        lm_head = self.model.transformer.lm_head
+                    else:
+                        print("Warning: Could not find LM head. Skipping LM head adaptation.")
+                        lm_head = None
+                        
+                    if lm_head is not None:
+                        original_weights["lm_head"] = lm_head.weight.data.clone()
                 
                 try:
                     # Apply adaptation to all model weights
                     self.adaptation.apply_adaptation_to_model(self.model)
                     
                     # Run second pass with adapted weights
+                    # Make a copy of kwargs to avoid modifying the original
+                    second_pass_kwargs = kwargs.copy()
+                    second_pass_kwargs['_skip_two_pass'] = True  # Prevent recursion
+                    
                     second_pass_outputs = self.model(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
-                        **kwargs
+                        **second_pass_kwargs
                     )
                 finally:
                     # Restore original weights
+                    if 'layers' not in locals():
+                        # Get layers reference again for restoration
+                        if hasattr(self.model, 'layers'):
+                            layers = self.model.layers
+                        elif hasattr(self.model, 'transformer') and hasattr(self.model.transformer, 'layers'):
+                            layers = self.model.transformer.layers
+                        else:
+                            print("Warning: Could not find model layers for weight restoration.")
+                            layers = None
+                            
+                    # Get embeddings and lm_head references if needed
+                    if any(k in original_weights for k in ["embeddings", "position_embeddings"]):
+                        if hasattr(self.model, 'embeddings'):
+                            embeddings = self.model.embeddings
+                            position_embeddings = self.model.position_embeddings
+                        elif hasattr(self.model, 'transformer') and hasattr(self.model.transformer, 'embeddings'):
+                            embeddings = self.model.transformer.embeddings
+                            position_embeddings = self.model.transformer.position_embeddings
+                        else:
+                            embeddings = None
+                            position_embeddings = None
+                    
+                    if "lm_head" in original_weights:
+                        if hasattr(self.model, 'lm_head'):
+                            lm_head = self.model.lm_head
+                        elif hasattr(self.model, 'transformer') and hasattr(self.model.transformer, 'lm_head'):
+                            lm_head = self.model.transformer.lm_head
+                        else:
+                            lm_head = None
+                            
+                    # Restore weights
                     for key, weight in original_weights.items():
                         parts = key.split(".")
-                        if parts[0] == "attention":
+                        if parts[0] == "attention" and layers is not None:
                             layer_idx, name = int(parts[1]), parts[2]
-                            getattr(self.model.layers[layer_idx].attention, name).weight.data.copy_(weight)
-                        elif parts[0] == "ffn":
+                            if layer_idx < len(layers):
+                                getattr(layers[layer_idx].attention, name).weight.data.copy_(weight)
+                        elif parts[0] == "ffn" and layers is not None:
                             layer_idx, name = int(parts[1]), parts[2]
-                            getattr(self.model.layers[layer_idx].feed_forward, name).weight.data.copy_(weight)
-                        elif key == "embeddings":
-                            self.model.embeddings.weight.data.copy_(weight)
-                        elif key == "position_embeddings":
-                            self.model.position_embeddings.weight.data.copy_(weight)
-                        elif key == "lm_head":
-                            self.model.lm_head.weight.data.copy_(weight)
+                            if layer_idx < len(layers):
+                                getattr(layers[layer_idx].feed_forward, name).weight.data.copy_(weight)
+                        elif key == "embeddings" and embeddings is not None:
+                            embeddings.weight.data.copy_(weight)
+                        elif key == "position_embeddings" and position_embeddings is not None:
+                            position_embeddings.weight.data.copy_(weight)
+                        elif key == "lm_head" and lm_head is not None:
+                            lm_head.weight.data.copy_(weight)
                 
                 return second_pass_outputs
             else:

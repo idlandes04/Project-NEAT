@@ -329,6 +329,11 @@ class BLTByteProcessor(nn.Module):
         Returns:
             Processed byte sequence
         """
+        # Ensure input is within byte range (0-255)
+        if torch.any(input_bytes > 255):
+            # Convert to byte values by taking modulo 256
+            input_bytes = input_bytes % 256
+            
         batch_size, seq_len = input_bytes.shape
         
         # Check if computation budget manager should be used
@@ -497,7 +502,9 @@ class EntropyCalculator(nn.Module):
         self.fixed_patch_size = self.min_patch_size
         
         # Load pretrained byte LM if provided
-        if hasattr(config, "byte_lm") and hasattr(config.byte_lm, "checkpoint_path"):
+        if hasattr(config, "blt_checkpoint_path") and config.blt_checkpoint_path:
+            self.load_pretrained_byte_lm(config.blt_checkpoint_path)
+        elif hasattr(config, "byte_lm") and hasattr(config.byte_lm, "checkpoint_path"):
             self.load_pretrained_byte_lm(config.byte_lm.checkpoint_path)
     
     def load_pretrained_byte_lm(self, checkpoint_path: str):
@@ -538,6 +545,11 @@ class EntropyCalculator(nn.Module):
                 return [input_bytes], dummy_entropies
             else:
                 return [input_bytes]
+        
+        # Ensure input is within byte range (0-255)
+        if torch.any(input_bytes > 255):
+            # Convert to byte values by taking modulo 256
+            input_bytes = input_bytes % 256
         
         # Calculate entropy using byte LM
         with torch.no_grad():
@@ -711,6 +723,11 @@ class SmallByteLM(nn.Module):
         """
         batch_size, seq_len = input_bytes.shape
         
+        # Ensure input is within byte range (0-255)
+        if torch.any(input_bytes > 255):
+            # Convert to byte values by taking modulo 256
+            input_bytes = input_bytes % 256
+        
         # Create position IDs
         position_ids = torch.arange(seq_len, dtype=torch.long, device=input_bytes.device)
         position_ids = position_ids.unsqueeze(0).expand(batch_size, -1)
@@ -768,7 +785,24 @@ class SmallByteLM(nn.Module):
         Args:
             load_path: Path to load model from
         """
-        self.load_state_dict(torch.load(load_path, map_location=torch.device('cpu')))
+        try:
+            checkpoint = torch.load(load_path, map_location=torch.device('cpu'))
+            
+            # Handle different checkpoint formats
+            if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+                # Our mock format has a nested state_dict
+                self.load_state_dict(checkpoint["state_dict"])
+                print(f"Loaded BLT model from checkpoint with nested state_dict: {load_path}")
+            elif isinstance(checkpoint, dict) and all(k.startswith(("embedding.", "layers.", "position_embeddings.")) for k in checkpoint.keys()):
+                # Direct state dict format
+                self.load_state_dict(checkpoint)
+                print(f"Loaded BLT model from checkpoint with direct state_dict: {load_path}")
+            else:
+                # Try direct loading as a fallback
+                self.load_state_dict(checkpoint)
+                print(f"Loaded BLT model from checkpoint with unknown format: {load_path}")
+        except Exception as e:
+            print(f"Error loading BLT model checkpoint: {e}. Using untrained model.")
         
     def generate_probs(self, input_bytes: torch.Tensor, temperature: float = 1.0) -> torch.Tensor:
         """

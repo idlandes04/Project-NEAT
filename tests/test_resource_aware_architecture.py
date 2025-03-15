@@ -226,12 +226,55 @@ class TestResourceAwareUnifiedArchitecture(unittest.TestCase):
         # Check that components were optimized for memory pressure
         self.assertIsNotNone(output)
     
-    @unittest.skip("Requires extensive mocking of torch and unified_architecture methods")
     def test_optimize_for_hardware(self):
         """Test optimizing component activation for available hardware."""
-        # This test requires extensive mocking of torch and unified_architecture methods
-        # We'll skip it for now and focus on the other tests
-        pass
+        # Mock the parent class method to avoid the actual implementation
+        with patch('src.models.unified_architecture.UnifiedArchitecture.optimize_for_hardware') as mock_parent:
+            # Make it return a simple dictionary of active components
+            mock_parent.return_value = {
+                'transformer': True,
+                'byte_processor': True,
+                'memory_system': True,
+                'token_processor': True,
+                'adaptation_system': True,
+                'two_pass_inference': True
+            }
+            
+            # Mock torch.cuda.is_available to avoid CUDA dependency
+            with patch('torch.cuda.is_available', return_value=False):
+                # Mock get_component_memory_usage so we don't need actual components
+                with patch.object(self.model, 'get_component_memory_usage') as mock_memory:
+                    # Return some dummy memory usage values
+                    mock_memory.return_value = {
+                        'transformer': 100 * 1024 * 1024,  # 100 MB
+                        'byte_processor': 50 * 1024 * 1024,  # 50 MB
+                        'memory_system': 80 * 1024 * 1024,  # 80 MB
+                        'token_processor': 60 * 1024 * 1024,  # 60 MB
+                        'adaptation_system': 70 * 1024 * 1024,  # 70 MB
+                        'two_pass_inference': 40 * 1024 * 1024,  # 40 MB
+                    }
+                    
+                    # Mock set_active_components to avoid changing actual state
+                    with patch.object(self.model, 'set_active_components') as mock_set:
+                        # Call optimize_for_hardware with a fixed memory value
+                        # This avoids any CUDA calls
+                        result = self.model.optimize_for_hardware(available_memory=1024 * 1024 * 1024)  # 1 GB
+                        
+                        # Verify parent method was called
+                        mock_parent.assert_called_once()
+                        
+                        # Check if set_active_components was called
+                        # It might not be called if there's no memory pressure
+                        if mock_set.called:
+                            # Get the components that were set
+                            active_components = mock_set.call_args[0][0]
+                            
+                            # Transformer should always be active if it exists
+                            if 'transformer' in active_components:
+                                self.assertTrue(active_components['transformer'])
+                                
+                        # The result should be a dictionary
+                        self.assertIsInstance(result, dict)
     
     def test_optimize_for_memory_pressure(self):
         """Test optimizing component activation for memory pressure."""

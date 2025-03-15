@@ -283,6 +283,8 @@ class ResourceAwareUnifiedArchitecture(UnifiedArchitecture):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         process_feedback: bool = True,
+        labels: Optional[torch.LongTensor] = None,
+        **kwargs,  # Allow for any additional parameters
     ):
         """
         Forward pass through the unified architecture with resource management.
@@ -317,6 +319,8 @@ class ResourceAwareUnifiedArchitecture(UnifiedArchitecture):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             process_feedback=process_feedback,
+            labels=labels,
+            **kwargs,
         )
     
     def _optimize_for_memory_pressure(self, pressure: float):
