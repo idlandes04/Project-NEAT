@@ -96,9 +96,11 @@ gantt
     Hardware-Aware Integration (2.3.2)    :done, hwint2, 2024-07-01, 2024-07-15
     Hardware-Aware Integration (2.3.3)    :done, hwint3, 2024-07-15, 2024-08-15
     
-    section Testing
-    Component Testing Framework (3.1.x)    :ctest, after hwint3, 30d
-    Integration Testing Framework (3.2.x)  :itest, after ctest, 30d
+    section Testing & Benchmarking
+    Synthetic Data Generator (3.1.1)      :done, synthetic, 2024-08-15, 2024-09-01
+    Baseline Transformer (3.1.2)          :active, baseline, 2024-09-01, 2024-09-15
+    Component Ablation Tests (3.1.3)      :ablation, after baseline, 30d
+    Integration Testing Framework (3.2.x)  :itest, after ablation, 30d
 ```
 
 </div>
@@ -143,9 +145,17 @@ gantt
   - Component-specific resource allocation and management (2.3.1)
   - Hardware capability adaptation (2.3.2)
   - Execution scheduling optimization (2.3.3)
+
+- ✅ **Synthetic Data Generator** (3.1.1)
+  - Mathematical problem generator with progressive difficulty levels
+  - Component-specific problem types (Titans memory tests, Transformer² adaptation)
+  - Controlled distribution shifts for evaluating generalization
+  - Comprehensive test suite for data generation validation
+  - Mock models for BLT entropy estimator and MVoT visual codebook
     
 - 📅 **Upcoming: Testing & Evaluation** (3.x)
-  - Baseline model comparison (3.1.x)
+  - Baseline transformer implementation (3.1.2)
+  - Component ablation testing (3.1.3)
   - Comprehensive benchmarking (3.2.x)
   - Deployment optimization (3.3.x)
 
@@ -521,6 +531,10 @@ project-neat/
 │   │   └── transformer.py            # Base transformer implementation
 │   ├── trainers/                     # Training infrastructure
 │   │   └── hardware_aware_trainer.py # Platform-specific training
+│   ├── data/                         # Data handling
+│   │   ├── synthetic/                # Synthetic data generation
+│   │   │   └── math_generator.py     # Mathematical problem generator
+│   │   └── loaders/                  # Data loading utilities
 │   └── utils/                        # Utility functions
 │       ├── config.py                 # Configuration handling
 │       ├── memory_optimization.py    # Memory usage optimization
@@ -544,14 +558,19 @@ project-neat/
 │   ├── test_resource_aware_architecture.py  # Resource-aware architecture tests
 │   ├── test_hardware_capability_adaptation.py # Hardware detection and adaptation tests
 │   ├── test_execution_scheduling.py        # Execution scheduling tests
-│   └── test_execution_integration.py       # Execution integration tests
+│   ├── test_execution_integration.py       # Execution integration tests
+│   └── test_synthetic_data.py              # Synthetic data generator tests
 ├── docs/                             # Documentation
 │   ├── PLAN_MAIN.MD                  # Project planning document
 │   ├── TECHNICALd.md                 # Technical details and theory
 │   ├── phase2.2.2-3_plan.md          # Hardware-aware integration plan
 │   └── metal_docs.md                 # Apple Metal framework integration
 ├── scripts/                          # Helper scripts
-│   └── train_byte_lm.py              # BLT training script
+│   ├── train_byte_lm.py              # BLT training script
+│   ├── create_mock_models.py         # Mock model creation for testing
+│   ├── setup_test_environment.sh     # Test environment setup script
+│   ├── train_neat_model_mac.sh       # macOS-specific training script
+│   └── test_advanced_problems.py     # Advanced problem type testing
 └── main.py                           # Main script
 ```
 ## References
