@@ -183,18 +183,12 @@ All of these components have been integrated with a sophisticated messaging syst
 then train the model and monitor it along the way, we will probobly have to do ALOT of tuning to this model's parameters and metrics and controls to get it to be stable esp with choosing which data sets to train with and the training parameters.
 
 
-**Task 3.1.2: Baseline Transformer Implementation**
-- [ ] Create parameter-matched vanilla transformer for comparison
-- [ ] Implement shared evaluation harness for fair comparison
-- [ ] Design metrics for measuring component-specific benefits
-- [ ] Create visualization tools for performance comparison
-
-
-**Task 3.1.3: Component-Wise Ablation Testing**
+**Task 3.1.2: Component-Wise Ablation Testing**
 - [ ] Design test suite for isolating component contributions
 - [ ] Implement controlled experiments for measuring synergistic effects
 - [ ] Create visualization of component interactions and benefits
 - [ ] Develop automated testing pipeline for continuous evaluation
+- [ ] Design metrics for measuring component-specific benefits
 
 
 ### Phase 3.2.0: Memory and Learning Evaluation

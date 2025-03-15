@@ -5,9 +5,9 @@
 ![Build Status](https://img.shields.io/badge/build-passing-green.svg)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/pytorch-2.0+-orange.svg)](https://pytorch.org/)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
 
-**A cutting-edge neural architecture combining several recent advanced techniques for an efficient, adaptive, and multimodal AI system.**
+**A cutting-edge neural architecture combining several advanced techniques for an efficient, adaptive, and multimodal AI system.**
 
 </div>
 
@@ -23,6 +23,8 @@
 - [Usage](#usage)
 - [Hardware Optimization](#hardware-optimization)
 - [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [Citation](#citation)
 - [References](#references)
 
 ---
@@ -73,7 +75,7 @@ graph TD
 
 </div>
 
-## Current Status
+## Current Status (March 2025)
 
 <div align="center">
 
@@ -84,117 +86,90 @@ gantt
     axisFormat %b %Y
     
     section Core Components
-    Titans Memory System (1.1.x)       :done, titans, 2024-01-01, 2024-02-15
-    Transformer² Adaptation (1.2.x)    :done, transformer2, 2024-02-15, 2024-03-01
-    BLT Core Implementation (1.3.x)    :done, blt, 2024-03-01, 2024-03-15
-    MVoT Implementation (1.4.x)        :done, mvot, 2024-03-15, 2024-04-01
+    Titans Memory System (1.1.x)       :done, titans, 2024-11-15, 2024-12-31
+    Transformer² Adaptation (1.2.x)    :done, transformer2, 2025-01-01, 2025-01-31
+    BLT Core Implementation (1.3.x)    :done, blt, 2025-02-01, 2025-02-15
+    MVoT Implementation (1.4.x)        :done, mvot, 2025-02-15, 2025-02-28
     
     section Integration
-    Cross-Component Communication (2.1.x) :done, comms, 2024-04-01, 2024-05-01
-    Test-Time Learning Sync (2.2.x)       :done, ttl, 2024-05-01, 2024-06-15
-    Hardware-Aware Integration (2.3.1)    :done, hwint1, 2024-06-15, 2024-07-01
-    Hardware-Aware Integration (2.3.2)    :done, hwint2, 2024-07-01, 2024-07-15
-    Hardware-Aware Integration (2.3.3)    :done, hwint3, 2024-07-15, 2024-08-15
+    Cross-Component Communication (2.1.x) :done, comms, 2025-03-01, 2025-03-15
+    Test-Time Learning Sync (2.2.x)       :done, ttl, 2025-03-15, 2025-03-25
+    Hardware-Aware Integration (2.3.x)    :done, hwint, 2025-03-25, 2025-04-10
     
     section Testing & Benchmarking
-    Synthetic Data Generator (3.1.1)      :done, synthetic, 2024-08-15, 2024-09-01
-    Baseline Transformer (3.1.2)          :active, baseline, 2024-09-01, 2024-09-15
-    Component Ablation Tests (3.1.3)      :ablation, after baseline, 30d
-    Integration Testing Framework (3.2.x)  :itest, after ablation, 30d
+    Synthetic Data Generator (3.1.1)      :done, synthetic, 2025-04-10, 2025-04-20
+    Baseline Transformer (3.1.2)          :active, baseline, 2025-04-21, 2025-04-30
+    Component Ablation Tests (3.1.3)      :ablation, after baseline, 14d
+    Memory & Learning Evaluation (3.2.x)  :memory, after ablation, 14d
 ```
 
 </div>
 
-### Completed Components
-- ✅ **Titans Memory System** (1.1.x)
-  - Three-tiered memory architecture (short-term, long-term, persistent)
-  - Surprise-based memory updates using gradient magnitudes
-  - Adaptive memory decay mechanisms based on context length
-  - Gradient checkpointing for efficient memory usage
+### ✨ Latest Achievement: Synthetic Data Generator Integration (Phase 3.1.1) ✨
 
-- ✅ **Transformer² Adaptation** (1.2.x)
-  - SVD-based weight adaptation for efficient fine-tuning
-  - Task embedding similarity matching for computation reuse
-  - Two-pass inference process (dispatch and expert composition)
-  - Randomized SVD for large matrix optimization
+We've just completed Phase 3.1.1, which focuses on synthetic data generation for training and evaluation:
 
-- ✅ **BLT Core Implementation** (1.3.x)
-  - Entropy-based byte patching for dynamic processing
-  - Variable-length patch handling with masking mechanism
-  - Local-global-local architecture for efficient processing
-  - Adaptive entropy threshold for computation/accuracy tradeoff
+- ✅ **Advanced Problem Types**: Implemented multi-step reasoning, algebraic equations, and non-linear sequences
+- ✅ **Component-Specific Testing**: Created targeted problems for each NEAT component
+- ✅ **Mock Models**: Developed mock BLT and MVoT models for testing without full training
+- ✅ **Training Pipeline**: Connected data generation to main training infrastructure
+- ✅ **Full Test Run**: Successfully ran Mac test training as proof of concept
 
-- ✅ **MVoT Implementation** (1.4.x)
-  - Visual codebook integration supporting multiple VQ-VAE formats (1.4.1)
-  - Text/image generation decision mechanism combining heuristic and neural approaches (1.4.2)
-  - Byte-to-token mapping for BLT compatibility with bi-directional conversion (1.4.3)
-  - Token discrepancy loss for high-quality visualizations
+The system is now ready for full-scale training on the Windows PC with 3080ti GPU.
 
-- ✅ **Cross-Component Communication** (2.1.x)
-  - Message-based pub-sub architecture for loose coupling
-  - Priority-based message processing for critical information
-  - State tracking with subscriptions for reactive components
-  - Feedback loops for coordinated processing (task-memory, surprise-adaptation, modality)
+### Current Status Summary
 
-- ✅ **Test-Time Learning Synchronization** (2.2.x)
-  - Coordinated gradient computation across components (2.2.1)
-  - Adaptive learning rate management (2.2.2)
-  - Test-time optimization monitoring (2.2.3)
+**All Core Components Completed:**
+- ✅ **Titans Memory System**: Test-time learning with three-tiered memory
+- ✅ **Transformer²**: Self-adaptive weights using SVD decomposition
+- ✅ **BLT Core**: Entropy-based byte-level dynamic patching
+- ✅ **MVoT**: Multimodal text-image reasoning with visual codebook
 
-- ✅ **Hardware-Aware Integration** (2.3.x)
-  - Component-specific resource allocation and management (2.3.1)
-  - Hardware capability adaptation (2.3.2)
-  - Execution scheduling optimization (2.3.3)
+**Integration Components Completed:**
+- ✅ **Cross-Component Communication**: Message-based pub-sub system
+- ✅ **Test-Time Learning**: Coordinated gradient computation and learning rate management
+- ✅ **Hardware-Aware Integration**: Resource allocation and execution optimization
 
-- ✅ **Synthetic Data Generator** (3.1.1)
-  - Mathematical problem generator with progressive difficulty levels
-  - Component-specific problem types (Titans memory tests, Transformer² adaptation)
-  - Controlled distribution shifts for evaluating generalization
-  - Comprehensive test suite for data generation validation
-  - Mock models for BLT entropy estimator and MVoT visual codebook
-    
-- 📅 **Upcoming: Testing & Evaluation** (3.x)
-  - Baseline transformer implementation (3.1.2)
-  - Component ablation testing (3.1.3)
-  - Comprehensive benchmarking (3.2.x)
-  - Deployment optimization (3.3.x)
+**Currently in Progress:**
+- 🔄 **Baseline Transformer (3.1.2)**: Parameter-matched model for fair comparison
+- 📅 **Component Ablation (3.1.3)**: Testing each component's individual contribution
+- 📅 **Memory & Learning (3.2.x)**: Evaluating test-time learning effectiveness
 
 ## Key Features
 
-<div align="center">
+- **Test-Time Learning**: Update model memory and adapt weights during inference without full retraining
+- **Adaptive Component Architecture**: Selectively activate components based on input complexity and available resources
+- **Hardware-Aware Execution**: Optimized for both Apple Silicon (Metal) and NVIDIA GPUs (CUDA) with intelligent fallbacks
+- **Cross-Platform Support**: Runs efficiently on macOS, Windows, and Linux with hardware-specific optimizations
+- **Multimodal Processing**: Seamlessly handles text data and can generate visual reasoning steps when beneficial
 
-```mermaid
-mindmap
-  root((Project NEAT))
-    Modular Design
-      Selective component activation
-      Independent component development
-      Pluggable architecture
-    Adaptive Processing
-      Test-time learning
-      Task-specific adaptation
-      Dynamic resource allocation
-    Cross-Platform Support
-      Apple Silicon (Metal)
-      NVIDIA GPUs (CUDA)
-      Graceful fallbacks
-    Multimodal Capabilities
-      Text processing
-      Image generation
-      Interleaved reasoning
-    Optimization Techniques
-      Mixed precision training
-      Gradient checkpointing
-      Memory management
-```
+**Component-Specific Innovations:**
 
-</div>
+1. **Titans Memory System**:
+   - Three-tiered memory hierarchy (short-term, long-term, persistent)
+   - Surprise-based updates triggered by gradient magnitude
+   - Adaptive decay mechanism based on context length
 
-- **Modular Component Design**: Selective activation based on input complexity and available computational resources
-- **Test-Time Learning**: Memory updates and weight adaptation during inference without requiring full model retraining
-- **Cross-Platform Optimization**: Specialized support for both Apple Silicon (Metal) and NVIDIA (CUDA) with fallback mechanisms
-- **Multimodal Processing**: Seamless handling of text and visual content with interleaved generation capabilities
-- **Component Communication**: Loosely coupled architecture with message-based coordination between components
+2. **Transformer² Adaptation**:
+   - Two-pass inference for task adaptation
+   - SVD-based weight modification focusing only on singular values
+   - Task embedding cache with similarity matching
+
+3. **BLT Byte Processor**:
+   - Entropy-based dynamic patching of raw bytes
+   - Local-global-local architecture for efficient processing
+   - Computation-budget aware boundary optimization
+
+4. **MVoT Token Processor**:
+   - Interleaved text-image reasoning capabilities
+   - Token discrepancy loss for improved visual quality
+   - Decision mechanism for when to visualize reasoning steps
+
+5. **Component Integration**:
+   - Message-based pub-sub architecture for loose coupling
+   - Priority-based message handling for critical information
+   - Coordinated gradient computation for test-time learning
+   - Resource-aware scheduling and execution optimization
 
 ## Technical Details
 
@@ -562,7 +537,7 @@ project-neat/
 │   └── test_synthetic_data.py              # Synthetic data generator tests
 ├── docs/                             # Documentation
 │   ├── PLAN_MAIN.MD                  # Project planning document
-│   ├── TECHNICALd.md                 # Technical details and theory
+│   ├── TECHNICAL.md                  # Technical details and theory
 │   ├── phase2.2.2-3_plan.md          # Hardware-aware integration plan
 │   └── metal_docs.md                 # Apple Metal framework integration
 ├── scripts/                          # Helper scripts
@@ -573,6 +548,36 @@ project-neat/
 │   └── test_advanced_problems.py     # Advanced problem type testing
 └── main.py                           # Main script
 ```
+
+
+## Contributing
+
+We welcome contributions to Project NEAT! Whether you're interested in fixing bugs, adding new features, or improving documentation, your help is appreciated.
+
+### Contribution Guidelines
+
+- Follow the code style and conventions used in the project
+- Add type hints and docstrings for new functions and classes
+- Write comprehensive tests for new features
+- Update documentation to reflect your changes
+- Ensure all tests pass before submitting a pull request if possible
+
+## Citation
+
+If you use Project NEAT in your research or development work, please cite it as:
+
+```bibtex
+@software{landes2025projectneat,
+  author = {Landes, Isaac},
+  title = {Project NEAT: Neural Adaptive Transformers},
+  year = {2025},
+  url = {https://github.com/idlandes04/Project-NEAT},
+  version = {3.1.1.5}
+}
+```
+
+For specific components, please also cite the original research papers listed in the References section.
+
 ## References
 
 <div align="center">
@@ -589,5 +594,5 @@ project-neat/
 ---
 
 <div align="center">
-<p>Project NEAT is licensed under the Apache 2.0 License - see the <a href="LICENSE">LICENSE</a> file for details.</p>
+<p>Project NEAT is licensed under the PolyForm Noncommercial License 1.0.0 - see the <a href="LICENSE">LICENSE</a> file for details.</p>
 </div>

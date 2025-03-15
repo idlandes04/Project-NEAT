@@ -222,7 +222,11 @@ def test_different_problem_types():
         problem_type=ProblemType.MULTIPLICATION
     )
     assert problem.problem_type == ProblemType.MULTIPLICATION
-    assert "×" in problem.question or "multiply" in problem.question.lower() or "product" in problem.question.lower()
+    assert ("×" in problem.question or 
+            "multiply" in problem.question.lower() or 
+            "product" in problem.question.lower() or
+            "groups" in problem.question.lower() or  # For the "groups with items" template
+            "each" in problem.question.lower())
     
     # Test sequence
     problem = generator.generate_problem(

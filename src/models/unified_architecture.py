@@ -253,6 +253,7 @@ class UnifiedArchitecture(nn.Module):
             'past_key_values': past_key_values,
             'output_hidden_states': output_hidden_states,
             'return_dict': return_dict,
+            'labels': kwargs.get('labels', None),  # Pass labels if provided
         }
         # Remove None values
         transformer_kwargs = {k: v for k, v in transformer_kwargs.items() if v is not None}

@@ -116,6 +116,12 @@ def parse_args():
     parser.add_argument("--entropy_threshold", type=float, default=0.5,
                         help="Entropy threshold for patching")
     
+    # Pre-trained model paths
+    parser.add_argument("--blt_checkpoint_path", type=str, default=None,
+                        help="Path to pre-trained BLT byte LM checkpoint")
+    parser.add_argument("--mvot_codebook_path", type=str, default=None,
+                        help="Path to pre-trained MVoT visual codebook")
+    
     return parser.parse_args()
 
 
@@ -147,6 +153,14 @@ def create_config_from_args(args):
     config.weight_decay = args.weight_decay
     config.gradient_accumulation_steps = args.gradient_accumulation_steps
     
+    # Pre-trained model paths
+    if args.blt_checkpoint_path:
+        config.blt_checkpoint_path = args.blt_checkpoint_path
+    if args.mvot_codebook_path:
+        config.mvot_codebook_path = args.mvot_codebook_path
+        config.mvot.codebook_path = args.mvot_codebook_path
+        config.mvot.use_pretrained_codebook = True
+    
     # Additional parameters for hardware-aware training
     config.gpu_memory_threshold = 0.8
     config.cpu_memory_threshold = 0.7
@@ -167,7 +181,22 @@ def create_config_from_args(args):
     # Messaging and feedback parameters
     config.surprise_threshold = 0.7
     config.high_entropy_threshold = 0.8
+    config.entropy_threshold = args.entropy_threshold  # Add missing entropy_threshold
     config.computation_budget = 100
+    
+    # BLT-specific configuration
+    config.num_local_layers = 2
+    config.num_latent_layers = 4
+    config.latent_hidden_size = config.hidden_size  # Match hidden_size
+    
+    # Create BLT config
+    if not hasattr(config, 'blt'):
+        config.blt = type('BLTConfig', (), {})()
+    config.blt.latent_hidden_size = config.hidden_size
+    
+    config.min_patch_size = 8
+    config.max_patch_size = 128
+    config.use_dynamic_patching = True
     
     return config
 
@@ -647,7 +676,7 @@ def main():
             optimal_config = get_optimal_config()
             
             # Apply hardware-specific optimizations
-            config.hardware.memory_threshold = optimal_config.get('memory_threshold', config.hardware.memory_threshold)
+            config.hardware.gpu_memory_threshold = optimal_config.get("memory_threshold", config.hardware.gpu_memory_threshold)
             config.hardware.compute_dtype = optimal_config.get('compute_dtype', 'float32')
             
             if args.force_cpu:
@@ -686,7 +715,7 @@ def main():
             optimal_config = get_optimal_config()
             
             # Apply hardware-specific optimizations
-            config.hardware.memory_threshold = optimal_config.get('memory_threshold', config.hardware.memory_threshold)
+            config.hardware.gpu_memory_threshold = optimal_config.get("memory_threshold", config.hardware.gpu_memory_threshold)
             config.hardware.compute_dtype = optimal_config.get('compute_dtype', 'float32')
             
             if args.force_cpu:
