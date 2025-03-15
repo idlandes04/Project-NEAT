@@ -45,8 +45,7 @@ graph TD
     T2 -.-> MVoT
     
     subgraph "Component Communication"
-        Messaging[Messaging System] --> State[State Management]
-        State[State Management] --> Messaging[Messaging System]
+        Messaging[Messaging System] <--> State[State Management]
     end
     
     Titans <--> Messaging
