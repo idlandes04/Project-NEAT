@@ -569,7 +569,7 @@ bibtex
   title = {Project NEAT: Neural Adaptive Transformers},
   year = {2025},
   url = {https://github.com/idlandes04/Project-NEAT},
-  version = {3.1.1.5}
+  version = {*Current Version*}
 }
 ```
 
