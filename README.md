@@ -105,18 +105,6 @@ gantt
 
 </div>
 
-### ✨ Latest Achievement: Synthetic Data Generator Integration (Phase 3.1.1) ✨
-
-We've just completed Phase 3.1.1, which focuses on synthetic data generation for training and evaluation:
-
-- ✅ **Advanced Problem Types**: Implemented multi-step reasoning, algebraic equations, and non-linear sequences
-- ✅ **Component-Specific Testing**: Created targeted problems for each NEAT component
-- ✅ **Mock Models**: Developed mock BLT and MVoT models for testing without full training
-- ✅ **Training Pipeline**: Connected data generation to main training infrastructure
-- ✅ **Full Test Run**: Successfully ran Mac test training as proof of concept
-
-The system is now ready for full-scale training on the Windows PC with 3080ti GPU.
-
 ### Current Status Summary
 
 **All Core Components Completed:**
@@ -130,6 +118,16 @@ The system is now ready for full-scale training on the Windows PC with 3080ti GP
 - ✅ **Test-Time Learning**: Coordinated gradient computation and learning rate management
 - ✅ **Hardware-Aware Integration**: Resource allocation and execution optimization
 
+### Latest Achievement: Synthetic Data Generator Integration (Phase 3.1.1) 
+
+We've just completed Phase 3.1.1, which focuses on synthetic data generation for training and evaluation:
+
+- ✅ **Advanced Problem Types**: Implemented multi-step reasoning, algebraic equations, and non-linear sequences
+- ✅ **Component-Specific Testing**: Created targeted problems for each NEAT component
+- ✅ **Mock Models**: Developed mock BLT and MVoT models for testing without full training
+- ✅ **Training Pipeline**: Connected data generation to main training infrastructure
+- ✅ **Full Test Run**: Successfully ran Mac test training as proof of concept
+- 
 **Currently in Progress:**
 - 🔄 **Baseline Transformer (3.1.2)**: Parameter-matched model for fair comparison
 - 📅 **Component Ablation (3.1.3)**: Testing each component's individual contribution
@@ -451,20 +449,20 @@ The implementation includes several performance optimization techniques:
    - Directed acyclic graph (DAG) for dependency analysis and scheduling
    - Thread-safe concurrent data structures for robust multi-threaded operation
 
-4. **Mixed Precision Training**
+4. **Mixed Precision Training** - ✅
    - Uses FP16/BF16 computation with FP32 master weights
    - Automatically detects hardware capabilities and selects optimal precision
    - Operation-specific precision selection based on numerical requirements
    - Dynamic precision adaptation based on computation stability requirements
 
-5. **Memory Optimization**
+5. **Memory Optimization** - ✅
    - Gradient checkpointing for reduced memory footprint
    - Memory pressure monitoring and proactive reallocation
    - Priority-based memory allocation during resource constraints
    - Selective component deactivation under high memory pressure
    - Component importance scoring for resource prioritization
 
-6. **Hardware-Specific Acceleration**
+6. **Hardware-Specific Acceleration** - ✅
    - Metal support for Apple Silicon (M-series)
    - CUDA optimization for NVIDIA GPUs
    - Fallback mechanisms for CPU-only environments
@@ -566,7 +564,8 @@ We welcome contributions to Project NEAT! Whether you're interested in fixing bu
 
 If you use Project NEAT in your research or development work, please cite it as:
 
-```bibtex
+```
+bibtex
 @software{landes2025projectneat,
   author = {Landes, Isaac},
   title = {Project NEAT: Neural Adaptive Transformers},
