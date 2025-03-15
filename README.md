@@ -46,8 +46,7 @@ graph TD
     
     subgraph "Component Communication"
         Messaging[Messaging System] --> State[State Management]
-        State[State Management] --> Feedback[Feedback Loops]
-        Feedback[Feedback Loops] --> Messaging[Messaging System]
+        State[State Management] --> Messaging[Messaging System]
     end
     
     Titans <--> Messaging
@@ -127,7 +126,7 @@ We've just completed Phase 3.1.1, which focuses on synthetic data generation for
 - ✅ **Mock Models**: Developed mock BLT and MVoT models for testing without full training
 - ✅ **Training Pipeline**: Connected data generation to main training infrastructure
 - ✅ **Full Test Run**: Successfully ran Mac test training as proof of concept
-- 
+
 **Currently in Progress:**
 - 🔄 **Baseline Transformer (3.1.2)**: Parameter-matched model for fair comparison
 - 📅 **Component Ablation (3.1.3)**: Testing each component's individual contribution
