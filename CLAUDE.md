@@ -144,6 +144,18 @@
 - **Key Insight 7**: Execution pipeline optimization minimizes idle time by coordinating component scheduling.
 - **Key Insight 8**: Hardware profiling and fingerprinting enable selecting the most appropriate optimization strategies.
 
+### Hardware Capability Adaptation (Completed 2.3.2)
+- **Key Insight 1**: Unified hardware detection with singleton pattern ensures consistent capability information across components.
+- **Key Insight 2**: SVD implementation requires different handling across PyTorch versions and platforms (CUDA vs. MPS vs. CPU).
+- **Key Insight 3**: Progressive memory pressure monitoring with threshold-based actions provides more controlled component deactivation.
+- **Key Insight 4**: Memory usage profiling on Apple Silicon requires different approaches than CUDA due to lack of direct memory tracking.
+- **Key Insight 5**: Platform-specific optimizations with graceful fallbacks ensure robust cross-platform operation.
+- **Key Insight 6**: Component reactivation strategies after memory pressure decreases are essential for maintaining functionality.
+- **Key Insight 7**: Hardware-specific optimal configurations need to balance performance and feature availability adaptively.
+- **Key Insight 8**: Test cases for hardware detection and operations must handle potential unavailability of specific hardware.
+- **Key Insight 9**: Library API compatibility checks (e.g., torch.linalg.svd parameters) prevent runtime errors across environments.
+- **Key Insight 10**: Comprehensive profiling across platforms requires adaptive metrics collection based on available capabilities.
+
 ### Implementation Patterns
 - Use torch.utils.checkpoint.checkpoint for memory-efficient gradient computation
 - Implement fallback mechanisms when operations aren't supported on all platforms

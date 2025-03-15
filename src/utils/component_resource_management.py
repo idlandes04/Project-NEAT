@@ -177,6 +177,211 @@ class MemoryBudgetManager:
         # Start monitoring thread
         thread = threading.Thread(target=_monitor_pressure, daemon=True)
         thread.start()
+        
+        # Start progressive monitoring for more granular control
+        self.start_progressive_monitoring()
+    
+    def start_progressive_monitoring(self):
+        """Start progressive memory pressure monitoring."""
+        def _monitor_progressive_pressure():
+            pressure_levels = [0.7, 0.8, 0.9, 0.95]
+            current_level_index = -1  # No level triggered yet
+            
+            while True:
+                try:
+                    # Get current memory stats
+                    stats = get_memory_stats()
+                    
+                    # Calculate pressure level
+                    if TORCH_AVAILABLE and torch.cuda.is_available():
+                        gpu_pressure = stats["gpu_allocated"] / stats["gpu_total"]
+                    elif TORCH_AVAILABLE and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                        # For Apple Silicon MPS, we don't have direct memory stats
+                        # We'll use a heuristic based on process memory growth
+                        import psutil
+                        process_rss = psutil.Process().memory_info().rss
+                        if not hasattr(self, '_base_process_memory'):
+                            self._base_process_memory = process_rss
+                        
+                        # Estimate GPU pressure based on process memory growth
+                        # This is a rough approximation
+                        memory_growth = max(0, process_rss - self._base_process_memory)
+                        estimated_total = 4 * 1024 * 1024 * 1024  # 4GB estimate for Apple Silicon
+                        gpu_pressure = min(0.95, memory_growth / estimated_total)
+                    else:
+                        gpu_pressure = 0.0
+                    
+                    cpu_pressure = stats["cpu_used"] / stats["cpu_total"]
+                    
+                    # Combine pressures (weighted toward GPU if available)
+                    if gpu_pressure > 0:
+                        current_pressure = 0.7 * gpu_pressure + 0.3 * cpu_pressure
+                    else:
+                        current_pressure = cpu_pressure
+                    
+                    # Update memory pressure level
+                    self.memory_pressure_level = current_pressure
+                    
+                    # Add to pressure history (keep last 10 measurements)
+                    self.pressure_history.append(current_pressure)
+                    if len(self.pressure_history) > 10:
+                        self.pressure_history.pop(0)
+                    
+                    # Detect level transitions
+                    new_level_index = -1
+                    for i, level in enumerate(pressure_levels):
+                        if current_pressure >= level:
+                            new_level_index = i
+                    
+                    # If we've moved to a higher level, trigger progressive deactivation
+                    if new_level_index > current_level_index:
+                        self._handle_pressure_level_increase(pressure_levels[new_level_index])
+                        current_level_index = new_level_index
+                    # If we've moved to a lower level, trigger reactivation
+                    elif new_level_index < current_level_index and new_level_index == -1:
+                        # Only reactivate when below all levels
+                        self._handle_pressure_level_decrease()
+                        current_level_index = new_level_index
+                    
+                except Exception as e:
+                    self.logger.error(f"Error in progressive memory pressure monitoring: {e}")
+                
+                # Sleep for a short time
+                time.sleep(1.0)
+        
+        # Start monitoring thread
+        thread = threading.Thread(target=_monitor_progressive_pressure, daemon=True)
+        thread.start()
+    
+    def _handle_pressure_level_increase(self, pressure_level):
+        """
+        Handle increase in memory pressure level with progressive component deactivation.
+        
+        Args:
+            pressure_level: The current pressure level threshold that was crossed
+        """
+        self.logger.warning(f"Memory pressure level increased to {pressure_level:.2f}")
+        
+        # Get current component activation state from universal_architecture
+        try:
+            # Import here to avoid circular imports
+            from src.components.messaging.component_state import get_state, StateType
+            
+            arch_state = get_state(StateType.MEMORY_CONTENT, "unified_architecture")
+            if arch_state and "active_components" in arch_state.value:
+                active_components = arch_state.value.get("active_components", {})
+                
+                # Define component priorities (higher is more important)
+                component_priorities = {
+                    'byte_processor': 0.6,
+                    'memory_system': 0.9,
+                    'token_processor': 0.7,
+                    'adaptation_system': 0.8,
+                    'two_pass_inference': 0.5,
+                }
+                
+                # Sort components by priority (lowest first)
+                sorted_components = sorted(
+                    active_components.items(),
+                    key=lambda x: component_priorities.get(x[0], 0.5) if x[1] else 0.0
+                )
+                
+                # Progressive deactivation based on pressure level
+                components_to_deactivate = {}
+                
+                if pressure_level >= 0.95:  # Critical pressure
+                    # Keep only the most essential components
+                    for component, active in sorted_components:
+                        if component not in ['memory_system', 'transformer'] and active:
+                            components_to_deactivate[component] = False
+                    
+                elif pressure_level >= 0.9:  # Severe pressure
+                    # Disable all but the top 2 priority components
+                    for component, active in sorted_components[:-2]:
+                        if component != 'transformer' and active:
+                            components_to_deactivate[component] = False
+                
+                elif pressure_level >= 0.8:  # High pressure
+                    # Disable lowest priority components
+                    for component, active in sorted_components[:2]:
+                        if component != 'transformer' and active:
+                            components_to_deactivate[component] = False
+                
+                elif pressure_level >= 0.7:  # Moderate pressure
+                    # Disable lowest priority component
+                    if sorted_components and sorted_components[0][1]:
+                        component = sorted_components[0][0]
+                        if component != 'transformer':
+                            components_to_deactivate[component] = False
+                
+                # Apply deactivation if needed
+                if components_to_deactivate:
+                    # Import here to avoid circular imports
+                    from src.components.messaging.message_protocol import send_message, Message, MessageType
+                    
+                    # Track deactivated components for potential reactivation later
+                    if not hasattr(self, "_deactivated_components"):
+                        self._deactivated_components = {}
+                    
+                    # Update deactivated components record
+                    for component, active in components_to_deactivate.items():
+                        self._deactivated_components[component] = True
+                    
+                    # Send message to deactivate components
+                    send_message(Message(
+                        msg_type=MessageType.COMPONENT_CONTROL,
+                        sender="memory_budget_manager",
+                        content={
+                            "action": "deactivate",
+                            "components": components_to_deactivate,
+                            "reason": f"Memory pressure level {pressure_level:.2f}"
+                        },
+                        priority=10  # High priority
+                    ))
+                    
+                    self.logger.warning(f"Deactivated components due to high memory pressure: {list(components_to_deactivate.keys())}")
+                    
+                    # Perform garbage collection
+                    gc.collect()
+                    if TORCH_AVAILABLE and torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+        
+        except Exception as e:
+            self.logger.error(f"Error handling pressure level increase: {e}")
+    
+    def _handle_pressure_level_decrease(self):
+        """Handle decrease in memory pressure level with component reactivation."""
+        self.logger.info("Memory pressure decreased below all thresholds")
+        
+        # Check if we have a record of deactivated components
+        if not hasattr(self, "_deactivated_components"):
+            return
+        
+        # Reactivate components if pressure has decreased significantly
+        if self.memory_pressure_level < 0.5:
+            try:
+                # Import here to avoid circular imports
+                from src.components.messaging.message_protocol import send_message, Message, MessageType
+                
+                # Send message to reactivate components
+                send_message(Message(
+                    msg_type=MessageType.COMPONENT_CONTROL,
+                    sender="memory_budget_manager",
+                    content={
+                        "action": "reactivate",
+                        "components": self._deactivated_components,
+                        "reason": "Memory pressure decreased"
+                    },
+                    priority=5  # Medium priority
+                ))
+                
+                self.logger.info(f"Reactivated components due to decreased memory pressure")
+                
+                # Clear deactivated components record
+                self._deactivated_components = {}
+            
+            except Exception as e:
+                self.logger.error(f"Error handling pressure level decrease: {e}")
     
     def _handle_memory_pressure(self):
         """Handle high memory pressure by reallocating resources."""

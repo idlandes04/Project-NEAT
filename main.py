@@ -23,7 +23,7 @@ def parse_args():
     
     # Mode arguments
     parser.add_argument("--mode", type=str, default="train", 
-                        choices=["train", "eval", "profile", "train_byte_lm", "test_messaging"],
+                        choices=["train", "eval", "profile", "train_byte_lm", "test_messaging", "hardware_detection"],
                         help="Operation mode")
     
     # Model configuration arguments
@@ -57,6 +57,20 @@ def parse_args():
                         help="Use gradient checkpointing")
     parser.add_argument("--dynamic_component_activation", action="store_true",
                         help="Dynamically activate components based on input complexity")
+    
+    # Hardware capability adaptation arguments
+    parser.add_argument("--detect_hardware", action="store_true",
+                        help="Detect and print hardware capabilities before running")
+    parser.add_argument("--force_cpu", action="store_true",
+                        help="Force using CPU even if GPU is available")
+    parser.add_argument("--hardware_info", action="store_true",
+                        help="Show detailed hardware information")
+    parser.add_argument("--optimize_for_hardware", action="store_true", default=True,
+                        help="Automatically optimize for available hardware")
+    parser.add_argument("--cross_platform_compatibility", action="store_true", default=True,
+                        help="Enable cross-platform compatibility layer")
+    parser.add_argument("--memory_pressure_threshold", type=float, default=0.7,
+                        help="Memory pressure threshold for component deactivation (0.0-1.0)")
     
     # Training arguments
     parser.add_argument("--batch_size", type=int, default=8,
@@ -547,6 +561,64 @@ def test_messaging_mode(args):
     print("\nMessaging system test complete!")
 
 
+def hardware_detection_mode(args):
+    """Run hardware detection and print capabilities."""
+    from src.utils.hardware_detection import get_hardware_detector, get_optimal_config
+    
+    # Get hardware detector
+    detector = get_hardware_detector()
+    features = detector.get_features()
+    
+    # Print hardware information
+    print("\nHardware Capabilities:")
+    print(f"  Platform: {features.platform}")
+    print(f"  CPU: {features.cpu_count} cores")
+    print(f"  RAM: {features.cpu_memory_total / 1024**3:.2f} GB total")
+    
+    if features.is_apple_silicon:
+        print("  Apple Silicon detected")
+    
+    if features.is_cuda_available:
+        print(f"  CUDA available with {features.gpu_count} devices")
+        for i, gpu_features in features.gpu_features.items():
+            print(f"    GPU {i}: {gpu_features['name']} (Capability {gpu_features['capability']})")
+            print(f"      Memory: {gpu_features['memory'] / 1024**3:.2f} GB")
+            print(f"      Processors: {gpu_features['processors']}")
+    elif features.is_mps_available:
+        print("  Metal Performance Shaders (MPS) available")
+    else:
+        print("  No GPU acceleration available")
+    
+    # Print precision formats
+    precision_formats = []
+    if features.supports_float16:
+        precision_formats.append("float16")
+    if features.supports_bfloat16:
+        precision_formats.append("bfloat16")
+    if features.supports_int8:
+        precision_formats.append("int8")
+    
+    print(f"  Supported precision formats: {', '.join(precision_formats)}")
+    
+    if features.supports_mixed_precision:
+        print("  Mixed precision training is supported")
+    
+    # Print optimal configuration
+    print("\nOptimal Configuration:")
+    optimal_config = get_optimal_config()
+    for key, value in optimal_config.items():
+        print(f"  {key}: {value}")
+    
+    print("\nRecommended Component Activation:")
+    if 'component_config' in optimal_config:
+        for component, active in optimal_config['component_config'].items():
+            print(f"  {component}: {'Enabled' if active else 'Disabled'}")
+    elif optimal_config.get('use_all_components', False):
+        print("  All components can be safely enabled on this hardware")
+    else:
+        print("  Default component activation recommended")
+
+
 def main():
     """Main function."""
     # Parse command-line arguments
@@ -556,14 +628,72 @@ def main():
     if args.output_dir and not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     
+    # Run hardware detection if requested
+    if args.detect_hardware or args.hardware_info or args.mode == "hardware_detection":
+        hardware_detection_mode(args)
+        if args.mode == "hardware_detection":
+            return
+    
     # Run the appropriate mode
     if args.mode == "train":
         # Create configuration
         config = create_config_from_args(args)
+        
+        # Apply hardware-specific optimizations
+        if args.optimize_for_hardware:
+            from src.utils.hardware_detection import get_optimal_config
+            
+            # Get optimal configuration for current hardware
+            optimal_config = get_optimal_config()
+            
+            # Apply hardware-specific optimizations
+            config.hardware.memory_threshold = optimal_config.get('memory_threshold', config.hardware.memory_threshold)
+            config.hardware.compute_dtype = optimal_config.get('compute_dtype', 'float32')
+            
+            if args.force_cpu:
+                config.hardware.device = 'cpu'
+            else:
+                config.hardware.device = optimal_config.get('device', 'cpu')
+            
+            # Apply component-specific optimizations if available
+            if 'component_config' in optimal_config and not args.dynamic_component_activation:
+                # Don't override explicit component activation from command-line args
+                if not (args.use_titans_memory or args.use_transformer2_adaptation or 
+                        args.use_mvot_processor or args.use_blt_processor or 
+                        args.use_two_pass_inference):
+                    # Apply suggested component configuration if no specific components were requested
+                    if 'titans_memory_system' in optimal_config['component_config']:
+                        config.use_titans_memory = optimal_config['component_config']['titans_memory_system']
+                    if 'transformer2_adaptation' in optimal_config['component_config']:
+                        config.use_transformer2_adaptation = optimal_config['component_config']['transformer2_adaptation']
+                    if 'mvot_processor' in optimal_config['component_config']:
+                        config.use_mvot_processor = optimal_config['component_config']['mvot_processor']
+                    if 'blt_processor' in optimal_config['component_config']:
+                        config.use_blt_processor = optimal_config['component_config']['blt_processor']
+                    if 'two_pass_inference' in optimal_config['component_config']:
+                        config.use_two_pass_inference = optimal_config['component_config']['two_pass_inference']
+        
         train(args, config)
     elif args.mode == "eval":
         # Create configuration
         config = create_config_from_args(args)
+        
+        # Apply hardware-specific optimizations
+        if args.optimize_for_hardware:
+            from src.utils.hardware_detection import get_optimal_config
+            
+            # Get optimal configuration for current hardware
+            optimal_config = get_optimal_config()
+            
+            # Apply hardware-specific optimizations
+            config.hardware.memory_threshold = optimal_config.get('memory_threshold', config.hardware.memory_threshold)
+            config.hardware.compute_dtype = optimal_config.get('compute_dtype', 'float32')
+            
+            if args.force_cpu:
+                config.hardware.device = 'cpu'
+            else:
+                config.hardware.device = optimal_config.get('device', 'cpu')
+        
         evaluate(args, config)
     elif args.mode == "profile":
         # Create configuration

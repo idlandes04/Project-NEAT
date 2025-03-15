@@ -376,6 +376,22 @@ python main.py --mode profile
 # Profile specific components
 python main.py --mode profile \
     --profile_components titans,transformer2,mvot
+
+# Profile with hardware optimization
+python main.py --mode profile --optimize_for_hardware
+```
+
+### Hardware Detection
+
+```bash
+# Detect hardware capabilities
+python main.py --mode hardware_detection
+
+# Show detailed hardware information
+python main.py --detect_hardware --hardware_info
+
+# Run hardware capability tests
+python test_hardware_capabilities.py --test_all
 ```
 
 ### Testing
@@ -434,11 +450,13 @@ The implementation includes several performance optimization techniques:
    - Resource-aware architecture with memory pressure detection
 
 2. **Hardware Capability Adaptation** (Phase 2.3.2) - ✅
-   - Automatic hardware feature detection for optimal component activation
-   - Memory pressure monitoring with adaptive component deactivation
-   - Thread-safe resource management with deadlock prevention
-   - Graceful fallbacks for environments without advanced hardware features
-   - Cross-platform compatibility with platform-specific optimizations
+   - Unified hardware detection system for CUDA, MPS (Metal), and CPU capabilities
+   - Progressive memory pressure monitoring with threshold-based component deactivation
+   - Cross-platform compatibility layer providing fallbacks for unsupported operations
+   - Platform-specific optimizations for SVD, attention mechanisms, and tensor operations
+   - Robust memory usage profiling with accurate tracking across different devices
+   - Optimal configuration recommendations based on detected hardware capabilities
+   - Integration with main.py to automatically optimize for available hardware
 
 3. **Execution Scheduling Optimization** (Phase 2.3.3) - 🔄
    - Priority-based execution scheduling minimizing waiting time
@@ -505,7 +523,9 @@ project-neat/
 │   └── utils/                        # Utility functions
 │       ├── config.py                 # Configuration handling
 │       ├── memory_optimization.py    # Memory usage optimization
-│       └── component_resource_management.py # Component-specific resource allocation
+│       ├── component_resource_management.py # Component-specific resource allocation
+│       ├── hardware_detection.py     # Hardware capability detection
+│       └── platform_compatibility.py # Cross-platform operation compatibility
 ├── tests/                            # Test cases
 │   ├── test_components.py            # Component-level tests
 │   ├── test_integration.py           # Integration tests
@@ -513,7 +533,8 @@ project-neat/
 │   ├── test_feedback.py              # Feedback mechanism tests
 │   ├── test_messaging.py             # Messaging system tests
 │   ├── test_component_resource_management.py # Resource management tests
-│   └── test_resource_aware_architecture.py  # Resource-aware architecture tests
+│   ├── test_resource_aware_architecture.py  # Resource-aware architecture tests
+│   └── test_hardware_capability_adaptation.py # Hardware detection and adaptation tests
 ├── docs/                             # Documentation
 │   ├── PLAN_MAIN.MD                  # Project planning document
 │   ├── TECHNICALd.md                 # Technical details and theory

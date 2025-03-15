@@ -10,6 +10,8 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import psutil
+import logging
 from typing import Dict, List, Optional, Tuple, Union, Any, Callable
 
 from ..utils.memory_optimization import GPUMemoryTracker, ResourceAllocator, GPUMemoryOptimizer, enable_mixed_precision
@@ -566,21 +568,78 @@ class PerformanceProfiler:
             _ = self.model(**input_batch)
         
         # Profile
-        torch.cuda.synchronize()
-        start_time = time.time()
-        start_memory = torch.cuda.memory_allocated()
+        # Determine the device type and synchronize as appropriate
+        device = next(self.model.parameters()).device
+        device_type = device.type
         
+        logger = logging.getLogger('ProfileMemory')
+        process = psutil.Process()
+        
+        # Clear memory caches before measurement
+        if device_type == 'cuda' and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            start_time = time.time()
+            start_memory_gpu = torch.cuda.memory_allocated()
+            start_memory_process = process.memory_info().rss
+            logger.info(f"Start GPU memory: {start_memory_gpu}, Process memory: {start_memory_process}")
+        elif device_type == 'mps':
+            # Metal doesn't provide direct memory allocation tracking through PyTorch
+            # Force garbage collection to make measurements more accurate
+            import gc
+            gc.collect()
+            
+            # Use process memory as a proxy
+            start_time = time.time()
+            start_memory_process = process.memory_info().rss
+            logger.info(f"Start process memory: {start_memory_process}")
+            if hasattr(torch.mps, 'synchronize'):
+                torch.mps.synchronize()
+        else:
+            start_time = time.time()
+            start_memory_process = process.memory_info().rss
+            logger.info(f"Start CPU memory: {start_memory_process}")
+        
+        # Force a small allocation to be sure we're detecting memory usage
+        dummy_tensor = torch.ones((1000, 1000), device=device)
+        
+        # Run the component
         with torch.no_grad():
             outputs = self.model(**input_batch)
         
-        torch.cuda.synchronize()
-        end_time = time.time()
-        end_memory = torch.cuda.memory_allocated()
+        # Ensure the dummy tensor is not garbage collected
+        dummy_tensor_sum = dummy_tensor.sum().item()
+        
+        # Measure after execution
+        if device_type == 'cuda' and torch.cuda.is_available():
+            torch.cuda.synchronize()
+            end_time = time.time()
+            end_memory_gpu = torch.cuda.memory_allocated()
+            end_memory_process = process.memory_info().rss
+            logger.info(f"End GPU memory: {end_memory_gpu}, Process memory: {end_memory_process}")
+            memory_diff = end_memory_gpu - start_memory_gpu
+        elif device_type == 'mps':
+            if hasattr(torch.mps, 'synchronize'):
+                torch.mps.synchronize()
+            end_time = time.time()
+            end_memory_process = process.memory_info().rss
+            logger.info(f"End process memory: {end_memory_process}")
+            memory_diff = end_memory_process - start_memory_process
+        else:
+            end_time = time.time()
+            end_memory_process = process.memory_info().rss
+            logger.info(f"End CPU memory: {end_memory_process}")
+            memory_diff = end_memory_process - start_memory_process
+        
+        logger.info(f"Memory difference: {memory_diff} bytes")
+        
+        # Clean up the dummy tensor
+        del dummy_tensor
         
         # Calculate metrics
         metrics = {
             "time": end_time - start_time,
-            "memory": end_memory - start_memory,
+            "memory": memory_diff,
         }
         
         # Restore active components
