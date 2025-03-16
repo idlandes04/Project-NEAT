@@ -872,7 +872,8 @@ class ComputationDistributor:
         # Create streams with different priorities
         for i in range(max_streams):
             # Alternate between high and normal priority
-            priority = torch.cuda.Stream.Priority.HIGH if i % 2 == 0 else torch.cuda.Stream.Priority.NORMAL
+            # Use actual priority values: 0 (lowest) to -3 (highest)
+            priority = -1 if i % 2 == 0 else 0  # Higher priority (negative) vs normal priority (0)
             stream = torch.cuda.Stream(priority=priority)
             self.gpu_streams[f"stream_{i}"] = {
                 "stream": stream,
@@ -933,7 +934,7 @@ class ComputationDistributor:
             # Find an available stream
             available_streams = sorted(
                 [(id, info) for id, info in self.gpu_streams.items() if not info["in_use"]],
-                key=lambda x: abs(priority - (1.0 if x[1]["priority"] == torch.cuda.Stream.Priority.HIGH else 0.5))
+                key=lambda x: abs(priority - (1.0 if x[1]["priority"] < 0 else 0.5))
             )
             
             if available_streams:

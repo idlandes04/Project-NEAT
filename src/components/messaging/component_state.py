@@ -113,38 +113,24 @@ class StateManager:
         Args:
             state: State to register
         """
-        # Acquire lock with timeout to prevent deadlocks
-        import time
-        acquired = self.lock.acquire(timeout=5)  # 5 second timeout
+        # WSL compatibility: Use a more fail-safe approach to avoid deadlocks
+        subscribers = []
         
-        if not acquired:
-            # Log warning and continue without the lock
-            import logging
-            logging.warning(f"Timeout acquiring lock in register_state for {state.component} - continuing without lock")
-        
-        try:
+        with self.lock:
+            # Within lock: Update state information
             if state.state_type not in self.states:
                 self.states[state.state_type] = {}
                 
             self.states[state.state_type][state.component] = state
             
-            # Notify subscribers of state update - we do this inside the lock
-            # to ensure consistent state, but this may be the source of deadlocks
-            # if _notify_subscribers is also trying to acquire locks
-            subscribers = []
+            # Get subscribers while holding the lock
             if state.state_type in self.subscribers:
-                # Get list of subscribers while we have the lock
                 subscribers = [s for s in self.subscribers[state.state_type] 
                               if s != state.component]
-        finally:
-            if acquired:
-                self.lock.release()
         
-        # Notify subscribers outside the lock to prevent potential deadlocks
+        # Outside lock: Notify subscribers to avoid deadlocks
         for subscriber in subscribers:
             message = state.as_message(target=subscriber)
-            # Import here to avoid circular import
-            from .message_protocol import send_message
             send_message(message)
             
     def update_state(self, 
@@ -159,41 +145,30 @@ class StateManager:
             component: Component that owns the state
             value: New state value
         """
-        # Check if we need to create a new state
+        # WSL compatibility: Use a more resilient approach to avoid deadlocks
         state_exists = False
+        subscribers = []
+        state = None
         
-        # Acquire lock with timeout to prevent deadlocks
-        import time
-        acquired = self.lock.acquire(timeout=5)  # 5 second timeout
-        
-        if not acquired:
-            # Log warning and continue without the lock
-            import logging
-            logging.warning(f"Timeout acquiring lock in update_state for {component} - continuing without lock")
-        
-        try:
+        with self.lock:
+            # Check if the state exists
             state_exists = (state_type in self.states and 
                            component in self.states[state_type])
             
             if state_exists:
+                # Update existing state
                 self.states[state_type][component].update(value)
                 state = self.states[state_type][component]
                 
-                # Get subscribers while we have the lock
-                subscribers = []
+                # Get subscribers while holding the lock
                 if state_type in self.subscribers:
                     subscribers = [s for s in self.subscribers[state_type] 
                                   if s != component]
-        finally:
-            if acquired:
-                self.lock.release()
         
         if state_exists:
-            # Notify subscribers outside the lock to prevent potential deadlocks
+            # Notify subscribers outside the lock
             for subscriber in subscribers:
                 message = state.as_message(target=subscriber)
-                # Import here to avoid circular import
-                from .message_protocol import send_message
                 send_message(message)
         else:
             # Create new state if it doesn't exist
@@ -211,21 +186,11 @@ class StateManager:
         Returns:
             Component state or None if not found
         """
-        # Acquire lock with timeout to prevent deadlocks
-        import time, logging
-        acquired = self.lock.acquire(timeout=2)  # 2 second timeout for reads
-        
-        if not acquired:
-            logging.warning(f"Timeout acquiring lock in get_state for {component} - returning None")
-            return None
-        
-        try:
+        # WSL compatibility: Use context manager for better reliability
+        with self.lock:
             if state_type in self.states and component in self.states[state_type]:
                 return self.states[state_type][component]
             return None
-        finally:
-            if acquired:
-                self.lock.release()
             
     def get_all_states(self, state_type: StateType) -> Dict[str, ComponentState]:
         """
@@ -237,21 +202,11 @@ class StateManager:
         Returns:
             Dictionary of component states
         """
-        # Acquire lock with timeout to prevent deadlocks
-        import time, logging
-        acquired = self.lock.acquire(timeout=2)  # 2 second timeout for reads
-        
-        if not acquired:
-            logging.warning(f"Timeout acquiring lock in get_all_states for {state_type} - returning empty dict")
-            return {}
-        
-        try:
+        # WSL compatibility: Use context manager for better reliability
+        with self.lock:
             if state_type in self.states:
                 return self.states[state_type].copy()
             return {}
-        finally:
-            if acquired:
-                self.lock.release()
             
     def subscribe(self, component: str, state_type: StateType) -> None:
         """
@@ -261,15 +216,8 @@ class StateManager:
             component: Component subscribing
             state_type: Type of state to subscribe to
         """
-        # Acquire lock with timeout to prevent deadlocks
-        import time, logging
-        acquired = self.lock.acquire(timeout=3)  # 3 second timeout
-        
-        if not acquired:
-            logging.warning(f"Timeout acquiring lock in subscribe for {component} to {state_type} - operation failed")
-            return
-        
-        try:
+        # WSL compatibility: Use context manager for better reliability
+        with self.lock:
             if state_type not in self.subscribers:
                 self.subscribers[state_type] = set()
                 
@@ -279,9 +227,6 @@ class StateManager:
                 self.subscriptions[component] = set()
                 
             self.subscriptions[component].add(state_type)
-        finally:
-            if acquired:
-                self.lock.release()
             
     def unsubscribe(self, component: str, state_type: StateType) -> None:
         """
@@ -291,23 +236,13 @@ class StateManager:
             component: Component unsubscribing
             state_type: Type of state to unsubscribe from
         """
-        # Acquire lock with timeout to prevent deadlocks
-        import time, logging
-        acquired = self.lock.acquire(timeout=3)  # 3 second timeout
-        
-        if not acquired:
-            logging.warning(f"Timeout acquiring lock in unsubscribe for {component} from {state_type} - operation failed")
-            return
-        
-        try:
+        # WSL compatibility: Use context manager for better reliability
+        with self.lock:
             if state_type in self.subscribers:
                 self.subscribers[state_type].discard(component)
                 
             if component in self.subscriptions:
                 self.subscriptions[component].discard(state_type)
-        finally:
-            if acquired:
-                self.lock.release()
                 
     def _notify_subscribers(self, state: ComponentState) -> None:
         """

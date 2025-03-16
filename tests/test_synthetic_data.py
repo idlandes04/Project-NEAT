@@ -214,7 +214,13 @@ def test_different_problem_types():
         problem_type=ProblemType.SUBTRACTION
     )
     assert problem.problem_type == ProblemType.SUBTRACTION
-    assert "-" in problem.question or "difference" in problem.question.lower() or "subtract" in problem.question.lower() or "give away" in problem.question.lower() or "remain" in problem.question.lower()
+    assert ("-" in problem.question or 
+            "difference" in problem.question.lower() or 
+            "subtract" in problem.question.lower() or 
+            "give away" in problem.question.lower() or 
+            "remain" in problem.question.lower() or
+            "more" in problem.question.lower() or  # For "how many more" type questions
+            "less" in problem.question.lower())
     
     # Test multiplication
     problem = generator.generate_problem(
