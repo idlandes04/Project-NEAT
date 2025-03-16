@@ -191,6 +191,22 @@ def parse_args():
                         help="Directory to cache processed data")
     blt_group.add_argument("--entropy_threshold", type=float, default=0.5,
                         help="Entropy threshold for patching")
+    blt_group.add_argument("--batch_size", type=int, default=64,
+                        help="Batch size for training")
+    blt_group.add_argument("--max_steps", type=int, default=10000,
+                        help="Maximum number of training steps")
+    blt_group.add_argument("--learning_rate", type=float, default=5e-5,
+                        help="Learning rate")
+    blt_group.add_argument("--warmup_steps", type=int, default=1000,
+                        help="Warmup steps for learning rate scheduler")
+    blt_group.add_argument("--gradient_accumulation_steps", type=int, default=1,
+                        help="Number of gradient accumulation steps")
+    blt_group.add_argument("--weight_decay", type=float, default=0.01,
+                        help="Weight decay")
+    blt_group.add_argument("--num_workers", type=int, default=4,
+                        help="Number of dataloader workers")
+    blt_group.add_argument("--log_steps", type=int, default=50,
+                        help="Number of steps between logging")
     
     # 3. Evaluation subcommand
     eval_parser = subparsers.add_parser(
@@ -506,6 +522,31 @@ def train_byte_lm_mode(args):
     from src.utils.config import ByteLMConfig
     from src.trainers.blt_trainer import train_blt_model
     
+    # Handle train_files and eval_files if they are JSON strings
+    train_files = None
+    if hasattr(args, 'train_files') and args.train_files:
+        if isinstance(args.train_files, str) and args.train_files.startswith('['):
+            # This is likely a JSON string
+            try:
+                import json
+                train_files = json.loads(args.train_files)
+            except json.JSONDecodeError:
+                train_files = args.train_files
+        else:
+            train_files = args.train_files
+    
+    eval_files = None
+    if hasattr(args, 'eval_files') and args.eval_files:
+        if isinstance(args.eval_files, str) and args.eval_files.startswith('['):
+            # This is likely a JSON string
+            try:
+                import json
+                eval_files = json.loads(args.eval_files)
+            except json.JSONDecodeError:
+                eval_files = args.eval_files
+        else:
+            eval_files = args.eval_files
+    
     # Create ByteLMConfig from args
     config = ByteLMConfig(
         hidden_size=args.byte_lm_hidden_size,
@@ -517,7 +558,7 @@ def train_byte_lm_mode(args):
         learning_rate=args.learning_rate if hasattr(args, 'learning_rate') else 5e-5,
         batch_size=args.batch_size if hasattr(args, 'batch_size') else 64,
         block_size=args.block_size,
-        warmup_steps=int(args.max_steps * 0.1) if hasattr(args, 'max_steps') else 1000,  # 10% of max steps
+        warmup_steps=args.warmup_steps if hasattr(args, 'warmup_steps') else int(getattr(args, 'max_steps', 10000) * 0.1),
         max_steps=args.max_steps if hasattr(args, 'max_steps') else 10000,
         eval_steps=args.eval_steps if hasattr(args, 'eval_steps') else max(1, getattr(args, 'max_steps', 10000) // 20),
         save_steps=args.save_steps if hasattr(args, 'save_steps') else max(1, getattr(args, 'max_steps', 10000) // 10),
@@ -525,18 +566,18 @@ def train_byte_lm_mode(args):
         weight_decay=args.weight_decay if hasattr(args, 'weight_decay') else 0.01,
         
         # Training data options
-        train_files=args.train_files if hasattr(args, 'train_files') else None,
+        train_files=train_files,
         train_glob=args.train_glob if hasattr(args, 'train_glob') else None,
         train_data_dir=args.train_data_dir if hasattr(args, 'train_data_dir') else None,
         
         # Evaluation data options
-        eval_files=args.eval_files if hasattr(args, 'eval_files') else None,
+        eval_files=eval_files,
         eval_glob=args.eval_glob if hasattr(args, 'eval_glob') else None,
         eval_data_dir=args.eval_data_dir if hasattr(args, 'eval_data_dir') else None,
         
         # Misc options
         cache_dir=args.cache_dir if hasattr(args, 'cache_dir') else None,
-        output_dir=args.output_dir,
+        output_dir=args.training_dir if hasattr(args, 'training_dir') else args.output_dir,
         checkpoint_path=args.resume_from if hasattr(args, 'resume_from') else None,
         
         # Enable mixed precision if requested

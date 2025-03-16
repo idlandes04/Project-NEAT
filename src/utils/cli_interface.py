@@ -91,17 +91,16 @@ class NEATCLIInterface:
     def _print_header(self):
         """Print the NEAT header."""
         header_text = """
-        
-                                                                                                                                                                                                                              
-██████╗ ██████╗  ██████╗      ██╗███████╗ ██████╗████████╗    ███╗   ██╗███████╗ █████╗ ████████╗                                                                                                                              
-██╔══██╗██╔══██╗██╔═══██╗     ██║██╔════╝██╔════╝╚══██╔══╝    ████╗  ██║██╔════╝██╔══██╗╚══██╔══╝                                                                                                                              
-██████╔╝██████╔╝██║   ██║     ██║█████╗  ██║        ██║       ██╔██╗ ██║█████╗  ███████║   ██║                                                                                                                                 
-██╔═══╝ ██╔══██╗██║   ██║██   ██║██╔══╝  ██║        ██║       ██║╚██╗██║██╔══╝  ██╔══██║   ██║                                                                                                                                 
-██║     ██║  ██║╚██████╔╝╚█████╔╝███████╗╚██████╗   ██║       ██║ ╚████║███████╗██║  ██║   ██║                                                                                                                                 
-╚═╝     ╚═╝  ╚═╝ ╚═════╝  ╚════╝ ╚══════╝ ╚═════╝   ╚═╝       ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝   ╚═╝                                                                                                                                 
+  _   _                      _                _     _ _           _                   
+ | \ | | ___ _   _ _ __ __ _| |   /\         | |   (_) |         | |                  
+ |  \| |/ _ \ | | | '__/ _` | |  /  \   _ __| |__  _| |_ ___  __| |_ _   _ _ __ ___ 
+ | . ` |  __/ |_| | | | (_| | | / /\ \ | '__| '_ \| | __/ _ \/ _` | | | | | '__/ _ \\
+ | |\  |\___|\__,_|_|  \__,_|_|/ ____ \| |  | | | | | ||  __/ (_| | |_| | | | |  __/
+ |_| \_|                      /_/    \_\_|  |_| |_|_|\__\___|\__,_|\__,_|_|_|  \___|    
+                                                      
         """
         self.console.print(Text(header_text, style=f"{self.main_color} bold"))
-        self.console.print(Panel(Text("A cutting-edge neural architecture combining several advanced techniques for an efficient, adaptive, and multimodal AI system.", 
+        self.console.print(Panel(Text("A cutting-edge neural architecture combining advanced techniques for efficient, adaptive, and multimodal AI", 
                                        style=f"{self.accent_color} bold"), 
                                  style=self.main_color))
     
@@ -404,7 +403,7 @@ class NEATCLIInterface:
         
         # Prepare command
         cmd = [
-            "python", "main.py", "train",
+            "python3", "main.py", "train",
             "--training_type", "full_model"
         ]
         
@@ -416,6 +415,10 @@ class NEATCLIInterface:
             if isinstance(value, bool):
                 if value:
                     cmd.append(f"--{key}")
+            elif isinstance(value, list):
+                if value:  # Only if non-empty
+                    cmd.append(f"--{key}")
+                    cmd.append(json.dumps(value))  # Convert list to JSON string
             elif value is not None:
                 cmd.append(f"--{key}")
                 cmd.append(str(value))
@@ -438,7 +441,7 @@ class NEATCLIInterface:
         
         # Prepare command
         cmd = [
-            "python", "main.py", "train",
+            "python3", "main.py", "train",
             "--training_type", "blt_entropy"
         ]
         
@@ -450,6 +453,10 @@ class NEATCLIInterface:
             if isinstance(value, bool):
                 if value:
                     cmd.append(f"--{key}")
+            elif isinstance(value, list):
+                if value:  # Only if non-empty
+                    cmd.append(f"--{key}")
+                    cmd.append(json.dumps(value))  # Convert list to JSON string
             elif value is not None:
                 cmd.append(f"--{key}")
                 cmd.append(str(value))
@@ -472,7 +479,7 @@ class NEATCLIInterface:
         
         # Prepare command
         cmd = [
-            "python", "main.py", "train",
+            "python3", "main.py", "train",
             "--training_type", "mvot_codebook"
         ]
         
@@ -484,6 +491,10 @@ class NEATCLIInterface:
             if isinstance(value, bool):
                 if value:
                     cmd.append(f"--{key}")
+            elif isinstance(value, list):
+                if value:  # Only if non-empty
+                    cmd.append(f"--{key}")
+                    cmd.append(json.dumps(value))  # Convert list to JSON string
             elif value is not None:
                 cmd.append(f"--{key}")
                 cmd.append(str(value))
@@ -506,7 +517,7 @@ class NEATCLIInterface:
         
         # Prepare command
         cmd = [
-            "python", "main.py", "train",
+            "python3", "main.py", "train",
             "--training_type", "baseline"
         ]
         
@@ -518,6 +529,10 @@ class NEATCLIInterface:
             if isinstance(value, bool):
                 if value:
                     cmd.append(f"--{key}")
+            elif isinstance(value, list):
+                if value:  # Only if non-empty
+                    cmd.append(f"--{key}")
+                    cmd.append(json.dumps(value))  # Convert list to JSON string
             elif value is not None:
                 cmd.append(f"--{key}")
                 cmd.append(str(value))
@@ -697,6 +712,10 @@ class NEATCLIInterface:
             "training_type": "blt_entropy",
             "train_data_dir": "./data/pile_subset/train",
             "eval_data_dir": "./data/pile_subset/eval",
+            "train_files": None,
+            "eval_files": None,
+            "train_glob": None,
+            "eval_glob": None,
             "byte_lm_hidden_size": 64,
             "byte_lm_num_layers": 2,
             "byte_lm_num_heads": 4,
@@ -707,10 +726,15 @@ class NEATCLIInterface:
             "eval_steps": 5,  # Evaluate at the end
             "save_steps": 5,  # Save at the end
             "learning_rate": 5e-5,
+            "warmup_steps": 1,
+            "gradient_accumulation_steps": 1,
+            "weight_decay": 0.01,
             "mixed_precision": True,
-            "output_dir": "./outputs/byte_lm_test",
+            "output_dir": "./outputs",
             "training_dir": "./outputs/byte_lm_test",
-            "cache_dir": "./data/cache/byte_lm",
+            "cache_dir": "./data/cache/byte_lm", 
+            "num_workers": 4,
+            "log_steps": 1,
             "entropy_threshold": 0.5
         }
         
@@ -720,7 +744,7 @@ class NEATCLIInterface:
         
         # Prepare command
         cmd = [
-            "python", "main.py", "train",
+            "python3", "main.py", "train",
             "--training_type", "blt_entropy"
         ]
         
@@ -732,6 +756,10 @@ class NEATCLIInterface:
             if isinstance(value, bool):
                 if value:
                     cmd.append(f"--{key}")
+            elif isinstance(value, list):
+                if value:  # Only if non-empty
+                    cmd.append(f"--{key}")
+                    cmd.append(json.dumps(value))  # Convert list to JSON string
             elif value is not None:
                 cmd.append(f"--{key}")
                 cmd.append(str(value))
@@ -745,7 +773,7 @@ class NEATCLIInterface:
         self.console.print(Panel("Hardware Detection Test", style=self.main_color))
         
         # Prepare command
-        cmd = "python main.py test --test_type hardware --hardware_info"
+        cmd = "python3 main.py test --test_type hardware --hardware_info"
         
         # Execute command with progress display
         self._execute_command_with_progress(cmd, "Hardware Detection")
@@ -811,9 +839,36 @@ class NEATCLIInterface:
             cmd: Command to execute
             title: Title for the progress display
         """
+        # Fix known command issues by ensuring the command is properly formatted
+        cmd_parts = cmd.split()
+        seen_args = set()
+        fixed_cmd_parts = []
+        
+        i = 0
+        while i < len(cmd_parts):
+            part = cmd_parts[i]
+            
+            # Skip duplicates of arguments we've already seen
+            if part.startswith('--') and part in seen_args:
+                # Skip the argument and its value (if it has one)
+                i += 2 if i + 1 < len(cmd_parts) and not cmd_parts[i + 1].startswith('--') else 1
+                continue
+            
+            # Add to fixed command
+            fixed_cmd_parts.append(part)
+            
+            # Track arguments seen
+            if part.startswith('--'):
+                seen_args.add(part)
+            
+            i += 1
+        
+        # Rebuild command
+        fixed_cmd = ' '.join(fixed_cmd_parts)
+        
         self._clear_screen()
         self.console.print(Panel(f"Executing: {title}", style=self.main_color))
-        self.console.print(f"Command: [dim]{cmd}[/dim]")
+        self.console.print(f"Command: [dim]{fixed_cmd}[/dim]")
         
         # Create progress display
         with Progress(
@@ -830,7 +885,7 @@ class NEATCLIInterface:
             # Execute the command
             import subprocess
             process = subprocess.Popen(
-                cmd, 
+                fixed_cmd, 
                 shell=True, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.STDOUT,

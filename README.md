@@ -96,7 +96,7 @@ gantt
     
     section Testing & Benchmarking
     Synthetic Data Generator (3.1.1)      :done, synthetic, 2025-04-10, 2025-04-20
-    Baseline Transformer (3.1.2)          :active, baseline, 2025-04-21, 2025-04-30
+    Baseline Testing (3.1.2)          :active, baseline, 2025-04-21, 2025-04-30
     Component Ablation Tests (3.1.3)      :ablation, after baseline, 14d
     Memory & Learning Evaluation (3.2.x)  :memory, after ablation, 14d
 ```
@@ -127,7 +127,7 @@ We've just completed Phase 3.1.1, which focuses on synthetic data generation for
 - ✅ **Full Test Run**: Successfully ran Mac test training as proof of concept
 
 **Currently in Progress:**
-- 🔄 **Baseline Transformer (3.1.2)**: Parameter-matched model for fair comparison
+- 🔄 **Baseline Testing (3.1.2)**: Training BLT and Cookbook as tests to validate training and pipeline fucntion. Using a subset of the pile with foucus on math, literacy, and science for the BLT component pre-training currently...
 - 📅 **Component Ablation (3.1.3)**: Testing each component's individual contribution
 - 📅 **Memory & Learning (3.2.x)**: Evaluating test-time learning effectiveness
 
@@ -317,12 +317,34 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ## Usage Examples 🛠️ 
 
-### Unified Command-Line Interface
+### Interactive CLI Interface
 
-The project now provides a unified command-line interface with a subcommand structure for better organization:
+Project NEAT now provides an interactive CLI interface with hierarchical menus, real-time progress tracking, and configuration management:
 
 ```bash
-python main.py <command> [options]
+# Launch the interactive CLI
+python3 main.py
+
+# Or use the dedicated launcher script
+python3 run_cli.py
+```
+
+![CLI Interface](https://raw.githubusercontent.com/idlandes04/Project-NEAT/main/docs/images/cli_interface.png)
+
+The interactive CLI provides a user-friendly interface with:
+
+- **Hierarchical menus** for training, evaluation, data preparation, and testing
+- **Configuration management** - save, load, and customize training configurations
+- **Real-time progress tracking** with color-coded status updates
+- **Quick test functionality** for rapid testing
+- **Hardware detection** and optimization
+
+### Command-Line Interface
+
+For scripting and automation, the project also provides a traditional command-line interface:
+
+```bash
+python3 main.py <command> [options]
 ```
 
 Available commands:

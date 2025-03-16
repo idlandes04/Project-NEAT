@@ -12,10 +12,13 @@
 ## Build & Test Commands
 - Run all tests: `python3 -m pytest tests/`
 - Run a single test: `python3 -m pytest tests/test_components.py::TestName::test_method_name`
-- Train model: `python3 main.py --mode train --use_titans_memory --use_transformer2_adaptation --use_mvot_processor`
-- Evaluate model: `python3 main.py --mode eval --model_path ./outputs/best_model`
-- Profile components: `python3 main.py --mode profile`
-- Train BLT entropy estimator: `python3 main.py --mode train_byte_lm --train_data_dir ./data/byte_training --eval_data_dir ./data/byte_eval --batch_size 64 --max_steps 10000 --byte_lm_hidden_size 128 --byte_lm_num_layers 2`
+- Start interactive CLI: `python3 main.py` (no arguments)
+- Run CLI directly: `python3 run_cli.py`
+- Train model with CLI arguments: `python3 main.py train --training_type full_model --use_titans_memory --use_transformer2_adaptation --use_mvot_processor`
+- Evaluate model: `python3 main.py eval --model_path ./outputs/best_model`
+- Profile components: `python3 main.py test --test_type profile`
+- Train BLT entropy estimator: `python3 main.py train --training_type blt_entropy --train_data_dir ./data/pile_subset/train --eval_data_dir ./data/pile_subset/eval --batch_size 64 --max_steps 10000 --byte_lm_hidden_size 128 --byte_lm_num_layers 2`
+- Quick test BLT training (CLI): Select "Train Models" -> "Quick Test (5 Steps)"
 
 ## Code Style Guidelines
 - Use type hints (from typing import Dict, List, Optional, Union, Any)
@@ -321,6 +324,18 @@ To effectively evaluate our NEAT architecture's benefits compared to traditional
    - Computational throughput
    - Generalization capability
 
+### User Interface Improvements
+
+**Interactive CLI Interface (Completed, March 2025)**
+- **Key Insight 1**: A hierarchical menu system with rich visuals significantly improves user experience for complex model training.
+- **Key Insight 2**: Configuration management (save/load) enables reproducible experiments and faster iteration.
+- **Key Insight 3**: Real-time progress tracking with visual feedback keeps users informed during long-running operations.
+- **Key Insight 4**: Quick test functionality enables rapid verification of the model training pipeline.
+- **Key Insight 5**: Platform-specific command adaptation ensures compatibility across different environments.
+- **Key Insight 6**: Single interface for all operations (training, evaluation, testing, data preparation) simplifies workflow.
+- **Key Insight 7**: Visual consistency with the project's theming creates a cohesive and professional experience.
+- **Key Insight 8**: Proper error handling and fallback mechanisms prevent frustrating user experiences.
+
 ### Next Steps
 
 Our immediate next steps are:
@@ -331,7 +346,7 @@ Our immediate next steps are:
    - Implement data loaders for efficient training
 
 2. **Pre-train the necessary component models**:
-   - Set up the byte-level entropy estimator training
+   - Set up the byte-level entropy estimator training (using our new CLI interface)
    - Configure the MVoT visual codebook training
    - Create a training pipeline for these foundational models
 
