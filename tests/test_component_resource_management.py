@@ -330,6 +330,15 @@ class TestPrecisionSelector(unittest.TestCase):
             
             def __exit__(self, exc_type, exc_val, exc_tb):
                 pass
+            
+            # Make sure the enabled property is properly accessible in tests
+            @property
+            def enabled(self):
+                return self._enabled
+            
+            @enabled.setter
+            def enabled(self, value):
+                self._enabled = value
         
         self.mock_torch.cuda.amp.autocast = MockAutocast
         
@@ -427,10 +436,18 @@ class TestPrecisionSelector(unittest.TestCase):
             # Make one operation require float32
             mock_get.side_effect = lambda cid, op: "float32" if op == "softmax" else "float16"
             
-            context = self.selector.create_autocast_context("test_component", ["matmul", "softmax"])
-            self.assertIsNotNone(context)
-            # Should disable autocast if any operation requires float32
-            self.assertFalse(context.enabled)
+            # Also patch the torch.amp.autocast to verify it's called with enabled=False
+            with patch('src.utils.component_resource_management.torch.amp.autocast') as mock_autocast:
+                # Configure the mock to return an object with enabled=False
+                mock_context = MagicMock()
+                mock_context.enabled = False
+                mock_autocast.return_value = mock_context
+                
+                context = self.selector.create_autocast_context("test_component", ["matmul", "softmax"])
+                self.assertIsNotNone(context)
+                
+                # Verify autocast was called with enabled=False
+                mock_autocast.assert_called_with('cuda', enabled=False)
     
     def test_get_optimal_dtypes(self):
         """Test getting optimal data types for a component."""

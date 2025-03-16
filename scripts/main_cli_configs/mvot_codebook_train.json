@@ -1,0 +1,22 @@
+{
+    "mode": "train",
+    "training_type": "mvot_codebook",
+    "resume_from": null,
+    "batch_size": 16,
+    "max_steps": 5000,
+    "eval_steps": 200,
+    "save_steps": 400,
+    "learning_rate": 1e-4,
+    "warmup_steps": 500,
+    "gradient_accumulation_steps": 2,
+    "weight_decay": 0.01,
+    "output_dir": "./outputs/mvot_codebook",
+    "training_dir": "./outputs/mvot_codebook",
+    "cache_dir": "./data/cache/mvot",
+    "mixed_precision": true,
+    "codebook_size": 8192,
+    "embedding_dim": 512,
+    "model_type": "vqvae",
+    "visual_data_dir": "./data/visual_codebook",
+    "num_workers": 4
+}

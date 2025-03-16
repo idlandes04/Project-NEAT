@@ -356,12 +356,14 @@ class EntropyEstimatorTrainer:
                 
                 step += 1
                 self.global_step += 1
+                # Calculate current loss and learning rate for logging and checkpoints
+                cur_loss = train_loss * self.gradient_accumulation_steps
+                lr = self.scheduler.get_lr()[0]
+                ms_per_step = 0.0
                 
                 # Logging
                 if time.time() - last_log_time > 5:  # Log every 5 seconds
                     ms_per_step = (time.time() - last_log_time) * 1000 / max(1, step - self.global_step + 1)
-                    cur_loss = train_loss * self.gradient_accumulation_steps / self.gradient_accumulation_steps
-                    lr = self.scheduler.get_lr()[0]
                     
                     logger.info(
                         f"Step: {self.global_step} | "
@@ -372,6 +374,7 @@ class EntropyEstimatorTrainer:
                     )
                     
                     last_log_time = time.time()
+                    train_loss = 0.0
                     train_loss = 0.0
                 
                 # Evaluate

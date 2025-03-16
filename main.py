@@ -1378,4 +1378,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Check if any arguments are provided
+    if len(sys.argv) > 1:
+        # Run the normal command-line interface
+        main()
+    else:
+        # No arguments provided, launch the rich interactive CLI
+        try:
+            from src.utils.cli_interface import main as cli_main
+            cli_main()
+        except ImportError:
+            # Fall back to normal CLI if the rich interface is not available
+            print("Interactive CLI not available. Launching standard command-line interface.")
+            print("To use the interactive CLI, install required packages with: pip install rich")
+            main()

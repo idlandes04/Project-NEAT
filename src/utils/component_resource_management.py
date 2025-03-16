@@ -1183,18 +1183,20 @@ class PrecisionSelector:
         
         # If any operation requires float32, use that
         if "float32" in precisions:
-            return torch.cuda.amp.autocast(enabled=False)
+            return torch.amp.autocast('cuda', enabled=False)
         
         # If bfloat16 is available and any operation can use it, prefer that
         if "bfloat16" in precisions and self.available_precisions["bfloat16"]:
-            return torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16)
+            return torch.amp.autocast('cuda', enabled=True, dtype=torch.bfloat16)
         
         # Otherwise use float16 if available
         if self.available_precisions["float16"]:
-            return torch.cuda.amp.autocast(enabled=True, dtype=torch.float16)
+            return torch.amp.autocast('cuda', enabled=True, dtype=torch.float16)
         
         # Fallback to no autocast
-        return torch.cuda.amp.autocast(enabled=False)
+        # When we need to disable autocast, make sure the enabled property is explicitly set to False
+        context = torch.amp.autocast('cuda', enabled=False)
+        return context
     
     def get_optimal_dtypes(self, component_id: str) -> Dict[str, Any]:
         """
