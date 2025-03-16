@@ -317,63 +317,100 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ## Usage Examples 🛠️ 
 
+### Unified Command-Line Interface
+
+The project now provides a unified command-line interface with a subcommand structure for better organization:
+
+```bash
+python main.py <command> [options]
+```
+
+Available commands:
+
+- `prepare_data`: Download or generate training and evaluation data
+- `train`: Train the full NEAT model or individual components
+- `eval`: Evaluate trained models
+- `test`: Test individual components or run interactive evaluations
+- `setup`: Set up the training environment for different platforms
+
+See `scripts/example_commands.md` for comprehensive examples of all commands.
+
+### Data Preparation
+
+```bash
+# Prepare synthetic math data
+python main.py prepare_data --data_type synthetic_math --math_train_size 50000
+
+# Prepare Pile subset for BLT training
+python main.py prepare_data --data_type pile_subset
+```
+
 ### Training
 
 ```bash
-# Train with all components enabled
-python main.py --mode train \
-    --use_titans_memory \
-    --use_transformer2_adaptation \
-    --use_mvot_processor
+# Train BLT entropy estimator
+python main.py train --training_type blt_entropy \
+  --train_data_dir ./data/pile_subset/train \
+  --eval_data_dir ./data/pile_subset/eval \
+  --byte_lm_hidden_size 128 \
+  --byte_lm_num_layers 2 \
+  --batch_size 64 \
+  --max_steps 10000
 
-# Train with specific optimizations
-python main.py --mode train \
-    --mixed_precision \
-    --gradient_checkpointing \
-    --dynamic_resource_allocation
+# Train full NEAT model
+python main.py train --training_type full_model \
+  --use_titans_memory \
+  --use_transformer2_adaptation \
+  --use_mvot_processor \
+  --use_blt_processor \
+  --blt_checkpoint_path ./outputs/byte_lm/best_model.pt \
+  --mvot_codebook_path ./outputs/mvot/mock_codebook.pt
 ```
 
 ### Evaluation
 
 ```bash
 # Evaluate a trained model
-python main.py --mode eval \
-    --model_path ./outputs/best_model
+python main.py eval --model_path ./outputs/neat_model_full/best_model.pt --eval_type full
 
-# Evaluate with specific metrics
-python main.py --mode eval \
-    --model_path ./outputs/best_model \
-    --eval_metrics accuracy,perplexity,memory_efficiency
+# Interactive testing of a BLT model
+python main.py eval --model_path ./outputs/byte_lm/best_model.pt --eval_type interactive
 ```
 
-### Component Profiling
+### Component Testing and Profiling
 
 ```bash
-# Profile all components
-python main.py --mode profile
+# Test BLT interactively
+python main.py test --test_type blt_interactive --blt_model_path ./outputs/byte_lm/best_model.pt
 
-# Profile specific components
-python main.py --mode profile \
-    --profile_components titans,transformer2,mvot
+# Test hardware detection
+python main.py test --test_type hardware
 
-# Profile with hardware optimization
-python main.py --mode profile --optimize_for_hardware
+# Profile components
+python main.py test --test_type profile --profile_components all
 ```
 
-### Hardware Detection
+### Environment Setup
 
 ```bash
-# Detect hardware capabilities
-python main.py --mode hardware_detection
+# Set up for specific platform
+python main.py setup --setup_type linux --create_scripts --download_data
 
-# Show detailed hardware information
-python main.py --detect_hardware --hardware_info
-
-# Run hardware capability tests
-python test_hardware_capabilities.py --test_all
+# Setup test-only environment
+python main.py setup --setup_type test_only
 ```
 
-### Testing
+### Configuration Files
+
+```bash
+# Save configuration to a file
+python main.py train --training_type blt_entropy [...] --save_config blt_config.json
+
+# Load configuration from a file
+python main.py --config_file blt_config.json
+```
+
+### Standard Testing
 
 ```bash
 # Run all tests
@@ -537,11 +574,19 @@ project-neat/
 │   ├── phase2.2.2-3_plan.md          # Hardware-aware integration plan
 │   └── metal_docs.md                 # Apple Metal framework integration
 ├── scripts/                          # Helper scripts
-│   ├── train_byte_lm.py              # BLT training script
+│   ├── blt_interactive.py            # Interactive BLT model testing
 │   ├── create_mock_models.py         # Mock model creation for testing
-│   ├── setup_test_environment.sh     # Test environment setup script
+│   ├── download_pile_subset.py       # Download Pile subset data
+│   ├── download_training_data.py     # Download training data for components
+│   ├── example_commands.md           # Examples of CLI usage
+│   ├── generate_synthetic_data.py    # Generate synthetic test data
+│   ├── monitor_blt_training.py       # Monitor BLT training progress
+│   ├── prepare_training_dataset.py   # Prepare NEAT training dataset
+│   ├── train_blt_with_pile.sh        # Train BLT with Pile subset
+│   ├── train_byte_lm.py              # BLT training implementation
+│   ├── train_neat_model.sh           # Generic NEAT training script
 │   ├── train_neat_model_mac.sh       # macOS-specific training script
-│   └── test_advanced_problems.py     # Advanced problem type testing
+│   └── train_neat_model_windows.bat  # Windows-specific training script
 └── main.py                           # Main script
 ```
 

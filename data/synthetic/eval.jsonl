@@ -1,200 +1,200 @@
-{"question": "What is the next number in the sequence: 9, 18, 27, 36, 45?", "answer": "54", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
-{"question": "What is 9 \u00d7 9?", "answer": "81", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 2 \u00d7 1?", "answer": "2", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is 12 - 7?", "answer": "5", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is 5657 - 3422?", "answer": "2235", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
-{"question": "What is the next number in the sequence: 7, 9, 11, 13, 15?", "answer": "17", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 27 \u00d7 19?", "answer": "513", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
-{"question": "What is the next number in the sequence: 43, 53, 63, 73, 83?", "answer": "93", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
-{"question": "What is 1 \u00d7 1?", "answer": "1", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is the next number in the sequence: 6, 11, 16, 21, 26?", "answer": "31", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 1 + 6?", "answer": "7", "difficulty": "BASIC", "problem_type": "ADDITION"}
-{"question": "What is 63 + 23?", "answer": "86", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 10 - 6?", "answer": "4", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is 90 \u00f7 9?", "answer": "10", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is the next number in the sequence: 31, 46, 61, 76, 91?", "answer": "106", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
-{"question": "What is the next number in the sequence: 6, 9, 12, 15, 18?", "answer": "21", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
-{"question": "What is 12 \u00d7 8?", "answer": "96", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 2 \u00d7 4?", "answer": "8", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is the next number in the sequence: 36, 57, 78, 99, 120?", "answer": "141", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
-{"question": "What is the next number in the sequence: 18, 33, 48, 63, 78?", "answer": "93", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
-{"question": "What is 36 - 22?", "answer": "14", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
-{"question": "What is the next number in the sequence: 42, 49, 56, 63, 70?", "answer": "77", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
-{"question": "What is 8 \u00f7 2?", "answer": "4", "difficulty": "BASIC", "problem_type": "DIVISION"}
-{"question": "What is the next number in the sequence: 13, 21, 29, 37, 45?", "answer": "53", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
-{"question": "What is 4 \u00f7 2?", "answer": "2", "difficulty": "BASIC", "problem_type": "DIVISION"}
-{"question": "What is 10 \u00f7 2?", "answer": "5", "difficulty": "BASIC", "problem_type": "DIVISION"}
-{"question": "What is 69 \u00d7 56?", "answer": "3864", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is 92 \u00d7 66?", "answer": "6072", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
+{"question": "What is 3617 + 9050?", "answer": "12667", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is the next number in the sequence: 37, 45, 53, 61, 69?", "answer": "77", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
 {"question": "What is 2 + 8?", "answer": "10", "difficulty": "BASIC", "problem_type": "ADDITION"}
-{"question": "What is 35 + 98?", "answer": "133", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 10 - 4?", "answer": "6", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is the next number in the sequence: 10, 15, 20, 25, 30?", "answer": "35", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 5986 - 2470?", "answer": "3516", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
-{"question": "What is 36 \u00f7 6?", "answer": "6", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is 25 + 25?", "answer": "50", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 5301 - 2482?", "answer": "2819", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
-{"question": "What is 8333 + 2741?", "answer": "11074", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
-{"question": "What is the next number in the sequence: 58, 72, 86, 100, 114?", "answer": "128", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
-{"question": "What is the next number in the sequence: 1, 6, 11, 16, 21?", "answer": "26", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 12 - 8?", "answer": "4", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is 375 \u00f7 25?", "answer": "15", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is 68 \u00f7 17?", "answer": "4", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is 5054 - 2005?", "answer": "3049", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
-{"question": "What is 88 \u00d7 89?", "answer": "7832", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is 1325 - 778?", "answer": "547", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
-{"question": "What is 7094 + 3949?", "answer": "11043", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
-{"question": "What is 489 + 333?", "answer": "822", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
-{"question": "What is 42 \u00d7 63?", "answer": "2646", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is the next number in the sequence: 21, 31, 41, 51, 61?", "answer": "71", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
-{"question": "What is 12 + 70?", "answer": "82", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 16 \u00f7 8?", "answer": "2", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is 57 \u00f7 19?", "answer": "3", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
-{"question": "What is 10 \u00f7 5?", "answer": "2", "difficulty": "BASIC", "problem_type": "DIVISION"}
-{"question": "What is 274 - 128?", "answer": "146", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
-{"question": "What is 883 - 391?", "answer": "492", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
-{"question": "What is 6 \u00d7 5?", "answer": "30", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 4 \u00f7 2?", "answer": "2", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is 16 + 51?", "answer": "67", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 28 \u00f7 7?", "answer": "4", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is the next number in the sequence: 1, 2, 3, 4, 5?", "answer": "6", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is the next number in the sequence: 10, 15, 20, 25, 30?", "answer": "35", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 8922 + 3306?", "answer": "12228", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
-{"question": "What is 68 \u00d7 36?", "answer": "2448", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is 24 \u00d7 23?", "answer": "552", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
-{"question": "What is 97 \u00d7 81?", "answer": "7857", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is 120 \u00f7 10?", "answer": "12", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
-{"question": "What is 72 - 23?", "answer": "49", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
-{"question": "What is the next number in the sequence: 20, 22, 24, 26, 28?", "answer": "30", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
-{"question": "What is 16 \u00f7 4?", "answer": "4", "difficulty": "BASIC", "problem_type": "DIVISION"}
-{"question": "What is the next number in the sequence: 9, 10, 11, 12, 13?", "answer": "14", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 12 \u00d7 6?", "answer": "72", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 10 \u00d7 9?", "answer": "90", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 1568 \u00f7 32?", "answer": "49", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is 50 + 71?", "answer": "121", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 19 + 41?", "answer": "60", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 12 \u00d7 19?", "answer": "228", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is 15 \u00d7 13?", "answer": "195", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is 6948 + 1766?", "answer": "8714", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 99 + 21?", "answer": "120", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
+{"question": "What is 102 \u00f7 6?", "answer": "17", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 634 - 294?", "answer": "340", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
+{"question": "What is 3 \u00d7 2?", "answer": "6", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is the next number in the sequence: 18, 25, 32, 39, 46?", "answer": "53", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
+{"question": "What is 150 \u00f7 10?", "answer": "15", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 3 \u00d7 4?", "answer": "12", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 39 + 98?", "answer": "137", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
+{"question": "What is the next number in the sequence: 2, 7, 12, 17, 22?", "answer": "27", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
+{"question": "What is 6 \u00f7 2?", "answer": "3", "difficulty": "BASIC", "problem_type": "DIVISION"}
+{"question": "What is 4054 - 3115?", "answer": "939", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 30, 44, 58, 72, 86?", "answer": "100", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is the next number in the sequence: 16, 23, 30, 37, 44?", "answer": "51", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
+{"question": "What is 6065 - 1926?", "answer": "4139", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 468 + 972?", "answer": "1440", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
+{"question": "What is 97 \u00d7 96?", "answer": "9312", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
+{"question": "What is 76 - 33?", "answer": "43", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 53, 68, 83, 98, 113?", "answer": "128", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is 7 + 2?", "answer": "9", "difficulty": "BASIC", "problem_type": "ADDITION"}
+{"question": "What is 14 - 8?", "answer": "6", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
 {"question": "What is 3 \u00d7 1?", "answer": "3", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is 1 \u00d7 3?", "answer": "3", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is the next number in the sequence: 71, 82, 93, 104, 115?", "answer": "126", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
-{"question": "What is 646 \u00f7 38?", "answer": "17", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is 4 \u00f7 1?", "answer": "4", "difficulty": "BASIC", "problem_type": "DIVISION"}
-{"question": "What is 15 - 9?", "answer": "6", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is 23 \u00d7 23?", "answer": "529", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
-{"question": "What is 7762 - 4681?", "answer": "3081", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
-{"question": "What is 5362 + 5998?", "answer": "11360", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
-{"question": "What is 1200 \u00f7 24?", "answer": "50", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is 83 + 18?", "answer": "101", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is the next number in the sequence: 32, 37, 42, 47, 52?", "answer": "57", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
-{"question": "What is 3 \u00d7 5?", "answer": "15", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is 3 \u00d7 3?", "answer": "9", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is 9 \u00d7 5?", "answer": "45", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 9668 + 2420?", "answer": "12088", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
-{"question": "What is the next number in the sequence: 15, 22, 29, 36, 43?", "answer": "50", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
-{"question": "What is 29 \u00d7 13?", "answer": "377", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
-{"question": "What is the next number in the sequence: 3, 6, 9, 12, 15?", "answer": "18", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 2 \u00f7 1?", "answer": "2", "difficulty": "BASIC", "problem_type": "DIVISION"}
-{"question": "What is 3084 - 1517?", "answer": "1567", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
-{"question": "What is 25 \u00d7 20?", "answer": "500", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
-{"question": "What is 16 - 8?", "answer": "8", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is 64 \u00f7 8?", "answer": "8", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is 6 \u00d7 12?", "answer": "72", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 8 \u00d7 11?", "answer": "88", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 8 \u00d7 12?", "answer": "96", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 7 + 6?", "answer": "13", "difficulty": "BASIC", "problem_type": "ADDITION"}
-{"question": "What is 72 \u00f7 6?", "answer": "12", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
-{"question": "What is 30 \u00d7 17?", "answer": "510", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
-{"question": "What is 8677 + 5966?", "answer": "14643", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
-{"question": "What is 77 + 70?", "answer": "147", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 16 \u00f7 2?", "answer": "8", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
-{"question": "What is 87 \u00d7 47?", "answer": "4089", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is 5 + 5?", "answer": "10", "difficulty": "BASIC", "problem_type": "ADDITION"}
-{"question": "What is 14 - 9?", "answer": "5", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is 3 - 2?", "answer": "1", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is 65 \u00d7 95?", "answer": "6175", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is 330 - 240?", "answer": "90", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
-{"question": "What is 1110 \u00f7 37?", "answer": "30", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is 7 - 2?", "answer": "5", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is 93 \u00d7 100?", "answer": "9300", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is the next number in the sequence: 36, 47, 58, 69, 80?", "answer": "91", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
-{"question": "What is 684 - 452?", "answer": "232", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
-{"question": "What is 5 + 4?", "answer": "9", "difficulty": "BASIC", "problem_type": "ADDITION"}
-{"question": "What is 2927 + 2727?", "answer": "5654", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
-{"question": "What is 9 \u00f7 3?", "answer": "3", "difficulty": "BASIC", "problem_type": "DIVISION"}
-{"question": "What is 20 \u00f7 4?", "answer": "5", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is 720 \u00f7 24?", "answer": "30", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is 279 - 114?", "answer": "165", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
-{"question": "What is 4 \u00d7 4?", "answer": "16", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is 48 - 15?", "answer": "33", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
-{"question": "What is 2 \u00d7 4?", "answer": "8", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is 683 + 525?", "answer": "1208", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
-{"question": "What is 57 - 39?", "answer": "18", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
-{"question": "What is 5 \u00d7 5?", "answer": "25", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is 12 \u00d7 10?", "answer": "120", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 47 - 21?", "answer": "26", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
-{"question": "What is 793 - 333?", "answer": "460", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
-{"question": "What is 23 \u00d7 18?", "answer": "414", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
-{"question": "What is 9 \u00f7 3?", "answer": "3", "difficulty": "BASIC", "problem_type": "DIVISION"}
-{"question": "What is the next number in the sequence: 10, 13, 16, 19, 22?", "answer": "25", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 62 + 70?", "answer": "132", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 31 \u00d7 60?", "answer": "1860", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is the next number in the sequence: 19, 22, 25, 28, 31?", "answer": "34", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
-{"question": "What is 6 \u00d7 6?", "answer": "36", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is 72 \u00f7 8?", "answer": "9", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is 21 \u00d7 23?", "answer": "483", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
-{"question": "What is the next number in the sequence: 7, 8, 9, 10, 11?", "answer": "12", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 144 \u00f7 9?", "answer": "16", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
-{"question": "What is the next number in the sequence: 20, 30, 40, 50, 60?", "answer": "70", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
-{"question": "What is 1693 - 1032?", "answer": "661", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
-{"question": "What is 3 \u00d7 3?", "answer": "9", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is 10 + 6?", "answer": "16", "difficulty": "BASIC", "problem_type": "ADDITION"}
-{"question": "What is the next number in the sequence: 4, 6, 8, 10, 12?", "answer": "14", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 81 \u00d7 57?", "answer": "4617", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is 12 \u00f7 3?", "answer": "4", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is the next number in the sequence: 49, 63, 77, 91, 105?", "answer": "119", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
-{"question": "What is 63 \u00f7 7?", "answer": "9", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is 643 + 339?", "answer": "982", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
-{"question": "What is 45 + 79?", "answer": "124", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 14 \u00f7 2?", "answer": "7", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is 27 - 14?", "answer": "13", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
-{"question": "What is the next number in the sequence: 18, 23, 28, 33, 38?", "answer": "43", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
-{"question": "What is the next number in the sequence: 43, 49, 55, 61, 67?", "answer": "73", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
-{"question": "What is 224 \u00f7 16?", "answer": "14", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is 14 \u00d7 27?", "answer": "378", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
-{"question": "What is 59 - 36?", "answer": "23", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
-{"question": "What is 3314 + 2459?", "answer": "5773", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
-{"question": "What is the next number in the sequence: 9, 13, 17, 21, 25?", "answer": "29", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
-{"question": "What is 110 \u00f7 10?", "answer": "11", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
-{"question": "What is 49 \u00f7 7?", "answer": "7", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is 17 - 7?", "answer": "10", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is 2 - 1?", "answer": "1", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
-{"question": "What is 140 \u00f7 20?", "answer": "7", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
-{"question": "What is 72 \u00f7 12?", "answer": "6", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
-{"question": "What is 10 \u00d7 5?", "answer": "50", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
-{"question": "What is the next number in the sequence: 95, 114, 133, 152, 171?", "answer": "190", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
-{"question": "What is 4 + 9?", "answer": "13", "difficulty": "BASIC", "problem_type": "ADDITION"}
-{"question": "What is 1764 \u00f7 49?", "answer": "36", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is 386 + 792?", "answer": "1178", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
-{"question": "What is 99 \u00d7 30?", "answer": "2970", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
-{"question": "What is 69 - 20?", "answer": "49", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
-{"question": "What is 1 + 2?", "answer": "3", "difficulty": "BASIC", "problem_type": "ADDITION"}
-{"question": "What is 955 + 639?", "answer": "1594", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
-{"question": "What is 2556 + 1868?", "answer": "4424", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
-{"question": "What is 4897 + 5001?", "answer": "9898", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
-{"question": "What is the next number in the sequence: 31, 43, 55, 67, 79?", "answer": "91", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
-{"question": "What is the next number in the sequence: 39, 46, 53, 60, 67?", "answer": "74", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
-{"question": "What is 23 \u00d7 23?", "answer": "529", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
-{"question": "What is 2 \u00d7 1?", "answer": "2", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
-{"question": "What is 204 \u00f7 12?", "answer": "17", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
-{"question": "What is 351 - 236?", "answer": "115", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
-{"question": "What is 71 + 80?", "answer": "151", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 81 + 41?", "answer": "122", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 205 \u00f7 5?", "answer": "41", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
-{"question": "What is the next number in the sequence: 27, 38, 49, 60, 71?", "answer": "82", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
-{"question": "What is the next number in the sequence: 2, 4, 6, 8, 10?", "answer": "12", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
+{"question": "What is 3863 - 1431?", "answer": "2432", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 1443 \u00f7 39?", "answer": "37", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
+{"question": "What is 10 - 7?", "answer": "3", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
+{"question": "What is 8501 + 9177?", "answer": "17678", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 11 - 6?", "answer": "5", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 28, 49, 70, 91, 112?", "answer": "133", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is the next number in the sequence: 40, 58, 76, 94, 112?", "answer": "130", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is 253 + 537?", "answer": "790", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
+{"question": "What is 24 \u00d7 15?", "answer": "360", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is the next number in the sequence: 71, 94, 117, 140, 163?", "answer": "186", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is the next number in the sequence: 1, 5, 9, 13, 17?", "answer": "21", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
+{"question": "What is the next number in the sequence: 38, 48, 58, 68, 78?", "answer": "88", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is 323 \u00f7 17?", "answer": "19", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 530 - 354?", "answer": "176", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
+{"question": "What is 11 - 6?", "answer": "5", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 7, 10, 13, 16, 19?", "answer": "22", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
+{"question": "What is 14 \u00f7 7?", "answer": "2", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
+{"question": "What is 5154 - 4448?", "answer": "706", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 13, 19, 25, 31, 37?", "answer": "43", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is 461 - 368?", "answer": "93", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
+{"question": "What is 93 - 49?", "answer": "44", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 11, 16, 21, 26, 31?", "answer": "36", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
+{"question": "What is 754 - 407?", "answer": "347", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
+{"question": "What is 1 \u00d7 4?", "answer": "4", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 96 \u00d7 84?", "answer": "8064", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
+{"question": "What is 400 \u00f7 20?", "answer": "20", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 32 \u00d7 49?", "answer": "1568", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
+{"question": "What is 2915 + 1540?", "answer": "4455", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 147 + 685?", "answer": "832", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
+{"question": "What is the next number in the sequence: 38, 48, 58, 68, 78?", "answer": "88", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is 8 \u00d7 10?", "answer": "80", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
+{"question": "What is 67 \u00d7 70?", "answer": "4690", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
+{"question": "What is the next number in the sequence: 18, 25, 32, 39, 46?", "answer": "53", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
+{"question": "What is 20 \u00f7 5?", "answer": "4", "difficulty": "BASIC", "problem_type": "DIVISION"}
+{"question": "What is 34 + 73?", "answer": "107", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
+{"question": "What is 58 + 80?", "answer": "138", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
+{"question": "What is 2479 + 1546?", "answer": "4025", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
 {"question": "What is 90 \u00f7 10?", "answer": "9", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
-{"question": "What is 154 - 102?", "answer": "52", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
-{"question": "What is the next number in the sequence: 90, 103, 116, 129, 142?", "answer": "155", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
-{"question": "What is 52 + 71?", "answer": "123", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
-{"question": "What is 82 - 44?", "answer": "38", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
-{"question": "What is 76 + 53?", "answer": "129", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
+{"question": "What is 6 \u00f7 2?", "answer": "3", "difficulty": "BASIC", "problem_type": "DIVISION"}
+{"question": "What is 9976 + 3665?", "answer": "13641", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 15 \u00f7 3?", "answer": "5", "difficulty": "BASIC", "problem_type": "DIVISION"}
+{"question": "What is 30 \u00d7 79?", "answer": "2370", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
+{"question": "What is 20 \u00f7 2?", "answer": "10", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 75 - 48?", "answer": "27", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 41, 46, 51, 56, 61?", "answer": "66", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is 9 \u00f7 3?", "answer": "3", "difficulty": "BASIC", "problem_type": "DIVISION"}
+{"question": "What is 11 \u00d7 10?", "answer": "110", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
+{"question": "What is 12 \u00d7 9?", "answer": "108", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
+{"question": "What is the next number in the sequence: 23, 36, 49, 62, 75?", "answer": "88", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is 12 - 10?", "answer": "2", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
+{"question": "What is 1206 + 6236?", "answer": "7442", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is the next number in the sequence: 56, 77, 98, 119, 140?", "answer": "161", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is 14 \u00d7 15?", "answer": "210", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is 479 - 173?", "answer": "306", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
+{"question": "What is 4 \u00d7 2?", "answer": "8", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 182 \u00f7 14?", "answer": "13", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 5139 - 2924?", "answer": "2215", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 28 \u00d7 30?", "answer": "840", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is 1056 \u00f7 48?", "answer": "22", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
+{"question": "What is 63 \u00f7 9?", "answer": "7", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
+{"question": "What is 4 \u00d7 5?", "answer": "20", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 45 \u00f7 5?", "answer": "9", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
+{"question": "What is 3 \u00d7 3?", "answer": "9", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 3 \u00d7 4?", "answer": "12", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 1050 \u00f7 50?", "answer": "21", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
+{"question": "What is 25 + 66?", "answer": "91", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
+{"question": "What is 1 \u00d7 3?", "answer": "3", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 62 - 50?", "answer": "12", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
+{"question": "What is 135 \u00f7 9?", "answer": "15", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is the next number in the sequence: 88, 107, 126, 145, 164?", "answer": "183", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is 875 - 434?", "answer": "441", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
+{"question": "What is 8489 + 8900?", "answer": "17389", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 922 + 688?", "answer": "1610", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
+{"question": "What is 4 \u00d7 1?", "answer": "4", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 7219 - 4154?", "answer": "3065", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 3939 - 1609?", "answer": "2330", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 535 - 350?", "answer": "185", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 69, 94, 119, 144, 169?", "answer": "194", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is the next number in the sequence: 7, 12, 17, 22, 27?", "answer": "32", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
+{"question": "What is the next number in the sequence: 31, 41, 51, 61, 71?", "answer": "81", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is 30 \u00d7 22?", "answer": "660", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is 3175 + 4713?", "answer": "7888", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 6 \u00d7 11?", "answer": "66", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
+{"question": "What is 44 \u00f7 11?", "answer": "4", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 62 \u00d7 31?", "answer": "1922", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
+{"question": "What is the next number in the sequence: 80, 92, 104, 116, 128?", "answer": "140", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is the next number in the sequence: 2, 3, 4, 5, 6?", "answer": "7", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
+{"question": "What is 469 - 293?", "answer": "176", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
+{"question": "What is 4 \u00f7 2?", "answer": "2", "difficulty": "BASIC", "problem_type": "DIVISION"}
+{"question": "What is 24 \u00d7 26?", "answer": "624", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is 5 \u00d7 2?", "answer": "10", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 3712 - 2274?", "answer": "1438", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 858 + 721?", "answer": "1579", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
+{"question": "What is the next number in the sequence: 25, 32, 39, 46, 53?", "answer": "60", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is the next number in the sequence: 20, 23, 26, 29, 32?", "answer": "35", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
+{"question": "What is 2928 + 4522?", "answer": "7450", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 8 \u00f7 2?", "answer": "4", "difficulty": "BASIC", "problem_type": "DIVISION"}
+{"question": "What is 2 \u00d7 5?", "answer": "10", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 10 \u00d7 12?", "answer": "120", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
+{"question": "What is the next number in the sequence: 28, 38, 48, 58, 68?", "answer": "78", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is 2 + 4?", "answer": "6", "difficulty": "BASIC", "problem_type": "ADDITION"}
+{"question": "What is 3 \u00d7 4?", "answer": "12", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 18 \u00d7 15?", "answer": "270", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is 6348 + 1847?", "answer": "8195", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 15 \u00f7 3?", "answer": "5", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
+{"question": "What is 63 + 21?", "answer": "84", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
+{"question": "What is 7 - 3?", "answer": "4", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
+{"question": "What is 2 \u00d7 2?", "answer": "4", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 3019 + 8862?", "answer": "11881", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 13 \u00d7 28?", "answer": "364", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is 84 + 64?", "answer": "148", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
+{"question": "What is 9 - 4?", "answer": "5", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
+{"question": "What is 64 - 39?", "answer": "25", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
+{"question": "What is 78 \u00f7 13?", "answer": "6", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 3 \u00d7 3?", "answer": "9", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 7269 + 8777?", "answer": "16046", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 1 \u00d7 2?", "answer": "2", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 4560 - 1873?", "answer": "2687", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 9, 17, 25, 33, 41?", "answer": "49", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
+{"question": "What is 10 \u00f7 5?", "answer": "2", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 437 \u00f7 23?", "answer": "19", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
+{"question": "What is 6056 - 4972?", "answer": "1084", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 19, 25, 31, 37, 43?", "answer": "49", "difficulty": "MEDIUM", "problem_type": "SEQUENCE"}
+{"question": "What is the next number in the sequence: 97, 121, 145, 169, 193?", "answer": "217", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is 5 \u00d7 4?", "answer": "20", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 9 + 5?", "answer": "14", "difficulty": "BASIC", "problem_type": "ADDITION"}
+{"question": "What is the next number in the sequence: 74, 92, 110, 128, 146?", "answer": "164", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is 471 - 261?", "answer": "210", "difficulty": "ADVANCED", "problem_type": "SUBTRACTION"}
+{"question": "What is 85 \u00d7 95?", "answer": "8075", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
+{"question": "What is the next number in the sequence: 74, 87, 100, 113, 126?", "answer": "139", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is 1 \u00d7 4?", "answer": "4", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 1 \u00d7 4?", "answer": "4", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 768 + 445?", "answer": "1213", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
+{"question": "What is the next number in the sequence: 37, 46, 55, 64, 73?", "answer": "82", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is 5 \u00d7 2?", "answer": "10", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 5 + 2?", "answer": "7", "difficulty": "BASIC", "problem_type": "ADDITION"}
+{"question": "What is 40 \u00f7 10?", "answer": "4", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
+{"question": "What is 20 \u00f7 4?", "answer": "5", "difficulty": "BASIC", "problem_type": "DIVISION"}
+{"question": "What is 4405 + 1091?", "answer": "5496", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 44 \u00d7 33?", "answer": "1452", "difficulty": "COMPLEX", "problem_type": "MULTIPLICATION"}
+{"question": "What is 7992 - 3920?", "answer": "4072", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 4 \u00d7 2?", "answer": "8", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 3 + 10?", "answer": "13", "difficulty": "BASIC", "problem_type": "ADDITION"}
+{"question": "What is 12 \u00d7 8?", "answer": "96", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
+{"question": "What is 1692 \u00f7 47?", "answer": "36", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
+{"question": "What is the next number in the sequence: 88, 106, 124, 142, 160?", "answer": "178", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is 14 \u00d7 21?", "answer": "294", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is 3435 - 2192?", "answer": "1243", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 5 \u00d7 10?", "answer": "50", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
+{"question": "What is 7 \u00d7 10?", "answer": "70", "difficulty": "MEDIUM", "problem_type": "MULTIPLICATION"}
+{"question": "What is 1176 + 3094?", "answer": "4270", "difficulty": "COMPLEX", "problem_type": "ADDITION"}
+{"question": "What is 11 - 3?", "answer": "8", "difficulty": "BASIC", "problem_type": "SUBTRACTION"}
+{"question": "What is 4 \u00d7 2?", "answer": "8", "difficulty": "BASIC", "problem_type": "MULTIPLICATION"}
+{"question": "What is 14 \u00d7 13?", "answer": "182", "difficulty": "ADVANCED", "problem_type": "MULTIPLICATION"}
+{"question": "What is the next number in the sequence: 2, 4, 6, 8, 10?", "answer": "12", "difficulty": "BASIC", "problem_type": "SEQUENCE"}
+{"question": "What is 52 + 19?", "answer": "71", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
+{"question": "What is 50 + 74?", "answer": "124", "difficulty": "MEDIUM", "problem_type": "ADDITION"}
+{"question": "What is 929 + 575?", "answer": "1504", "difficulty": "ADVANCED", "problem_type": "ADDITION"}
+{"question": "What is 100 \u00f7 10?", "answer": "10", "difficulty": "MEDIUM", "problem_type": "DIVISION"}
+{"question": "What is the next number in the sequence: 58, 79, 100, 121, 142?", "answer": "163", "difficulty": "COMPLEX", "problem_type": "SEQUENCE"}
+{"question": "What is 34 - 16?", "answer": "18", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
+{"question": "What is the next number in the sequence: 13, 24, 35, 46, 57?", "answer": "68", "difficulty": "ADVANCED", "problem_type": "SEQUENCE"}
+{"question": "What is 64 \u00f7 8?", "answer": "8", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 2333 - 891?", "answer": "1442", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 6079 - 1205?", "answer": "4874", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 5972 - 3037?", "answer": "2935", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 126 \u00f7 9?", "answer": "14", "difficulty": "ADVANCED", "problem_type": "DIVISION"}
+{"question": "What is 1 \u00f7 1?", "answer": "1", "difficulty": "BASIC", "problem_type": "DIVISION"}
+{"question": "What is 53 - 40?", "answer": "13", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
+{"question": "What is 1753 - 515?", "answer": "1238", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}
+{"question": "What is 1332 \u00f7 37?", "answer": "36", "difficulty": "COMPLEX", "problem_type": "DIVISION"}
+{"question": "What is 58 - 13?", "answer": "45", "difficulty": "MEDIUM", "problem_type": "SUBTRACTION"}
+{"question": "What is 2 + 1?", "answer": "3", "difficulty": "BASIC", "problem_type": "ADDITION"}
+{"question": "What is 7300 - 4178?", "answer": "3122", "difficulty": "COMPLEX", "problem_type": "SUBTRACTION"}

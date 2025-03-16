@@ -125,8 +125,16 @@ dmypy.json
 # Log files
 *.log
 
-# Ignore data files
-#data/
+# Ignore everything inside the data folder
+data/
+
+# But do not ignore specific files
+!data/**/*.py
+!data/**/*.jsonl
+
+# Ignore all text files inside data
+data/**/*.txt
+
 
 # Ignore output directories
 outputs/

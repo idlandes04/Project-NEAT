@@ -1,125 +1,125 @@
 ===== Training Examples =====
 
 Problem 1:
-  Question: If you have 19 items and give away 12, how many do you have left?
-  Answer: 7
-  Difficulty: BASIC
-  Type: SUBTRACTION
+  Question: How many items are there when combining 23 + 19?
+  Answer: 42
+  Difficulty: MEDIUM
+  Type: ADDITION
 
 Problem 2:
-  Question: What is the total when adding 6 and 13?
-  Answer: 19
+  Question: What is the sum of 9 and 3?
+  Answer: 12
   Difficulty: BASIC
   Type: ADDITION
 
 Problem 3:
-  Question: What is the difference between 27 and 25?
+  Question: How many more is 26 than 24?
   Answer: 2
   Difficulty: MEDIUM
   Type: SUBTRACTION
 
 Problem 4:
-  Question: Compute (15 + 15) × 2
-  Answer: 60
+  Question: What is the next number in the pattern: 28, 29, 30, 31?
+  Answer: 32
   Difficulty: MEDIUM
-  Type: MULTI_STEP
+  Type: SEQUENCE
 
 Problem 5:
-  Question: What is 2 × 3?
-  Answer: 6
-  Difficulty: MEDIUM
-  Type: MULTIPLICATION
+  Question: How many items are there when combining 5 + 11?
+  Answer: 16
+  Difficulty: BASIC
+  Type: ADDITION
 
 Problem 6:
-  Question: What is 5 plus 8 equal to?
-  Answer: 13
+  Question: How many items are there when combining 10 + 1?
+  Answer: 11
   Difficulty: BASIC
   Type: ADDITION
 
 Problem 7:
-  Question: What is (15 + 15) × 4?
-  Answer: 120
+  Question: What is (15 + 15) × 3?
+  Answer: 90
   Difficulty: MEDIUM
   Type: MULTI_STEP
 
 Problem 8:
-  Question: How many more is 18 than 16?
+  Question: What is 20 ÷ 10?
   Answer: 2
-  Difficulty: BASIC
-  Type: SUBTRACTION
+  Difficulty: MEDIUM
+  Type: DIVISION
 
 Problem 9:
-  Question: If you have 1 items and get 6 more, how many items do you have in total?
-  Answer: 7
+  Question: What is the total when adding 9 and 10?
+  Answer: 19
   Difficulty: BASIC
   Type: ADDITION
 
 Problem 10:
-  Question: How many more is 20 than 19?
-  Answer: 1
-  Difficulty: BASIC
-  Type: SUBTRACTION
+  Question: The quotient of 24 and 6 is what number?
+  Answer: 4
+  Difficulty: MEDIUM
+  Type: DIVISION
 
 
 ===== Evaluation Examples =====
 
 Problem 1:
-  Question: What is 36 ÷ 9?
-  Answer: 4
+  Question: If you add 15 and 15, then multiply by 4, what do you get?
+  Answer: 120
   Difficulty: MEDIUM
-  Type: DIVISION
+  Type: MULTI_STEP
 
 Problem 2:
-  Question: What is the total when adding 3 and 17?
-  Answer: 20
-  Difficulty: BASIC
+  Question: What is the sum of 22 and 18?
+  Answer: 40
+  Difficulty: MEDIUM
   Type: ADDITION
 
 Problem 3:
-  Question: What is 9 + 4?
-  Answer: 13
-  Difficulty: BASIC
-  Type: ADDITION
-
-Problem 4:
-  Question: Given the pattern 43, 44, 45, 46, what number comes next?
-  Answer: 47
-  Difficulty: MEDIUM
-  Type: SEQUENCE
-
-Problem 5:
-  Question: What is 3 + 9?
+  Question: If you have 17 items and give away 5, how many do you have left?
   Answer: 12
   Difficulty: BASIC
-  Type: ADDITION
+  Type: SUBTRACTION
+
+Problem 4:
+  Question: What is the difference between 14 and 14?
+  Answer: 0
+  Difficulty: BASIC
+  Type: SUBTRACTION
+
+Problem 5:
+  Question: If you have 8 items and give away 4, how many do you have left?
+  Answer: 4
+  Difficulty: BASIC
+  Type: SUBTRACTION
 
 Problem 6:
-  Question: If you have 16 items and give away 16, how many do you have left?
-  Answer: 0
+  Question: What is 18 ÷ 9?
+  Answer: 2
   Difficulty: MEDIUM
-  Type: SUBTRACTION
+  Type: DIVISION
 
 Problem 7:
-  Question: What is the sum of 44 and 52?
-  Answer: 96
+  Question: The quotient of 52 and 2 is what number?
+  Answer: 26
   Difficulty: ADVANCED
-  Type: ADDITION
+  Type: DIVISION
 
 Problem 8:
-  Question: How many more is 49 than 17?
-  Answer: 32
-  Difficulty: MEDIUM
-  Type: SUBTRACTION
+  Question: Solve for x: 2x + 10 = 14
+  Answer: 2
+  Difficulty: ADVANCED
+  Type: ALGEBRAIC
 
 Problem 9:
-  Question: How many items are there when combining 43 + 43?
-  Answer: 86
-  Difficulty: ADVANCED
-  Type: WORD
+  Question: What is 2 + 9?
+  Answer: 11
+  Difficulty: BASIC
+  Type: ADDITION
 
 Problem 10:
-  Question: Looking at the pattern 71, 76, 81, 86, what should follow?
-  Answer: 91
-  Difficulty: ADVANCED
-  Type: SEQUENCE
+  Question: If you have 3 items and get 4 more, how many items do you have in total?
+  Answer: 7
+  Difficulty: BASIC
+  Type: ADDITION
 

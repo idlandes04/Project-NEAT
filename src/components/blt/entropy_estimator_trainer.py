@@ -358,7 +358,7 @@ class EntropyEstimatorTrainer:
                 self.global_step += 1
                 
                 # Logging
-                if time.time() - last_log_time > 10:  # Log every 10 seconds
+                if time.time() - last_log_time > 5:  # Log every 5 seconds
                     ms_per_step = (time.time() - last_log_time) * 1000 / max(1, step - self.global_step + 1)
                     cur_loss = train_loss * self.gradient_accumulation_steps / self.gradient_accumulation_steps
                     lr = self.scheduler.get_lr()[0]
@@ -386,8 +386,23 @@ class EntropyEstimatorTrainer:
                     # Back to training mode
                     self.model.train()
                 
-                # Save checkpoint
+                # Save checkpoint 
                 if self.global_step % self.save_steps == 0:
+                    # Create logs directory for log files
+                    logs_dir = os.path.join(self.output_dir, "logs")
+                    os.makedirs(logs_dir, exist_ok=True)
+                    
+                    # Write current metrics to log file
+                    log_file = os.path.join(logs_dir, f"training_metrics.log")
+                    with open(log_file, 'a') as f:
+                        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} | "
+                               f"Step: {self.global_step} | "
+                               f"Loss: {cur_loss:.4f} | "
+                               f"LR: {lr:.6f} | "
+                               f"ms/step: {ms_per_step:.1f} | "
+                               f"Epoch: {epoch}\n")
+                    
+                    # Save checkpoint
                     self.save_model(f"checkpoint-{self.global_step}.pt")
                 
                 # Check if we've reached max steps
@@ -395,10 +410,18 @@ class EntropyEstimatorTrainer:
                     break
         
         # Save final model
-        self.save_model("final_model.pt")
+        try:
+            self.save_model("final_model.pt")
+            logger.info("Final model saved successfully")
+        except Exception as e:
+            logger.error(f"Error saving final model: {e}")
         
         total_time = time.time() - start_time
-        logger.info(f"Training completed in {total_time/60:.2f} minutes")
+        logger.info(f"Training completed in {total_time/60:.2f} minutes ({total_time/3600:.2f} hours)")
+        logger.info(f"Best evaluation loss: {self.best_eval_loss:.4f}")
+        logger.info(f"Final training loss: {train_loss * self.gradient_accumulation_steps:.4f}")
+        logger.info(f"Total steps trained: {self.global_step}")
+        logger.info(f"Training complete!")
     
     def evaluate(self) -> float:
         """
@@ -448,19 +471,48 @@ class EntropyEstimatorTrainer:
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         
+        # Create logs directory if it doesn't exist
+        logs_dir = os.path.join(self.output_dir, "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+        
         # Save model
-        self.model.save_pretrained(save_path)
+        try:
+            self.model.save_pretrained(save_path)
+            logger.info(f"Model saved to {save_path}")
+        except Exception as e:
+            logger.error(f"Error saving model: {e}")
+            # Try an alternative saving method
+            try:
+                torch.save(self.model.state_dict(), save_path)
+                logger.info(f"Model state_dict saved to {save_path} using torch.save fallback")
+            except Exception as e2:
+                logger.error(f"Error saving model state_dict: {e2}")
         
         # Save training state
-        torch.save(
-            {
-                "optimizer": self.optimizer.state_dict(),
-                "scheduler": self.scheduler.state_dict(),
-                "global_step": self.global_step,
-                "best_eval_loss": self.best_eval_loss,
-            },
-            os.path.join(self.output_dir, f"{filename}.training_state")
-        )
+        try:
+            training_state_path = os.path.join(self.output_dir, f"{filename}.training_state")
+            torch.save(
+                {
+                    "optimizer": self.optimizer.state_dict(),
+                    "scheduler": self.scheduler.state_dict(),
+                    "global_step": self.global_step,
+                    "best_eval_loss": self.best_eval_loss,
+                },
+                training_state_path
+            )
+            logger.info(f"Training state saved to {training_state_path}")
+        except Exception as e:
+            logger.error(f"Error saving training state: {e}")
+            
+        # Save a checkpoint summary
+        try:
+            summary_path = os.path.join(logs_dir, f"checkpoint_summary.txt")
+            with open(summary_path, 'a') as f:
+                f.write(f"Checkpoint: {filename}, Step: {self.global_step}, "
+                       f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}, "
+                       f"Loss: {self.best_eval_loss if 'best' in filename else 'N/A'}\n")
+        except Exception as e:
+            logger.error(f"Error writing checkpoint summary: {e}")
     
     def load_model(self, model_path: str, load_training_state: bool = True):
         """
