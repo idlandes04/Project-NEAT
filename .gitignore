@@ -126,7 +126,7 @@ dmypy.json
 *.log
 
 # Ignore data files
-data/
+#data/
 
 # Ignore output directories
 outputs/
