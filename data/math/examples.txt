@@ -1,0 +1,125 @@
+===== Training Examples =====
+
+Problem 1:
+  Question: What is 6 + 1?
+  Answer: 7
+  Difficulty: BASIC
+  Type: ADDITION
+
+Problem 2:
+  Question: How many more is 20 than 6?
+  Answer: 14
+  Difficulty: BASIC
+  Type: SUBTRACTION
+
+Problem 3:
+  Question: What is the total when adding 21 and 15?
+  Answer: 36
+  Difficulty: MEDIUM
+  Type: ADDITION
+
+Problem 4:
+  Question: First add 15 and 15, then multiply the result by 5. What is the answer?
+  Answer: 150
+  Difficulty: MEDIUM
+  Type: MULTI_STEP
+
+Problem 5:
+  Question: How many items are there when combining 1 + 10?
+  Answer: 11
+  Difficulty: BASIC
+  Type: ADDITION
+
+Problem 6:
+  Question: If you have 18 items and give away 1, how many do you have left?
+  Answer: 17
+  Difficulty: BASIC
+  Type: SUBTRACTION
+
+Problem 7:
+  Question: If you have 8 items and get 10 more, how many items do you have in total?
+  Answer: 18
+  Difficulty: BASIC
+  Type: ADDITION
+
+Problem 8:
+  Question: What is 8 plus 4 equal to?
+  Answer: 12
+  Difficulty: BASIC
+  Type: ADDITION
+
+Problem 9:
+  Question: Looking at the pattern 37, 40, 43, 46, what should follow?
+  Answer: 49
+  Difficulty: MEDIUM
+  Type: SEQUENCE
+
+Problem 10:
+  Question: What is 24 plus 23 equal to?
+  Answer: 47
+  Difficulty: MEDIUM
+  Type: ADDITION
+
+
+===== Evaluation Examples =====
+
+Problem 1:
+  Question: What is 5 + 14?
+  Answer: 19
+  Difficulty: BASIC
+  Type: ADDITION
+
+Problem 2:
+  Question: Looking at the pattern 40, 41, 42, 43, what should follow?
+  Answer: 44
+  Difficulty: MEDIUM
+  Type: SEQUENCE
+
+Problem 3:
+  Question: If 33 is split into 3 equal parts, how many are in each part?
+  Answer: 11
+  Difficulty: MEDIUM
+  Type: DIVISION
+
+Problem 4:
+  Question: Identify the pattern and find the next value: 1, 2, 3, 5
+  Answer: 8
+  Difficulty: ADVANCED
+  Type: NONLINEAR_SEQUENCE
+
+Problem 5:
+  Question: How many more is 38 than 36?
+  Answer: 2
+  Difficulty: MEDIUM
+  Type: SUBTRACTION
+
+Problem 6:
+  Question: If you have 44 items and get 41 more, how many items do you have in total?
+  Answer: 85
+  Difficulty: ADVANCED
+  Type: ADDITION
+
+Problem 7:
+  Question: Find x where 5x + 12 = 37
+  Answer: 5
+  Difficulty: ADVANCED
+  Type: ALGEBRAIC
+
+Problem 8:
+  Question: The quotient of 56 and 4 is what number?
+  Answer: 14
+  Difficulty: ADVANCED
+  Type: DIVISION
+
+Problem 9:
+  Question: What is the next number in the pattern: 19, 20, 21, 22?
+  Answer: 23
+  Difficulty: MEDIUM
+  Type: SEQUENCE
+
+Problem 10:
+  Question: What is 87 ÷ 3?
+  Answer: 29
+  Difficulty: ADVANCED
+  Type: DIVISION
+
