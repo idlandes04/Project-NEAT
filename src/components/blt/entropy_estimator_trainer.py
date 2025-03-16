@@ -375,7 +375,7 @@ class EntropyEstimatorTrainer:
                     train_loss = 0.0
                 
                 # Evaluate
-                if self.eval_dataloader and self.global_step % self.eval_steps == 0:
+                if self.eval_dataloader and self.eval_steps > 0 and self.global_step % self.eval_steps == 0:
                     eval_loss = self.evaluate()
                     
                     # Save best model

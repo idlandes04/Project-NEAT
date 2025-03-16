@@ -409,8 +409,8 @@ def train_byte_lm_mode(args):
         block_size=args.block_size,
         warmup_steps=int(args.max_steps * 0.1),  # 10% of max steps
         max_steps=args.max_steps,
-        eval_steps=args.max_steps // 20,  # Evaluate 20 times during training
-        save_steps=args.max_steps // 10,  # Save 10 checkpoints
+        eval_steps=max(1, args.max_steps // 20),  # Evaluate 20 times during training
+        save_steps=max(1, args.max_steps // 10),  # Save 10 checkpoints
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         weight_decay=args.weight_decay,
         
