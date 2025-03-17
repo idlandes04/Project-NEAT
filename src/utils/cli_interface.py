@@ -26,7 +26,7 @@ from rich.columns import Columns
 from rich import box
 
 # CLI config directory
-CLI_CONFIG_DIR = "/home/idl/neural_architecture_integration/scripts/main_cli_configs"
+CLI_CONFIG_DIR = os.path.expanduser("~/.neural_architecture_integration/scripts/main_cli_configs")
 
 
 class NEATCLIInterface:
@@ -414,10 +414,10 @@ class NEATCLIInterface:
         # Get output directory
         output_dir = self.current_config.get("output_dir", "./outputs")
         
-        # Start building command
+        # Start building command with consolidated main_trainer
         cmd = [
-            python_cmd, "main.py", "train",
-            "--training_type", "full_model",
+            python_cmd, "-m", "src.trainers.main_trainer",
+            "--model_type", "full",
             "--output_dir", output_dir
         ]
         
@@ -497,9 +497,10 @@ class NEATCLIInterface:
         # Get output directory
         output_dir = self.current_config.get("output_dir", "./outputs")
         
-        # Use the dedicated BLT entropy training script which has the correct argument handling
+        # Use the consolidated main_trainer script for BLT training
         cmd = [
-            python_cmd, "scripts/train_blt_entropy.py"
+            python_cmd, "-m", "src.trainers.main_trainer",
+            "--model_type", "blt"
         ]
         
         # Add output directory
@@ -507,7 +508,7 @@ class NEATCLIInterface:
             cmd.extend(["--output_dir", output_dir])
         
         # Add parameters from config, excluding duplicates with output_dir
-        excluded_keys = ["mode", "training_type", "output_dir", "train_glob", "eval_glob"]
+        excluded_keys = ["mode", "training_type", "output_dir"]
         
         # Parameter name mapping from our config to the script's expected names
         param_mapping = {
@@ -570,10 +571,10 @@ class NEATCLIInterface:
         # Get output directory
         output_dir = self.current_config.get("output_dir", "./outputs")
         
-        # Start building command
+        # Start building command with consolidated main_trainer
         cmd = [
-            python_cmd, "main.py", "train",
-            "--training_type", "mvot_codebook",
+            python_cmd, "-m", "src.trainers.main_trainer",
+            "--model_type", "mvot",
             "--output_dir", output_dir
         ]
         
@@ -627,10 +628,10 @@ class NEATCLIInterface:
         # Get output directory
         output_dir = self.current_config.get("output_dir", "./outputs")
         
-        # Start building command
+        # Start building command with consolidated main_trainer
         cmd = [
-            python_cmd, "main.py", "train",
-            "--training_type", "baseline",
+            python_cmd, "-m", "src.trainers.main_trainer",
+            "--model_type", "baseline",
             "--output_dir", output_dir
         ]
         
@@ -857,7 +858,7 @@ class NEATCLIInterface:
             except (EOFError, KeyboardInterrupt):
                 self.console.print("[yellow]Assuming yes...[/yellow]")
         
-        # Use the dedicated BLT training script which has better argument handling
+        # Use the consolidated main_trainer for BLT training
         python_cmd = "python3"
         try:
             import sys
@@ -867,16 +868,23 @@ class NEATCLIInterface:
         
         # Start building command
         cmd = [
-            python_cmd, "scripts/train_blt_entropy.py"
+            python_cmd, "-m", "src.trainers.main_trainer",
+            "--model_type", "blt",
+            "--max_steps", "5",  # Override to make it quick
+            "--eval_steps", "5",
+            "--save_steps", "5"
         ]
         
         # Track which parameters we've already added to avoid duplicates
         added_params = set()
+        added_params.add("max_steps")  # We've already added these
+        added_params.add("eval_steps")
+        added_params.add("save_steps")
         
         # Add parameters from config
         for key, value in self.current_config.items():
             # Skip mode and training_type which are not script parameters
-            if key in ["mode", "training_type"]:
+            if key in ["mode", "training_type"] or key in added_params:
                 continue
                 
             # Handle different value types
@@ -952,14 +960,77 @@ class NEATCLIInterface:
         except Exception:
             pass
         
-        # Prepare command
-        cmd = [python_cmd, "main.py", "test", "--test_type", "hardware", "--hardware_info", "--output_dir", "./outputs"]
-        
-        # Log the command being executed
-        self.console.print(f"[dim]Command: {' '.join(cmd)}[/dim]")
-        
-        # Execute command with progress display
-        self._execute_command_with_progress(" ".join(cmd), "Hardware Detection", auto_continue=auto_continue)
+        # Use main.py hardware detection directly - since it's specific functionality
+        # We'll import and run directly from the CLI
+        try:
+            # Use the function directly
+            from src.utils.hardware_detection import get_hardware_detector
+            
+            self.console.print("Running hardware detection...")
+            
+            # Run hardware detection
+            detector = get_hardware_detector()
+            features = detector.get_features()
+            
+            # Display results nicely
+            result_table = Table(box=box.ROUNDED, style=self.main_color)
+            result_table.add_column("Feature", style=self.highlight_color)
+            result_table.add_column("Value", style=self.text_color)
+            
+            # Basic platform information
+            result_table.add_row("Platform", features.platform)
+            result_table.add_row("CPU Cores", str(features.cpu_count))
+            result_table.add_row("RAM (GB)", f"{features.cpu_memory_total / 1024**3:.2f}")
+            
+            if features.is_apple_silicon:
+                result_table.add_row("Apple Silicon", "✓ Detected")
+            
+            if features.is_cuda_available:
+                result_table.add_row("CUDA Available", f"✓ ({features.gpu_count} devices)")
+                for i, gpu_features in features.gpu_features.items():
+                    result_table.add_row(f"GPU {i}", f"{gpu_features['name']} (Capability {gpu_features['capability']})")
+                    result_table.add_row(f"GPU {i} Memory", f"{gpu_features['memory'] / 1024**3:.2f} GB")
+                    result_table.add_row(f"GPU {i} Processors", str(gpu_features['processors']))
+            elif features.is_mps_available:
+                result_table.add_row("Apple MPS Available", "✓ Available")
+            else:
+                result_table.add_row("GPU Acceleration", "✗ Not Available")
+            
+            # Print supported precision
+            precision_formats = []
+            if features.supports_float16:
+                precision_formats.append("float16")
+            if features.supports_bfloat16:
+                precision_formats.append("bfloat16")
+            if features.supports_int8:
+                precision_formats.append("int8")
+            
+            result_table.add_row("Precision Formats", ", ".join(precision_formats))
+            
+            if features.supports_mixed_precision:
+                result_table.add_row("Mixed Precision", "✓ Supported")
+            
+            # Print the results
+            self.console.print("\nHardware Detection Results:")
+            self.console.print(result_table)
+            
+            # Wait for user input if needed
+            if not auto_continue:
+                input("\nPress Enter to continue...")
+            
+        except Exception as e:
+            # Fall back to command-line if direct import fails
+            self.console.print(f"[yellow]Error directly importing hardware detector: {e}[/yellow]")
+            self.console.print("[yellow]Falling back to command-line interface...[/yellow]")
+            
+            # Prepare command
+            cmd = [python_cmd, "main.py", "test", "--test_type", "hardware", "--hardware_info", "--output_dir", "./outputs"]
+            
+            # Log the command being executed
+            self.console.print(f"[dim]Command: {' '.join(cmd)}[/dim]")
+            
+            # Execute command with progress display
+            self._execute_command_with_progress(" ".join(cmd), "Hardware Detection", auto_continue=auto_continue)
     
     def _ensure_config(self, training_type: str, auto_confirm=False) -> bool:
         """Ensure we have a valid configuration for the specified training type.

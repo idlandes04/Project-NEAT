@@ -13,11 +13,24 @@
 - Run all tests: `python3 -m pytest tests/`
 - Run a single test: `python3 -m pytest tests/test_components.py::TestName::test_method_name`
 - Start interactive CLI: `python3 main.py` (no arguments)
-- Run CLI directly: `python3 run_cli.py`
-- Train model with CLI arguments: `python3 main.py train --training_type full_model --use_titans_memory --use_transformer2_adaptation --use_mvot_processor`
-- Evaluate model: `python3 main.py eval --model_path ./outputs/best_model`
-- Profile components: `python3 main.py test --test_type profile`
-- Train BLT entropy estimator: `python3 main.py train --training_type blt_entropy --train_data_dir ./data/pile_subset/train --eval_data_dir ./data/pile_subset/eval --batch_size 64 --max_steps 10000 --byte_lm_hidden_size 128 --byte_lm_num_layers 2`
+
+### Consolidated Training & Evaluation Commands
+- Prepare environment: `python3 -m src.trainers.main_env_prepare`
+- Clean environment and preserve models: `python3 -m src.trainers.main_env_prepare --clean_all --preserve_models`
+
+- Train BLT entropy estimator: `python3 -m src.trainers.main_trainer --model_type blt --train_data_dir ./data/pile_subset/train --eval_data_dir ./data/pile_subset/eval --batch_size 64 --max_steps 10000 --hidden_size 128 --num_layers 2`
+- Train MVoT visual codebook: `python3 -m src.trainers.main_trainer --model_type mvot`
+- Train full NEAT model: `python3 -m src.trainers.main_trainer --model_type full --use_titans_memory --use_transformer2_adaptation --use_mvot_processor`
+- Train baseline model: `python3 -m src.trainers.main_trainer --model_type baseline`
+
+- Evaluate BLT model: `python3 -m src.trainers.main_eval --model_type blt --model_path ./outputs/byte_lm/best_model.pt`
+- Evaluate full model: `python3 -m src.trainers.main_eval --model_type full --model_path ./outputs/neat_model/best_model.pt`
+- Run BLT interactive mode: `python3 -m src.trainers.main_eval --model_type blt --model_path ./outputs/byte_lm/best_model.pt --eval_mode interactive`
+- Run component ablation: `python3 -m src.trainers.main_eval --model_type full --model_path ./outputs/neat_model/best_model.pt --eval_mode ablation`
+
+- Configuration file support: All commands accept a `--config_file path/to/config.json` parameter
+
+### Quick Commands via CLI Menu
 - Quick test BLT training (CLI): Select "Train Models" -> "Quick Test (5 Steps)"
 
 ## Code Style Guidelines
