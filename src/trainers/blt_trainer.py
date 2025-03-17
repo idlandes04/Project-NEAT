@@ -145,7 +145,20 @@ class ByteDataset(Dataset):
                     
                     if os.path.exists(cache_path):
                         # Load from cache
-                        return torch.load(cache_path)
+                        sample = torch.load(cache_path)
+                        # Ensure consistent sizes (should already be the case for cached samples)
+                        if sample["input_ids"].size(0) != self.block_size:
+                            # Resize to match block_size
+                            if sample["input_ids"].size(0) < self.block_size:
+                                # Pad if too small
+                                padding = torch.zeros(self.block_size - sample["input_ids"].size(0), dtype=torch.long)
+                                sample["input_ids"] = torch.cat([sample["input_ids"], padding])
+                                sample["labels"] = torch.cat([sample["labels"], padding])
+                            else:
+                                # Truncate if too large
+                                sample["input_ids"] = sample["input_ids"][:self.block_size]
+                                sample["labels"] = sample["labels"][:self.block_size]
+                        return sample
                 
                 # Read the file and extract the block
                 with open(file_path, "rb") as f:
@@ -163,6 +176,12 @@ class ByteDataset(Dataset):
                     if len(input_ids) < self.block_size:
                         padding = torch.zeros(self.block_size - len(input_ids), dtype=torch.long)
                         input_ids = torch.cat([input_ids, padding])
+                    elif len(input_ids) > self.block_size:
+                        # Truncate if somehow larger than block_size
+                        input_ids = input_ids[:self.block_size]
+                    
+                    # Ensure we have exactly block_size elements
+                    assert input_ids.size(0) == self.block_size, f"Expected size {self.block_size}, got {input_ids.size(0)}"
                     
                     # Create labels (shifted input_ids)
                     labels = torch.zeros_like(input_ids)
@@ -274,7 +293,7 @@ class EntropyEstimatorTrainer:
         self.scheduler = self._create_scheduler()
         
         # Set up mixed precision
-        self.scaler = enable_mixed_precision() if mixed_precision else None
+        self.scaler = torch.amp.GradScaler('cuda') if mixed_precision and torch.cuda.is_available() else None
         
         # Training state
         self.global_step = 0
@@ -326,13 +345,67 @@ class EntropyEstimatorTrainer:
         Returns:
             Learning rate scheduler
         """
-        # Linear warmup and decay scheduler
-        return optim.lr_scheduler.OneCycleLR(
+        # Use a custom scheduler implementation for better control and edge case handling
+        class CustomLRScheduler:
+            def __init__(self, optimizer, warmup_steps, max_steps, min_lr_ratio=0.1):
+                self.optimizer = optimizer
+                self.warmup_steps = max(1, warmup_steps)
+                self.max_steps = max(2, max_steps)
+                self.min_lr_ratio = min_lr_ratio
+                self._step_count = 0
+                self.base_lrs = [group['lr'] for group in optimizer.param_groups]
+                
+                # Initialize
+                self.step()
+            
+            def state_dict(self):
+                return {
+                    'step_count': self._step_count,
+                    'base_lrs': self.base_lrs,
+                }
+            
+            def load_state_dict(self, state_dict):
+                self._step_count = state_dict['step_count']
+                self.base_lrs = state_dict['base_lrs']
+            
+            def get_lr(self):
+                step = self._step_count
+                
+                # If max_steps ≤ warmup_steps, then warmup all the way
+                if self.max_steps <= self.warmup_steps:
+                    factor = min(1.0, step / max(1, self.warmup_steps))
+                    return [base_lr * factor for base_lr in self.base_lrs]
+                
+                # Normal case: warmup, then decay
+                if step < self.warmup_steps:
+                    # Linear warmup
+                    factor = step / self.warmup_steps
+                else:
+                    # Linear decay
+                    decay_steps = self.max_steps - self.warmup_steps
+                    decay_factor = (self.max_steps - step) / max(1, decay_steps)
+                    factor = max(self.min_lr_ratio, decay_factor)
+                
+                return [base_lr * factor for base_lr in self.base_lrs]
+            
+            def get_last_lr(self):
+                return [group['lr'] for group in self.optimizer.param_groups]
+            
+            def step(self):
+                values = self.get_lr()
+                
+                for i, (group, lr) in enumerate(zip(self.optimizer.param_groups, values)):
+                    group['lr'] = lr
+                
+                self._step_count += 1
+                return values
+        
+        # Create custom scheduler
+        return CustomLRScheduler(
             self.optimizer,
-            max_lr=self.learning_rate,
-            total_steps=self.max_steps,
-            pct_start=self.warmup_steps / self.max_steps,
-            anneal_strategy="linear"
+            warmup_steps=self.warmup_steps,
+            max_steps=self.max_steps,
+            min_lr_ratio=0.1  # Minimum LR is 10% of initial LR
         )
     
     def _create_dataloader(self, dataset: Dataset, batch_size: int, shuffle: bool) -> DataLoader:
@@ -388,7 +461,7 @@ class EntropyEstimatorTrainer:
                     batch = {k: v.to(self.device) for k, v in batch.items()}
                     
                     # Forward pass with mixed precision
-                    with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+                    with torch.amp.autocast('cuda', enabled=self.mixed_precision and torch.cuda.is_available()):
                         outputs = self.model(**batch)
                         loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
                         
@@ -433,8 +506,14 @@ class EntropyEstimatorTrainer:
                     if step % self.log_steps == 0:
                         current_time = time.time()
                         elapsed_time = current_time - start_time
-                        samples_per_second = (step * self.batch_size * self.gradient_accumulation_steps) / elapsed_time
-                        ms_per_step = (elapsed_time * 1000) / step
+                        
+                        # Avoid division by zero
+                        if step > 0:
+                            samples_per_second = (step * self.batch_size * self.gradient_accumulation_steps) / elapsed_time
+                            ms_per_step = (elapsed_time * 1000) / step
+                        else:
+                            samples_per_second = 0
+                            ms_per_step = 0
                         
                         lr = self.scheduler.get_last_lr()[0] if self.scheduler else self.learning_rate
                         
@@ -628,14 +707,34 @@ def create_blt_model(config):
     """
     from ..components.blt.byte_processor import SmallByteLM, SmallByteLMConfig
     
+    # Map configuration attributes to model config
+    # Handle both direct attributes (hidden_size) and prefixed attributes (byte_lm_hidden_size)
+    hidden_size = getattr(config, 'hidden_size', None)
+    if hidden_size is None:
+        hidden_size = getattr(config, 'byte_lm_hidden_size', 128)
+    
+    num_layers = getattr(config, 'num_layers', None)
+    if num_layers is None:
+        num_layers = getattr(config, 'byte_lm_num_layers', 2)
+    
+    num_attention_heads = getattr(config, 'num_attention_heads', None)
+    if num_attention_heads is None:
+        num_attention_heads = getattr(config, 'byte_lm_num_heads', 4)
+    
+    dropout = getattr(config, 'byte_lm_dropout', None)
+    if dropout is None:
+        dropout = getattr(config, 'dropout', 0.1)
+    
+    block_size = getattr(config, 'block_size', 128)
+    
     # Create model config
     model_config = SmallByteLMConfig(
-        hidden_size=config.byte_lm_hidden_size,
-        num_layers=config.byte_lm_num_layers,
-        num_attention_heads=config.byte_lm_num_heads,
-        dropout=config.byte_lm_dropout,
-        max_position_embeddings=config.block_size,
-        vocab_size=256  # Fixed for byte-level model
+        hidden_size=hidden_size,
+        num_layers=num_layers,
+        num_attention_heads=num_attention_heads,
+        byte_lm_dropout=dropout,
+        byte_lm_max_position=block_size
+        # No vocab_size parameter in SmallByteLMConfig
     )
     
     # Create model

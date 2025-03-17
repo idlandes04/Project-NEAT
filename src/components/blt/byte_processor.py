@@ -14,6 +14,70 @@ import torch.nn.functional as F
 from typing import Dict, List, Optional, Tuple, Union, Any
 
 
+class SmallByteLMConfig:
+    """
+    Configuration class for SmallByteLM model.
+    
+    This class holds the configuration parameters needed for the SmallByteLM model,
+    which is used for estimating byte-level entropy.
+    """
+    
+    def __init__(
+        self,
+        hidden_size=128,
+        num_layers=2,
+        num_attention_heads=4,
+        byte_lm_dropout=0.1,
+        byte_lm_max_position=512,
+        intermediate_size=512,
+        
+        # Training parameters
+        learning_rate=5e-5,
+        batch_size=32,
+        block_size=128,
+        warmup_steps=1000,
+        max_steps=10000,
+        eval_steps=500,
+        save_steps=500,
+        gradient_accumulation_steps=1,
+        weight_decay=0.01,
+        
+        # Data parameters
+        train_files=None,
+        eval_files=None,
+        cache_dir="./cache",
+        output_dir="./outputs/byte_lm",
+        checkpoint_path=None,
+        mixed_precision=True,
+        entropy_threshold=0.5
+    ):
+        """Initialize the configuration."""
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.num_attention_heads = num_attention_heads
+        self.byte_lm_dropout = byte_lm_dropout
+        self.byte_lm_max_position = byte_lm_max_position
+        self.intermediate_size = intermediate_size
+        
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
+        self.block_size = block_size
+        self.warmup_steps = warmup_steps
+        self.max_steps = max_steps
+        self.eval_steps = eval_steps
+        self.save_steps = save_steps
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.weight_decay = weight_decay
+        
+        self.train_files = train_files or []
+        self.eval_files = eval_files or []
+        self.cache_dir = cache_dir
+        self.output_dir = output_dir
+        self.checkpoint_path = checkpoint_path
+        self.mixed_precision = mixed_precision
+        self.entropy_threshold = entropy_threshold
+
+
 class VariableLengthBatch:
     """
     Data structure for variable-length sequences in batched processing.
@@ -662,6 +726,70 @@ class EntropyCalculator(nn.Module):
         return patches
 
 
+class SmallByteLMConfig:
+    """
+    Configuration class for SmallByteLM model.
+    
+    This class holds the configuration parameters needed for the SmallByteLM model,
+    which is used for estimating byte-level entropy.
+    """
+    
+    def __init__(
+        self,
+        hidden_size=128,
+        num_layers=2,
+        num_attention_heads=4,
+        byte_lm_dropout=0.1,
+        byte_lm_max_position=512,
+        intermediate_size=512,
+        
+        # Training parameters
+        learning_rate=5e-5,
+        batch_size=32,
+        block_size=128,
+        warmup_steps=1000,
+        max_steps=10000,
+        eval_steps=500,
+        save_steps=500,
+        gradient_accumulation_steps=1,
+        weight_decay=0.01,
+        
+        # Data parameters
+        train_files=None,
+        eval_files=None,
+        cache_dir="./cache",
+        output_dir="./outputs/byte_lm",
+        checkpoint_path=None,
+        mixed_precision=True,
+        entropy_threshold=0.5
+    ):
+        """Initialize the configuration."""
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.num_attention_heads = num_attention_heads
+        self.byte_lm_dropout = byte_lm_dropout
+        self.byte_lm_max_position = byte_lm_max_position
+        self.intermediate_size = intermediate_size
+        
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
+        self.block_size = block_size
+        self.warmup_steps = warmup_steps
+        self.max_steps = max_steps
+        self.eval_steps = eval_steps
+        self.save_steps = save_steps
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.weight_decay = weight_decay
+        
+        self.train_files = train_files or []
+        self.eval_files = eval_files or []
+        self.cache_dir = cache_dir
+        self.output_dir = output_dir
+        self.checkpoint_path = checkpoint_path
+        self.mixed_precision = mixed_precision
+        self.entropy_threshold = entropy_threshold
+
+
 class SmallByteLM(nn.Module):
     """
     Small byte-level language model for entropy calculation.
@@ -679,7 +807,8 @@ class SmallByteLM(nn.Module):
             config: Model configuration
         """
         super().__init__()
-        self.hidden_size = 128  # Smaller than main model
+        self.config = config
+        self.hidden_size = getattr(config, 'hidden_size', 128)  # Smaller than main model
         self.dropout_prob = getattr(config, 'byte_lm_dropout', 0.1)
         self.max_position_embeddings = getattr(config, 'byte_lm_max_position', 512)
         
@@ -709,18 +838,28 @@ class SmallByteLM(nn.Module):
         # Output projection
         self.output_projection = nn.Linear(self.hidden_size, 256)  # 256 possible byte values
     
-    def forward(self, input_bytes: torch.Tensor, labels: Optional[torch.Tensor] = None) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def forward(self, 
+              input_bytes: Optional[torch.Tensor] = None, 
+              labels: Optional[torch.Tensor] = None,
+              input_ids: Optional[torch.Tensor] = None) -> Union[torch.Tensor, Dict[str, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
         """
         Predict next byte probabilities.
         
         Args:
             input_bytes: Input byte sequence [batch_size, seq_len]
+            input_ids: Alternative name for input_bytes (for compatibility with HF style)
             labels: Optional target byte labels for computing loss [batch_size, seq_len]
             
         Returns:
-            If labels is provided: (loss, logits)
+            If labels is provided: Dictionary with loss and logits
             If labels is not provided: logits [batch_size, seq_len, 256]
         """
+        # Handle both input_bytes and input_ids for compatibility
+        if input_bytes is None and input_ids is not None:
+            input_bytes = input_ids
+        elif input_bytes is None and input_ids is None:
+            raise ValueError("Either input_bytes or input_ids must be provided")
+            
         batch_size, seq_len = input_bytes.shape
         
         # Ensure input is within byte range (0-255)
@@ -763,7 +902,11 @@ class SmallByteLM(nn.Module):
             loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(shift_logits.view(-1, 256), shift_labels.view(-1))
             
-            return loss, logits
+            # Return in Hugging Face format (dictionary with loss)
+            return {
+                "loss": loss,
+                "logits": logits
+            }
         
         return logits
     
@@ -804,18 +947,25 @@ class SmallByteLM(nn.Module):
         except Exception as e:
             print(f"Error loading BLT model checkpoint: {e}. Using untrained model.")
         
-    def generate_probs(self, input_bytes: torch.Tensor, temperature: float = 1.0) -> torch.Tensor:
+    def generate_probs(self, input_bytes: Optional[torch.Tensor] = None, temperature: float = 1.0, input_ids: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Generate probability distribution for next bytes.
         
         Args:
             input_bytes: Input byte sequence [batch_size, seq_len]
             temperature: Temperature for sampling (higher = more diverse)
+            input_ids: Alternative name for input_bytes (for compatibility)
             
         Returns:
             Probability distribution over next bytes [batch_size, seq_len, 256]
         """
-        logits = self.forward(input_bytes)
+        # Handle both input names for compatibility
+        if input_bytes is None and input_ids is not None:
+            input_bytes = input_ids
+        elif input_bytes is None and input_ids is None:
+            raise ValueError("Either input_bytes or input_ids must be provided")
+            
+        logits = self.forward(input_bytes=input_bytes)
         
         # Apply temperature scaling
         if temperature != 1.0:

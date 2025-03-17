@@ -106,7 +106,7 @@ python main.py --mode train_byte_lm \
 ```
 
 **Configuration Details:**
-- Small model: ~3M parameters
+- Small model: ~5M parameters
 - Hidden size: 128
 - Layers: 2
 - Training time: ~6 hours on RTX 3080Ti

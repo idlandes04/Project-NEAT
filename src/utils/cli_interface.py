@@ -45,8 +45,11 @@ class NEATCLIInterface:
         self.current_config = {}
         self.current_config_name = None
         
+        # Config directory
+        self._config_dir = CLI_CONFIG_DIR
+        
         # Make sure the config directory exists
-        os.makedirs(CLI_CONFIG_DIR, exist_ok=True)
+        os.makedirs(self._config_dir, exist_ok=True)
     
     def start(self):
         """Start the CLI interface."""
@@ -91,23 +94,22 @@ class NEATCLIInterface:
     def _print_header(self):
         """Print the NEAT header."""
         header_text = """
-  _   _                      _                _     _ _           _                   
- | \ | | ___ _   _ _ __ __ _| |   /\         | |   (_) |         | |                  
- |  \| |/ _ \ | | | '__/ _` | |  /  \   _ __| |__  _| |_ ___  __| |_ _   _ _ __ ___ 
- | . ` |  __/ |_| | | | (_| | | / /\ \ | '__| '_ \| | __/ _ \/ _` | | | | | '__/ _ \\
- | |\  |\___|\__,_|_|  \__,_|_|/ ____ \| |  | | | | | ||  __/ (_| | |_| | | | |  __/
- |_| \_|                      /_/    \_\_|  |_| |_|_|\__\___|\__,_|\__,_|_|_|  \___|    
-                                                      
+██████╗ ██████╗  ██████╗      ██╗███████╗ ██████╗████████╗    ███╗   ██╗███████╗ █████╗ ████████╗
+██╔══██╗██╔══██╗██╔═══██╗     ██║██╔════╝██╔════╝╚══██╔══╝    ████╗  ██║██╔════╝██╔══██╗╚══██╔══╝
+██████╔╝██████╔╝██║   ██║     ██║█████╗  ██║        ██║       ██╔██╗ ██║█████╗  ███████║   ██║   
+██╔═══╝ ██╔══██╗██║   ██║██   ██║██╔══╝  ██║        ██║       ██║╚██╗██║██╔══╝  ██╔══██║   ██║   
+██║     ██║  ██║╚██████╔╝╚█████╔╝███████╗╚██████╗   ██║       ██║ ╚████║███████╗██║  ██║   ██║   
+╚═╝     ╚═╝  ╚═╝ ╚═════╝  ╚════╝ ╚══════╝ ╚═════╝   ╚═╝       ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝   ╚═╝   
         """
         self.console.print(Text(header_text, style=f"{self.main_color} bold"))
-        self.console.print(Panel(Text("A cutting-edge neural architecture combining advanced techniques for efficient, adaptive, and multimodal AI", 
-                                       style=f"{self.accent_color} bold"), 
-                                 style=self.main_color))
+        self.console.print(Panel(Text("A cutting-edge neural architecture combining recent advanced techniques for efficient, adaptive, and multi-modal AI", 
+            style=f"{self.accent_color} bold"), 
+            style=self.main_color))
     
     def _print_goodbye(self):
         """Print goodbye message when exiting the CLI."""
         goodbye_message = """
-        Thank you for using Project NEAT!
+        Thank you for using Project NEAT! If you have any questions or feedback, please contact us at:idlandes04@gmail.com
         
         [bold dark_red]Neural[/bold dark_red] [bold red]Architecture[/bold red] [bold bright_red]Integration[/bold bright_red]
         """
@@ -401,17 +403,33 @@ class NEATCLIInterface:
         if not Confirm.ask("Start training the full NEAT model?"):
             return
         
-        # Prepare command
+        # Prepare command with python executable detection
+        python_cmd = "python3"
+        try:
+            import sys
+            python_cmd = sys.executable or "python3"
+        except Exception:
+            pass
+        
+        # Get output directory
+        output_dir = self.current_config.get("output_dir", "./outputs")
+        
+        # Start building command
         cmd = [
-            "python3", "main.py", "train",
-            "--training_type", "full_model"
+            python_cmd, "main.py", "train",
+            "--training_type", "full_model",
+            "--output_dir", output_dir
         ]
         
-        # Add parameters from config
+        # Add parameters from config, excluding duplicates with output_dir
+        excluded_keys = ["mode", "training_type", "output_dir"]
+        
         for key, value in self.current_config.items():
-            if key in ["mode", "training_type"]:
+            # Skip excluded keys
+            if key in excluded_keys:
                 continue
             
+            # Handle different value types
             if isinstance(value, bool):
                 if value:
                     cmd.append(f"--{key}")
@@ -422,47 +440,111 @@ class NEATCLIInterface:
             elif value is not None:
                 cmd.append(f"--{key}")
                 cmd.append(str(value))
+        
+        # Log the command being executed
+        self.console.print(f"[dim]Command: {' '.join(cmd)}[/dim]")
         
         # Execute command with progress display
         self._execute_command_with_progress(" ".join(cmd), "Training Full NEAT Model")
     
-    def _train_blt_entropy(self):
-        """Initialize training for the BLT entropy estimator."""
+    def _train_blt_entropy(self, auto_confirm=False, auto_continue=False, config_name=None):
+        """Initialize training for the BLT entropy estimator.
+        
+        Args:
+            auto_confirm: If True, skip confirmation prompt
+            auto_continue: If True, don't wait for user input at the end
+            config_name: Name of config to load (if not using current_config)
+        """
         self._clear_screen()
         self.console.print(Panel("Train BLT Entropy Estimator", style=self.main_color))
         
+        # If config_name is provided, try to load it
+        if config_name:
+            config_path = os.path.join(CLI_CONFIG_DIR, f"{config_name}.json")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r') as f:
+                        self.current_config = json.load(f)
+                    self.current_config_name = config_name
+                    self.console.print(f"[green]Loaded configuration: {config_name}[/green]")
+                except Exception as e:
+                    self.console.print(f"[red]Error loading configuration {config_name}: {e}[/red]")
+                    return
+            else:
+                self.console.print(f"[red]Configuration file not found: {config_name}[/red]")
+                return
+        
         # Configure or use current config
-        if not self._ensure_config("blt_entropy"):
+        if not self._ensure_config("blt_entropy", auto_confirm=auto_confirm):
             return
         
-        # Confirm training
-        if not Confirm.ask("Start training the BLT entropy estimator?"):
-            return
+        # Confirm training if needed
+        if not auto_confirm:
+            try:
+                if not Confirm.ask("Start training the BLT entropy estimator?"):
+                    return
+            except (EOFError, KeyboardInterrupt):
+                self.console.print("[yellow]Assuming yes...[/yellow]")
         
-        # Prepare command
+        # Prepare command with python executable detection
+        python_cmd = "python3"
+        try:
+            import sys
+            python_cmd = sys.executable or "python3"
+        except Exception:
+            pass
+        
+        # Get output directory
+        output_dir = self.current_config.get("output_dir", "./outputs")
+        
+        # Use the dedicated BLT entropy training script which has the correct argument handling
         cmd = [
-            "python3", "main.py", "train",
-            "--training_type", "blt_entropy"
+            python_cmd, "scripts/train_blt_entropy.py"
         ]
         
-        # Add parameters from config
+        # Add output directory
+        if output_dir:
+            cmd.extend(["--output_dir", output_dir])
+        
+        # Add parameters from config, excluding duplicates with output_dir
+        excluded_keys = ["mode", "training_type", "output_dir", "train_glob", "eval_glob"]
+        
+        # Parameter name mapping from our config to the script's expected names
+        param_mapping = {
+            "byte_lm_hidden_size": "hidden_size",
+            "byte_lm_num_layers": "num_layers",
+            "byte_lm_num_heads": "num_heads",
+            "byte_lm_dropout": "dropout",
+            "resume_from": "resume_from",
+            "training_dir": "output_dir"  # Use training_dir as output_dir if specified
+        }
+        
         for key, value in self.current_config.items():
-            if key in ["mode", "training_type"]:
+            # Skip excluded keys
+            if key in excluded_keys:
                 continue
             
+            # Map parameter name if needed
+            param_name = param_mapping.get(key, key)
+            
+            # Handle different value types
             if isinstance(value, bool):
                 if value:
-                    cmd.append(f"--{key}")
+                    cmd.append(f"--{param_name}")
             elif isinstance(value, list):
-                if value:  # Only if non-empty
-                    cmd.append(f"--{key}")
-                    cmd.append(json.dumps(value))  # Convert list to JSON string
+                # Directly handle lists for train_files and eval_files
+                if key in ["train_files", "eval_files"] and value:
+                    # Just pass the directory for the script to handle
+                    continue
             elif value is not None:
-                cmd.append(f"--{key}")
+                cmd.append(f"--{param_name}")
                 cmd.append(str(value))
         
+        # Log the command being executed
+        self.console.print(f"[dim]Command: {' '.join(cmd)}[/dim]")
+        
         # Execute command with progress display
-        self._execute_command_with_progress(" ".join(cmd), "Training BLT Entropy Estimator")
+        self._execute_command_with_progress(" ".join(cmd), "Training BLT Entropy Estimator", auto_continue=auto_continue)
     
     def _train_mvot_codebook(self):
         """Initialize training for the MVoT visual codebook."""
@@ -477,17 +559,33 @@ class NEATCLIInterface:
         if not Confirm.ask("Start training the MVoT visual codebook?"):
             return
         
-        # Prepare command
+        # Prepare command with python executable detection
+        python_cmd = "python3"
+        try:
+            import sys
+            python_cmd = sys.executable or "python3"
+        except Exception:
+            pass
+        
+        # Get output directory
+        output_dir = self.current_config.get("output_dir", "./outputs")
+        
+        # Start building command
         cmd = [
-            "python3", "main.py", "train",
-            "--training_type", "mvot_codebook"
+            python_cmd, "main.py", "train",
+            "--training_type", "mvot_codebook",
+            "--output_dir", output_dir
         ]
         
-        # Add parameters from config
+        # Add parameters from config, excluding duplicates with output_dir
+        excluded_keys = ["mode", "training_type", "output_dir"]
+        
         for key, value in self.current_config.items():
-            if key in ["mode", "training_type"]:
+            # Skip excluded keys
+            if key in excluded_keys:
                 continue
             
+            # Handle different value types
             if isinstance(value, bool):
                 if value:
                     cmd.append(f"--{key}")
@@ -498,6 +596,9 @@ class NEATCLIInterface:
             elif value is not None:
                 cmd.append(f"--{key}")
                 cmd.append(str(value))
+        
+        # Log the command being executed
+        self.console.print(f"[dim]Command: {' '.join(cmd)}[/dim]")
         
         # Execute command with progress display
         self._execute_command_with_progress(" ".join(cmd), "Training MVoT Visual Codebook")
@@ -515,17 +616,33 @@ class NEATCLIInterface:
         if not Confirm.ask("Start training the baseline model?"):
             return
         
-        # Prepare command
+        # Prepare command with python executable detection
+        python_cmd = "python3"
+        try:
+            import sys
+            python_cmd = sys.executable or "python3"
+        except Exception:
+            pass
+        
+        # Get output directory
+        output_dir = self.current_config.get("output_dir", "./outputs")
+        
+        # Start building command
         cmd = [
-            "python3", "main.py", "train",
-            "--training_type", "baseline"
+            python_cmd, "main.py", "train",
+            "--training_type", "baseline",
+            "--output_dir", output_dir
         ]
         
-        # Add parameters from config
+        # Add parameters from config, excluding duplicates with output_dir
+        excluded_keys = ["mode", "training_type", "output_dir"]
+        
         for key, value in self.current_config.items():
-            if key in ["mode", "training_type"]:
+            # Skip excluded keys
+            if key in excluded_keys:
                 continue
             
+            # Handle different value types
             if isinstance(value, bool):
                 if value:
                     cmd.append(f"--{key}")
@@ -536,6 +653,9 @@ class NEATCLIInterface:
             elif value is not None:
                 cmd.append(f"--{key}")
                 cmd.append(str(value))
+        
+        # Log the command being executed
+        self.console.print(f"[dim]Command: {' '.join(cmd)}[/dim]")
         
         # Execute command with progress display
         self._execute_command_with_progress(" ".join(cmd), "Training Baseline Model")
@@ -701,88 +821,152 @@ class NEATCLIInterface:
         # TODO: Implement configuration for baseline model
         self.console.print("[yellow]Baseline model configuration not yet implemented.[/yellow]")
     
-    def _quick_test(self):
-        """Run a quick test training with 5 steps."""
+    def _quick_test(self, auto_confirm=False, auto_continue=False):
+        """Run a quick test training with 5 steps.
+        
+        Args:
+            auto_confirm: If True, skip confirmation prompt
+            auto_continue: If True, don't wait for user input at the end
+        """
         self._clear_screen()
         self.console.print(Panel("Quick Test Training (5 Steps)", style=self.main_color))
         
-        # Create test config based on blt_entropy template
-        test_config = {
+        # Load the test configuration
+        config_name = "blt_entropy_test"
+        config_path = os.path.join(self._config_dir, f"{config_name}.json")
+        
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    self.current_config = json.load(f)
+                self.current_config_name = config_name
+                self.console.print(f"Loaded configuration: {config_name}")
+            except Exception as e:
+                self.console.print(f"[red]Error loading configuration {config_name}: {e}[/red]")
+                # Use a default configuration
+                self._create_default_test_config()
+        else:
+            # Create the default test configuration
+            self._create_default_test_config()
+        
+        # Ask for confirmation if needed
+        if not auto_confirm:
+            try:
+                if not Confirm.ask("Run quick test training with 5 steps?"):
+                    return
+            except (EOFError, KeyboardInterrupt):
+                self.console.print("[yellow]Assuming yes...[/yellow]")
+        
+        # Use the dedicated BLT training script which has better argument handling
+        python_cmd = "python3"
+        try:
+            import sys
+            python_cmd = sys.executable or "python3"
+        except Exception:
+            pass
+        
+        # Start building command
+        cmd = [
+            python_cmd, "scripts/train_blt_entropy.py"
+        ]
+        
+        # Track which parameters we've already added to avoid duplicates
+        added_params = set()
+        
+        # Add parameters from config
+        for key, value in self.current_config.items():
+            # Skip mode and training_type which are not script parameters
+            if key in ["mode", "training_type"]:
+                continue
+                
+            # Handle different value types
+            if isinstance(value, bool):
+                if value:
+                    cmd.append(f"--{key}")
+                    added_params.add(key)
+            elif isinstance(value, list):
+                if value:  # Only if non-empty
+                    param_value = self._format_list_args(value)
+                    cmd.append(f"--{key}")
+                    cmd.append(param_value)
+                    added_params.add(key)
+            elif value is not None:
+                cmd.append(f"--{key}")
+                cmd.append(str(value))
+                added_params.add(key)
+        
+        # Log the command being executed
+        self.console.print(f"[dim]Command: {' '.join(cmd)}[/dim]")
+        
+        # Execute command with progress display
+        self._execute_command_with_progress(" ".join(cmd), "Quick Test Training", auto_continue=auto_continue)
+    
+    def _create_default_test_config(self):
+        """Create a default test configuration for quick testing."""
+        self.current_config = {
             "mode": "train",
             "training_type": "blt_entropy",
             "train_data_dir": "./data/pile_subset/train",
             "eval_data_dir": "./data/pile_subset/eval",
-            "train_files": None,
-            "eval_files": None,
-            "train_glob": None,
-            "eval_glob": None,
-            "byte_lm_hidden_size": 64,
-            "byte_lm_num_layers": 2,
-            "byte_lm_num_heads": 4,
-            "byte_lm_dropout": 0.1,
+            "hidden_size": 64,
+            "num_layers": 2,
+            "num_heads": 4,
+            "dropout": 0.1,
             "block_size": 128,
             "batch_size": 32,
-            "max_steps": 5,  # Just 5 steps for quick test
-            "eval_steps": 5,  # Evaluate at the end
-            "save_steps": 5,  # Save at the end
+            "max_steps": 10,
+            "eval_steps": 5,
+            "save_steps": 5,
             "learning_rate": 5e-5,
             "warmup_steps": 1,
             "gradient_accumulation_steps": 1,
             "weight_decay": 0.01,
             "mixed_precision": True,
-            "output_dir": "./outputs",
-            "training_dir": "./outputs/byte_lm_test",
+            "output_dir": "./outputs/byte_lm_test",
             "cache_dir": "./data/cache/byte_lm", 
-            "num_workers": 4,
+            "num_workers": 2,
             "log_steps": 1,
             "entropy_threshold": 0.5
         }
-        
-        # Ask for confirmation
-        if not Confirm.ask("Run quick test training with 5 steps?"):
-            return
-        
-        # Prepare command
-        cmd = [
-            "python3", "main.py", "train",
-            "--training_type", "blt_entropy"
-        ]
-        
-        # Add parameters from config
-        for key, value in test_config.items():
-            if key in ["mode", "training_type"]:
-                continue
-            
-            if isinstance(value, bool):
-                if value:
-                    cmd.append(f"--{key}")
-            elif isinstance(value, list):
-                if value:  # Only if non-empty
-                    cmd.append(f"--{key}")
-                    cmd.append(json.dumps(value))  # Convert list to JSON string
-            elif value is not None:
-                cmd.append(f"--{key}")
-                cmd.append(str(value))
-        
-        # Execute command with progress display
-        self._execute_command_with_progress(" ".join(cmd), "Quick Test Training")
+        self.current_config_name = "default_test_config"
     
-    def _hardware_detection_test(self):
-        """Run hardware detection test."""
+    def _format_list_args(self, arg_list):
+        """Format list arguments for command line."""
+        # Convert list to JSON string
+        return f"'{json.dumps(arg_list)}'"
+    
+    def _hardware_detection_test(self, auto_continue=False):
+        """Run hardware detection test.
+        
+        Args:
+            auto_continue: If True, don't wait for user input at the end
+        """
         self._clear_screen()
         self.console.print(Panel("Hardware Detection Test", style=self.main_color))
         
+        # Prepare command with python executable detection
+        python_cmd = "python3"
+        try:
+            import sys
+            python_cmd = sys.executable or "python3"
+        except Exception:
+            pass
+        
         # Prepare command
-        cmd = "python3 main.py test --test_type hardware --hardware_info"
+        cmd = [python_cmd, "main.py", "test", "--test_type", "hardware", "--hardware_info", "--output_dir", "./outputs"]
+        
+        # Log the command being executed
+        self.console.print(f"[dim]Command: {' '.join(cmd)}[/dim]")
         
         # Execute command with progress display
-        self._execute_command_with_progress(cmd, "Hardware Detection")
+        self._execute_command_with_progress(" ".join(cmd), "Hardware Detection", auto_continue=auto_continue)
     
-    def _ensure_config(self, training_type: str) -> bool:
+    def _ensure_config(self, training_type: str, auto_confirm=False) -> bool:
         """Ensure we have a valid configuration for the specified training type.
         
         Args:
             training_type: Type of training to configure for
+            auto_confirm: If True, skip confirmation prompts and use defaults
             
         Returns:
             bool: True if a valid config is available, False otherwise
@@ -795,8 +979,14 @@ class NEATCLIInterface:
         # Check if we have any config
         if self.current_config:
             # We have a config but not matching the training type
-            if not Confirm.ask(f"Current configuration is for {self.current_config.get('training_type')}. Configure for {training_type} instead?"):
-                return False
+            if not auto_confirm:
+                try:
+                    if not Confirm.ask(f"Current configuration is for {self.current_config.get('training_type')}. Configure for {training_type} instead?"):
+                        return False
+                except (EOFError, KeyboardInterrupt):
+                    self.console.print("[yellow]Assuming yes...[/yellow]")
+            
+            # In auto mode or user confirmed, we'll reconfigure
         
         # We need to configure
         self.current_config = {
@@ -805,39 +995,111 @@ class NEATCLIInterface:
         }
         
         if training_type == "blt_entropy":
-            # Try to load default config
-            default_config_path = os.path.join(CLI_CONFIG_DIR, "blt_entropy_train.json")
-            if os.path.exists(default_config_path):
-                try:
-                    with open(default_config_path, "r") as f:
-                        self.current_config = json.load(f)
-                    self.current_config_name = "blt_entropy_train"
-                    self.console.print(f"[green]Loaded default configuration '{self.current_config_name}'[/green]")
-                    return True
-                except Exception as e:
-                    self.console.print(f"[yellow]Failed to load default config: {e}[/yellow]")
+            # Try to load default config - first try specific file based on name
+            default_configs = [
+                "blt_entropy_train.json",
+                "blt_quick_train.json",
+                "blt_entropy_standard.json",
+                "blt_entropy_full_train.json"
+            ]
             
-            # Configure manually
-            self._configure_blt_entropy()
-            return True
+            # Try to find any matching config file
+            for config_file in default_configs:
+                config_path = os.path.join(CLI_CONFIG_DIR, config_file)
+                if os.path.exists(config_path):
+                    try:
+                        with open(config_path, "r") as f:
+                            self.current_config = json.load(f)
+                        self.current_config_name = os.path.basename(config_path).replace(".json", "")
+                        self.console.print(f"[green]Loaded default configuration '{self.current_config_name}'[/green]")
+                        return True
+                    except Exception as e:
+                        self.console.print(f"[yellow]Failed to load {config_file}: {e}[/yellow]")
+                        continue
+            
+            # If we reach here, no config was loaded - use manual config if interactive
+            if not auto_confirm:
+                self._configure_blt_entropy()
+                return True
+            else:
+                # In automatic mode, use built-in defaults
+                self.current_config = {
+                    "mode": "train",
+                    "training_type": "blt_entropy",
+                    "train_data_dir": "./data/pile_subset/train",
+                    "eval_data_dir": "./data/pile_subset/eval",
+                    "byte_lm_hidden_size": 64,
+                    "byte_lm_num_layers": 2,
+                    "byte_lm_num_heads": 4,
+                    "block_size": 128,
+                    "batch_size": 32,
+                    "max_steps": 10,
+                    "output_dir": "./outputs",
+                    "training_dir": "./outputs/byte_lm_default",
+                    "cache_dir": "./data/cache/byte_lm",
+                    "entropy_threshold": 0.5
+                }
+                self.current_config_name = "default_blt_config"
+                return True
+                
         elif training_type == "mvot_codebook":
-            self._configure_mvot_codebook()
-            return True
+            if not auto_confirm:
+                self._configure_mvot_codebook()
+                return True
+            else:
+                # Use built-in defaults
+                self.current_config = {
+                    "mode": "train",
+                    "training_type": "mvot_codebook",
+                    "output_dir": "./outputs",
+                    "training_dir": "./outputs/mvot_codebook"
+                }
+                self.current_config_name = "default_mvot_config"
+                return True
+                
         elif training_type == "full_model":
-            self._configure_full_model()
-            return True
+            if not auto_confirm:
+                self._configure_full_model()
+                return True
+            else:
+                # Use built-in defaults
+                self.current_config = {
+                    "mode": "train",
+                    "training_type": "full_model",
+                    "output_dir": "./outputs",
+                    "training_dir": "./outputs/full_model",
+                    "hidden_size": 256,
+                    "num_layers": 4,
+                    "num_attention_heads": 8,
+                    "max_steps": 1000
+                }
+                self.current_config_name = "default_full_model_config"
+                return True
+                
         elif training_type == "baseline":
-            self._configure_baseline()
-            return True
+            if not auto_confirm:
+                self._configure_baseline()
+                return True
+            else:
+                # Use built-in defaults
+                self.current_config = {
+                    "mode": "train",
+                    "training_type": "baseline",
+                    "output_dir": "./outputs",
+                    "training_dir": "./outputs/baseline"
+                }
+                self.current_config_name = "default_baseline_config"
+                return True
         
         return False
     
-    def _execute_command_with_progress(self, cmd: str, title: str):
+    def _execute_command_with_progress(self, cmd: str, title: str, auto_continue=False):
         """Execute a command and show progress.
         
         Args:
             cmd: Command to execute
             title: Title for the progress display
+            auto_continue: If True, don't wait for user input at the end
         """
         # Fix known command issues by ensuring the command is properly formatted
         cmd_parts = cmd.split()
@@ -851,7 +1113,12 @@ class NEATCLIInterface:
             # Skip duplicates of arguments we've already seen
             if part.startswith('--') and part in seen_args:
                 # Skip the argument and its value (if it has one)
-                i += 2 if i + 1 < len(cmd_parts) and not cmd_parts[i + 1].startswith('--') else 1
+                if i + 1 < len(cmd_parts) and not cmd_parts[i + 1].startswith('--'):
+                    self.console.print(f"[yellow]Removing duplicate argument: {part} {cmd_parts[i+1]}[/yellow]")
+                    i += 2
+                else:
+                    self.console.print(f"[yellow]Removing duplicate argument: {part}[/yellow]")
+                    i += 1
                 continue
             
             # Add to fixed command
@@ -894,25 +1161,89 @@ class NEATCLIInterface:
             
             # Stream output
             output_lines = []
-            for line in process.stdout:
-                output_lines.append(line.strip())
-                progress.update(task, description=f"Running {title}... Latest: {line.strip()[:50]}")
+            try:
+                for line in process.stdout:
+                    line = line.strip()
+                    output_lines.append(line)
+                    # Show only a portion of the line to prevent long lines from breaking display
+                    display_line = line[:50]
+                    if len(line) > 50:
+                        display_line += "..."
+                    progress.update(task, description=f"Running {title}... Latest: {display_line}")
+            except Exception as e:
+                progress.update(task, description=f"Error reading output: {e}")
             
             # Wait for the process to complete
-            process.wait()
-            
-            # Update status based on result
-            if process.returncode == 0:
-                progress.update(task, description=f"[green]✓[/green] {title} completed successfully")
-            else:
-                progress.update(task, description=f"[red]✗[/red] {title} failed with code {process.returncode}")
+            try:
+                process.wait()
+                
+                # Update status based on result
+                if process.returncode == 0:
+                    progress.update(task, description=f"[green]✓[/green] {title} completed successfully")
+                else:
+                    progress.update(task, description=f"[red]✗[/red] {title} failed with code {process.returncode}")
+            except Exception as e:
+                progress.update(task, description=f"Error waiting for process: {e}")
         
         # Show output
         if output_lines:
             self.console.print("\n[bold]Command Output:[/bold]")
-            self.console.print(Panel("\n".join(output_lines[-20:]), subtitle="(last 20 lines)", style=self.main_color))
+            
+            # Create output panel with scrollable content if too many lines
+            max_display_lines = 30
+            if len(output_lines) > max_display_lines:
+                displayed_output = output_lines[-max_display_lines:]
+                self.console.print(Panel(
+                    "\n".join(displayed_output), 
+                    subtitle=f"(last {max_display_lines} of {len(output_lines)} lines)", 
+                    style=self.main_color
+                ))
+            else:
+                self.console.print(Panel(
+                    "\n".join(output_lines), 
+                    subtitle=f"({len(output_lines)} lines)", 
+                    style=self.main_color
+                ))
+            
+            # If command failed, try to highlight the error
+            if process.returncode != 0:
+                # Look for common error messages
+                error_lines = []
+                for line in output_lines:
+                    if any(err in line.lower() for err in ["error", "exception", "traceback", "failed"]):
+                        error_lines.append(line)
+                
+                if error_lines:
+                    self.console.print("\n[bold red]Error Summary:[/bold red]")
+                    self.console.print(Panel("\n".join(error_lines[-10:]), style="red"))
         
-        input("\nPress Enter to continue...")
+        # Handle waiting for user input
+        if not auto_continue:
+            try:
+                input("\nPress Enter to continue...")
+            except (EOFError, KeyboardInterrupt):
+                self.console.print("\n[yellow]Continuing automatically...[/yellow]")
+                pass
+
+
+def _format_list_args(key, value):
+    """
+    Helper function to properly format list arguments for command line.
+    
+    Args:
+        key: Parameter key
+        value: List value
+        
+    Returns:
+        List of command-line arguments
+    """
+    args = []
+    if value:  # Only if non-empty
+        args.append(f"--{key}")
+        # For train_files and eval_files, we need a properly formatted JSON string
+        # that main.py's JSON parser can handle
+        args.append(f"'{json.dumps(value)}'")
+    return args
 
 
 def main():

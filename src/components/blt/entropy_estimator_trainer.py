@@ -3,6 +3,7 @@ Byte-level entropy estimator training pipeline.
 
 This module implements the training pipeline for the byte-level entropy estimator,
 which is a critical component of the BLT processor for determining patch boundaries.
+It also provides utilities for entropy distribution analysis and patch creation.
 """
 import os
 import time
@@ -595,3 +596,254 @@ def train_byte_lm(config):
     trainer.train()
     
     return model
+
+
+class EntropyDistributionAnalyzer:
+    """
+    Class for analyzing entropy distributions and determining optimal thresholds.
+    
+    This class encapsulates methods for evaluating entropy patterns
+    and determining optimal thresholds for 100M NEAT architecture.
+    """
+    
+    def __init__(self, 
+                model: SmallByteLM,
+                target_patches_per_byte: float = 0.05):
+        """
+        Initialize the entropy distribution analyzer.
+        
+        Args:
+            model: Trained byte-level model
+            target_patches_per_byte: Target ratio of patches to bytes
+        """
+        self.model = model
+        self.target_patches_per_byte = target_patches_per_byte
+        
+        # Default threshold based on evaluation results
+        self.entropy_threshold = 5.4012  # Optimal threshold from extended model evaluation
+        
+        # Set model to evaluation mode
+        self.model.eval()
+        self.device = next(model.parameters()).device
+    
+    def calculate_entropy(self, text: str) -> torch.Tensor:
+        """
+        Calculate entropy for a text input.
+        
+        Args:
+            text: Text input to analyze
+            
+        Returns:
+            Tensor of entropy values for each byte
+        """
+        # Convert text to bytes
+        content = text.encode('utf-8')
+        
+        # Convert to tensor of bytes
+        input_bytes = torch.tensor([[b for b in content]], dtype=torch.long).to(self.device)
+        
+        # Cap to block size if needed
+        if input_bytes.size(1) > self.model.max_position_embeddings:
+            input_bytes = input_bytes[:, :self.model.max_position_embeddings]
+        
+        # Calculate entropy
+        with torch.no_grad():
+            probs = self.model.generate_probs(input_bytes)
+            entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=-1)
+        
+        return entropy[0]
+    
+    def find_optimal_threshold(self, text: str) -> float:
+        """
+        Find the optimal entropy threshold for a text.
+        
+        Args:
+            text: Text to analyze
+            
+        Returns:
+            Optimal entropy threshold
+        """
+        entropies = self.calculate_entropy(text).cpu().numpy()
+        
+        # Get entropy distribution
+        percentiles = {
+            '50': np.percentile(entropies, 50),
+            '75': np.percentile(entropies, 75),
+            '90': np.percentile(entropies, 90),
+            '95': np.percentile(entropies, 95),
+            '99': np.percentile(entropies, 99)
+        }
+        
+        # Use the 90th percentile as the suggested threshold
+        # This typically gives good results for 100M NEAT architecture
+        return float(percentiles['90'])
+    
+    def create_patches(self, text: str, threshold: Optional[float] = None) -> List[Tuple[int, int]]:
+        """
+        Create patches based on entropy threshold.
+        
+        Args:
+            text: Text to process
+            threshold: Entropy threshold (if None, use the instance default)
+            
+        Returns:
+            List of (start_index, length) tuples representing patches
+        """
+        if threshold is None:
+            threshold = self.entropy_threshold
+            
+        entropies = self.calculate_entropy(text).cpu().numpy()
+        content = text.encode('utf-8')
+        
+        # Find high entropy points
+        high_entropy = entropies > threshold
+        
+        # Start with the first position
+        boundaries = [0]
+        
+        # Add boundaries at high entropy points
+        for i in range(1, len(entropies)):
+            if high_entropy[i]:
+                boundaries.append(i)
+        
+        # Add the end boundary
+        if len(content) not in boundaries:
+            boundaries.append(len(content))
+        
+        # Process boundaries to enforce min/max patch size
+        min_patch_size = 8
+        max_patch_size = 128
+        
+        # Start with the first boundary
+        enforced_boundaries = [boundaries[0]]
+        
+        for i in range(1, len(boundaries)):
+            current = boundaries[i]
+            previous = enforced_boundaries[-1]
+            patch_size = current - previous
+            
+            # If patch is too small, skip this boundary
+            if patch_size < min_patch_size:
+                continue
+                
+            # If patch is too large, add intermediate boundaries
+            elif patch_size > max_patch_size:
+                # Calculate how many patches we need
+                num_patches = (patch_size + max_patch_size - 1) // max_patch_size
+                patch_step = patch_size // num_patches
+                
+                # Add intermediate boundaries
+                for j in range(1, num_patches):
+                    enforced_boundaries.append(previous + j * patch_step)
+                
+                # Add the current boundary
+                enforced_boundaries.append(current)
+            else:
+                # Patch size is within constraints, add the boundary
+                enforced_boundaries.append(current)
+        
+        # Create patches as (start, length) tuples
+        patches = []
+        for i in range(len(enforced_boundaries) - 1):
+            start = enforced_boundaries[i]
+            end = enforced_boundaries[i + 1]
+            length = end - start
+            patches.append((start, length))
+        
+        return patches
+    
+    def analyze_text(self, text: str) -> Dict[str, Any]:
+        """
+        Analyze a text for entropy patterns and patching.
+        
+        Args:
+            text: Text to analyze
+            
+        Returns:
+            Dictionary of analysis results
+        """
+        entropies = self.calculate_entropy(text).cpu().numpy()
+        patches = self.create_patches(text)
+        
+        # Calculate statistics
+        patch_sizes = [length for _, length in patches]
+        
+        stats = {
+            "text_length": len(text),
+            "entropy_threshold": self.entropy_threshold,
+            "entropy_range": (float(np.min(entropies)), float(np.max(entropies))),
+            "mean_entropy": float(np.mean(entropies)),
+            "high_entropy_points": int(np.sum(entropies > self.entropy_threshold)),
+            "high_entropy_percent": float(np.sum(entropies > self.entropy_threshold) / len(entropies) * 100),
+            "num_patches": len(patches),
+            "avg_patch_size": float(np.mean(patch_sizes)) if patch_sizes else 0,
+            "patches_per_byte": float(len(patches) / len(text)),
+            "patch_boundaries": [(start, length) for start, length in patches]
+        }
+        
+        return stats
+
+
+def load_entropy_model(model_path: str):
+    """
+    Load a pre-trained BLT entropy estimator model.
+    
+    Args:
+        model_path: Path to the model checkpoint
+        
+    Returns:
+        Loaded model
+    """
+    logger.info(f"Loading BLT entropy model from {model_path}")
+    
+    # Determine if this is an extended model (384 hidden size) or standard model (256 hidden size)
+    if "extended" in model_path:
+        # Extended model configuration
+        model_config = SmallByteLMConfig(
+            hidden_size=384,
+            num_layers=6,
+            num_attention_heads=12,
+            byte_lm_dropout=0.1,
+            byte_lm_max_position=512
+        )
+        logger.info("Using extended model configuration: 384 hidden size, 6 layers, 12 heads")
+    else:
+        # Standard model configuration
+        model_config = SmallByteLMConfig(
+            hidden_size=256,
+            num_layers=4,
+            num_attention_heads=8,
+            byte_lm_dropout=0.1,
+            byte_lm_max_position=512
+        )
+        logger.info("Using standard model configuration: 256 hidden size, 4 layers, 8 heads")
+    
+    # Create model
+    model = SmallByteLM(model_config)
+    
+    # Load checkpoint
+    try:
+        # Try loading with weights_only=False first (for backward compatibility)
+        try:
+            checkpoint = torch.load(model_path, map_location=torch.device('cpu'), weights_only=False)
+        except:
+            # If that fails, try with the default (weights_only=True)
+            checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+        
+        # Handle different checkpoint formats
+        if "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"])
+            logger.info("Model loaded from state_dict!")
+        elif "state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["state_dict"])
+            logger.info("Model loaded from checkpoint state_dict!")
+        else:
+            # Try direct loading as a fallback
+            model.load_state_dict(checkpoint)
+            logger.info("Model loaded directly!")
+            
+        logger.info(f"BLT entropy model loaded successfully from {model_path}")
+        return model
+    except Exception as e:
+        logger.error(f"Error loading BLT model: {e}")
+        return None

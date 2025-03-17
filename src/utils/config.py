@@ -406,3 +406,53 @@ def torch_is_available() -> bool:
         return torch.cuda.is_available()
     except ImportError:
         return False
+
+
+def convert_cli_config_to_byte_lm_config(cli_config: Dict[str, Any]) -> ByteLMConfig:
+    """
+    Convert a CLI-style configuration to ByteLMConfig.
+    
+    Args:
+        cli_config: Dictionary containing CLI configuration parameters
+        
+    Returns:
+        ByteLMConfig object initialized with parameters from CLI config
+    """
+    # Map CLI parameter names to ByteLMConfig parameter names
+    param_mapping = {
+        "byte_lm_hidden_size": "hidden_size",
+        "byte_lm_num_layers": "num_layers",
+        "byte_lm_num_heads": "num_attention_heads",
+        "byte_lm_dropout": "byte_lm_dropout",
+        "block_size": "byte_lm_max_position",  # Also used for block_size
+    }
+    
+    # Extract parameters for ByteLMConfig
+    config_params = {}
+    
+    # Process each parameter from CLI config
+    for cli_param, value in cli_config.items():
+        # Map parameter name if needed
+        if cli_param in param_mapping:
+            config_params[param_mapping[cli_param]] = value
+        elif cli_param in ["hidden_size", "num_layers", "num_attention_heads", 
+                          "byte_lm_dropout", "byte_lm_max_position",
+                          "learning_rate", "batch_size", "warmup_steps", 
+                          "max_steps", "eval_steps", "save_steps",
+                          "gradient_accumulation_steps", "weight_decay",
+                          "cache_dir", "output_dir", "checkpoint_path",
+                          "block_size"]:
+            # Direct parameters that match ByteLMConfig fields
+            config_params[cli_param] = value
+    
+    # Ensure block_size is set for both block_size and byte_lm_max_position
+    if "block_size" in cli_config:
+        config_params["block_size"] = cli_config["block_size"]
+        if "byte_lm_max_position" not in config_params:
+            config_params["byte_lm_max_position"] = cli_config["block_size"]
+    
+    # Special handling for train_data_dir and eval_data_dir (not direct fields)
+    # These will be handled by the caller to set train_files and eval_files
+    
+    # Create ByteLMConfig with extracted parameters
+    return ByteLMConfig(**config_params)

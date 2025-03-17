@@ -70,7 +70,7 @@ def parse_args():
                         help="Directory to save outputs")
     
     # Misc options
-    parser.add_argument("--mixed_precision", action="store_true", default=True,
+    parser.add_argument("--mixed_precision", action="store_true",
                         help="Whether to use mixed precision training")
     parser.add_argument("--num_workers", type=int, default=4,
                         help="Number of dataloader workers")
