@@ -92,6 +92,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.DS_Store/
 
 # Spyder project settings
 .spyderproject
@@ -125,16 +126,8 @@ dmypy.json
 # Log files
 *.log
 
-# Ignore everything inside the data folder
-data/
-
-# But do not ignore specific files
-!data/**/*.py
-!data/**/*.jsonl
-
-# Ignore all text files inside data
-data/**/*.txt
-
+# Ignore data files
+#data/
 
 # Ignore output directories
 outputs/
