@@ -1,9 +1,13 @@
 """
 Main script for the neural architecture integration (Project NEAT).
 
-This script provides a unified command-line interface for all Project NEAT operations,
-including data preparation, training, evaluation, testing, and environment setup.
-It integrates functionality from various scripts into a single entry point.
+This script serves as a primary entry point for Project NEAT operations,
+leveraging the consolidated training and evaluation scripts in src/trainers.
+
+Main components:
+- Environment preparation: Handled by src.trainers.main_env_prepare
+- Model training: Handled by src.trainers.main_trainer 
+- Model evaluation: Handled by src.trainers.main_eval
 """
 import os
 import sys
@@ -520,7 +524,7 @@ def profile(args, config):
 def train_byte_lm_mode(args):
     """Run byte-level language model training."""
     from src.utils.config import ByteLMConfig
-    from src.trainers.blt_trainer import train_blt_model
+    from src.trainers.main_trainer import train_blt_model
     
     # Handle train_files and eval_files if they are JSON strings
     train_files = None
@@ -1360,7 +1364,7 @@ echo "Test environment setup complete!"
     logger.info(f"Environment setup complete: {args.setup_type}")
 
 def main():
-    """Main function to dispatch based on mode argument."""
+    """Main function using consolidated trainers for all operations."""
     # Parse command-line arguments
     args = parse_args()
     
@@ -1399,18 +1403,83 @@ def main():
     # Dispatch based on mode
     try:
         if args.mode == "prepare_data":
-            prepare_data_handler(args)
+            # Use main_env_prepare functionality
+            from src.trainers.main_env_prepare import create_directory_structure, clean_outputs_directory
+            create_directory_structure(".", clean=False)
+            logger.info("Environment prepared successfully")
+            
         elif args.mode == "train":
-            train_handler(args)
+            # Map training type to model type
+            model_type = args.training_type.replace("_entropy", "").replace("_codebook", "")
+            
+            # Use main_trainer functionality
+            if model_type == "blt":
+                from src.trainers.main_trainer import train_blt_entropy
+                train_blt_entropy(args)
+            elif model_type == "mvot":
+                from src.trainers.main_trainer import train_mvot_codebook
+                train_mvot_codebook(args)
+            elif model_type == "full":
+                from src.trainers.main_trainer import train_full_model
+                train_full_model(args)
+            elif model_type == "baseline":
+                from src.trainers.main_trainer import train_baseline_model
+                train_baseline_model(args)
+            else:
+                logger.error(f"Unknown training type: {args.training_type}")
+                sys.exit(1)
+                
         elif args.mode == "eval":
-            eval_handler(args)
+            # Use main_eval functionality (model_path is required)
+            if not hasattr(args, "model_path") or not args.model_path:
+                logger.error("Model path is required for evaluation")
+                sys.exit(1)
+                
+            model_type = args.eval_type if hasattr(args, "eval_type") else "full"
+            
+            if model_type == "blt":
+                from src.trainers.main_eval import evaluate_blt_entropy
+                evaluate_blt_entropy(args)
+            elif model_type == "mvot":
+                from src.trainers.main_eval import evaluate_mvot_codebook
+                evaluate_mvot_codebook(args)
+            elif model_type == "full":
+                from src.trainers.main_eval import evaluate_full_model
+                evaluate_full_model(args)
+            elif model_type == "baseline":
+                from src.trainers.main_eval import evaluate_baseline_model
+                evaluate_baseline_model(args)
+            elif model_type == "ablation":
+                from src.trainers.main_eval import run_component_ablation
+                run_component_ablation(args)
+            else:
+                logger.error(f"Unknown evaluation type: {model_type}")
+                sys.exit(1)
+                
         elif args.mode == "test":
-            test_handler(args)
+            # Map test types to evaluation modes
+            if args.test_type == "blt_interactive":
+                from src.trainers.main_eval import evaluate_blt_entropy
+                args.interactive = True
+                evaluate_blt_entropy(args)
+            elif args.test_type == "hardware":
+                hardware_detection_mode(args)
+            else:
+                logger.error(f"Unknown test type: {args.test_type}")
+                sys.exit(1)
+                
         elif args.mode == "setup":
-            setup_handler(args)
+            # Use main_env_prepare functionality for setup
+            from src.trainers.main_env_prepare import create_directory_structure, clean_outputs_directory
+            # Clean only if specifically requested
+            clean = hasattr(args, "clean") and args.clean
+            create_directory_structure(".", clean=clean)
+            logger.info("Environment setup complete")
+            
         else:
             logger.error(f"Unknown mode: {args.mode}")
             sys.exit(1)
+            
     except Exception as e:
         logger.error(f"Error running {args.mode} mode: {e}", exc_info=True)
         sys.exit(1)
@@ -1421,7 +1490,7 @@ def main():
 if __name__ == "__main__":
     # Check if any arguments are provided
     if len(sys.argv) > 1:
-        # Run the normal command-line interface
+        # Run the command-line interface
         main()
     else:
         # No arguments provided, launch the rich interactive CLI

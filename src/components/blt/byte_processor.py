@@ -841,7 +841,7 @@ class SmallByteLM(nn.Module):
     def forward(self, 
               input_bytes: Optional[torch.Tensor] = None, 
               labels: Optional[torch.Tensor] = None,
-              input_ids: Optional[torch.Tensor] = None) -> Union[torch.Tensor, Dict[str, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
+              input_ids: Optional[torch.Tensor] = None) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Predict next byte probabilities.
         
@@ -851,7 +851,7 @@ class SmallByteLM(nn.Module):
             labels: Optional target byte labels for computing loss [batch_size, seq_len]
             
         Returns:
-            If labels is provided: Dictionary with loss and logits
+            If labels is provided: Tuple of (loss, logits) where loss is a scalar and logits is [batch_size, seq_len, 256]
             If labels is not provided: logits [batch_size, seq_len, 256]
         """
         # Handle both input_bytes and input_ids for compatibility
@@ -902,11 +902,8 @@ class SmallByteLM(nn.Module):
             loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(shift_logits.view(-1, 256), shift_labels.view(-1))
             
-            # Return in Hugging Face format (dictionary with loss)
-            return {
-                "loss": loss,
-                "logits": logits
-            }
+            # Return tuple of (loss, logits) as expected by the test
+            return loss, logits
         
         return logits
     

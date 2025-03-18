@@ -96,22 +96,22 @@ class TestCLIEndToEnd(unittest.TestCase):
         cmd = [
             self.python_path,
             "main.py",
+            "--output_dir", self.output_dir,
             "train",
             "--training_type", "blt_entropy",
             "--train_data_dir", self.train_dir,
             "--eval_data_dir", self.eval_dir,
-            "--hidden_size", "64",
-            "--num_layers", "2",
-            "--num_heads", "4",
+            "--byte_lm_hidden_size", "64",
+            "--byte_lm_num_layers", "2",
+            "--byte_lm_num_heads", "4",
             "--block_size", "64",
             "--batch_size", "2",
             "--max_steps", "5",
             "--eval_steps", "5",
             "--save_steps", "5",
             "--learning_rate", "5e-5",
-            "--output_dir", self.output_dir,
             "--cache_dir", self.cache_dir,
-            "--mix_precision", "false"
+            "--mixed_precision"
         ]
         
         # Run command with a timeout of 60 seconds (this should be enough for a small test)
@@ -133,8 +133,9 @@ class TestCLIEndToEnd(unittest.TestCase):
             print(f"STDERR: {stderr}")
             
             # Check if output directory contains expected files
-            self.assertTrue(os.path.exists(os.path.join(self.output_dir, "checkpoint-5.pt")), 
-                        "Checkpoint file not created")
+            expected_checkpoint = os.path.join(self.output_dir, "checkpoints", "checkpoint-5.pt")
+            self.assertTrue(os.path.exists(expected_checkpoint), 
+                        f"Checkpoint file not created at {expected_checkpoint}")
             
         except subprocess.TimeoutExpired:
             self.fail("Command timed out")
@@ -180,8 +181,9 @@ class TestCLIEndToEnd(unittest.TestCase):
             print(f"STDERR: {stderr}")
             
             # Check if output directory contains expected files
-            self.assertTrue(os.path.exists(os.path.join(self.output_dir, "checkpoint-5.pt")), 
-                        "Checkpoint file not created")
+            expected_checkpoint = os.path.join(self.output_dir, "checkpoints", "checkpoint-5.pt")
+            self.assertTrue(os.path.exists(expected_checkpoint), 
+                        f"Checkpoint file not created at {expected_checkpoint}")
             
         except subprocess.TimeoutExpired:
             self.fail("Command timed out")

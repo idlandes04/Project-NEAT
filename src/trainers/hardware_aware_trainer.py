@@ -1,171 +1,127 @@
 """
-Hardware-aware trainer for the unified neural architecture.
+Hardware-aware trainer for Project NEAT.
 
-This module implements a trainer that is optimized for the target hardware,
-with support for mixed precision training, gradient accumulation, and
-dynamic resource allocation.
+This module provides a hardware-aware trainer that adapts to available hardware resources
+and optimizes training accordingly. It includes:
+
+1. HardwareAwareTrainer: Main trainer class that adapts to available hardware
+2. PerformanceProfiler: Utility for profiling model performance on different hardware
 """
+
 import os
+import sys
 import time
+import logging
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import psutil
-import logging
-from typing import Dict, List, Optional, Tuple, Union, Any, Callable
+from typing import Dict, List, Optional, Tuple, Union, Any
+from tqdm.auto import tqdm
 
-from ..utils.memory_optimization import GPUMemoryTracker, ResourceAllocator, GPUMemoryOptimizer, enable_mixed_precision
-from ..utils.component_resource_management import ComponentResourceManager, ResourceType
-from ..models.unified_architecture import UnifiedArchitecture, DynamicComponentController
-from ..models.unified_architecture_resource_adapter import ResourceAwareUnifiedArchitecture
+from src.utils.hardware_detection import get_hardware_detector, get_optimal_config
+from src.models.unified_architecture import UnifiedArchitecture
 
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 class HardwareAwareTrainer:
     """
-    Hardware-aware trainer for the unified neural architecture.
+    Hardware-aware trainer for Project NEAT.
     
-    This trainer is optimized for the target hardware, with support for:
-    - Mixed precision training
-    - Gradient accumulation
-    - Dynamic batch sizing
-    - CPU offloading
-    - Gradient checkpointing
-    - Dynamic component activation
+    This trainer adapts to available hardware resources and optimizes training accordingly.
+    It supports various hardware configurations and provides efficient training.
     """
     
-    def __init__(
-        self,
-        model: Union[UnifiedArchitecture, ResourceAwareUnifiedArchitecture],
-        config,
-        optimizer: Optional[torch.optim.Optimizer] = None,
-        lr_scheduler: Optional[Any] = None,
-        use_resource_aware: bool = True
-    ):
+    def __init__(self, model, config):
         """
-        Initialize the hardware-aware trainer.
+        Initialize HardwareAwareTrainer.
         
         Args:
-            model: Unified architecture model
+            model: The model to train
             config: Training configuration
-            optimizer: Optimizer (if None, will be created)
-            lr_scheduler: Learning rate scheduler (if None, will be created)
-            use_resource_aware: Whether to use resource-aware components
         """
-        # Convert to resource-aware model if requested and needed
-        if use_resource_aware and not isinstance(model, ResourceAwareUnifiedArchitecture):
-            self.model = ResourceAwareUnifiedArchitecture(config)
-            # Copy weights from the original model if needed
-            if hasattr(model, 'state_dict'):
-                # Only copy if the model has parameters
-                self.model.load_state_dict(model.state_dict())
-        else:
-            self.model = model
-        
+        self.model = model
         self.config = config
-        self.use_resource_aware = use_resource_aware
+        
+        # Get hardware detector
+        self.hardware_detector = get_hardware_detector()
+        self.features = self.hardware_detector.get_features()
+        
+        # Set device based on available hardware
+        if hasattr(config, 'device') and config.device:
+            # Use specified device
+            self.device = config.device
+        elif self.features.is_cuda_available and not getattr(config, 'force_cpu', False):
+            # Use CUDA if available
+            self.device = "cuda"
+        elif self.features.is_mps_available and not getattr(config, 'force_cpu', False):
+            # Use MPS if available (Apple Silicon)
+            self.device = "mps"
+        else:
+            # Fall back to CPU
+            self.device = "cpu"
+            
+        # Set up device
+        self.device = torch.device(self.device)
+        logger.info(f"Using device: {self.device}")
         
         # Move model to device
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         
-        # Apply memory optimizations
-        self.memory_optimizer = GPUMemoryOptimizer(config)
-        self.model = self.memory_optimizer.optimize_model(self.model)
+        # Initialize optimizer and scheduler
+        self.optimizer = None
+        self.scheduler = None
         
-        # Create optimizer if not provided
-        self.optimizer = optimizer or self._create_optimizer()
-        
-        # Create learning rate scheduler if not provided
-        self.lr_scheduler = lr_scheduler or self._create_lr_scheduler()
-        
-        # Set up mixed precision training
-        self.scaler = enable_mixed_precision() if hasattr(config, 'mixed_precision') and config.mixed_precision else None
-        
-        # Set up memory tracking
-        self.memory_tracker = GPUMemoryTracker()
-        
-        # Set up resource allocation
-        gpu_threshold = getattr(config, 'gpu_memory_threshold', 0.8)
-        cpu_threshold = getattr(config, 'cpu_memory_threshold', 0.7)
-        self.resource_allocator = ResourceAllocator(config)
-        
-        # Use resource manager if available, otherwise use component controller
-        if hasattr(self.model, 'resource_manager'):
-            self.resource_manager = self.model.resource_manager
-            self.component_controller = None
-        else:
-            self.resource_manager = None
-            self.component_controller = DynamicComponentController(model, config)
-        
-        # Training state
-        self.global_step = 0
-        self.epoch = 0
-        self.best_metric = float('inf')
-        
-        # Gradient accumulation
-        self.gradient_accumulation_steps = config.gradient_accumulation_steps
-    
-    def _create_optimizer(self) -> torch.optim.Optimizer:
-        """
-        Create optimizer for the model.
-        
-        Returns:
-            Optimizer
-        """
-        # Get optimizer parameters with weight decay separation
-        no_decay = ["bias", "LayerNorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [
-                    p for n, p in self.model.named_parameters()
-                    if not any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": self.config.weight_decay,
-            },
-            {
-                "params": [
-                    p for n, p in self.model.named_parameters()
-                    if any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": 0.0,
-            },
-        ]
-        
-        # Create AdamW optimizer
-        return optim.AdamW(
-            optimizer_grouped_parameters,
-            lr=self.config.learning_rate,
-            betas=(self.config.adam_beta1, self.config.adam_beta2),
-            eps=self.config.adam_epsilon
+        # Set up mixed precision if enabled and supported
+        self.use_mixed_precision = (
+            getattr(config, 'mixed_precision', False) and 
+            (self.features.is_cuda_available or self.features.supports_mixed_precision)
         )
-    
-    def _create_lr_scheduler(self) -> Any:
-        """
-        Create learning rate scheduler.
+        self.scaler = torch.cuda.amp.GradScaler() if self.use_mixed_precision else None
         
-        Returns:
-            Learning rate scheduler
-        """
-        # Linear warmup and decay scheduler
-        return optim.lr_scheduler.OneCycleLR(
-            self.optimizer,
-            max_lr=self.config.learning_rate,
-            total_steps=self.config.total_steps,
-            pct_start=self.config.warmup_ratio,
-            anneal_strategy="linear"
+        # Configure gradient checkpointing if enabled
+        if getattr(config, 'gradient_checkpointing', False) and hasattr(self.model, 'gradient_checkpointing'):
+            self.model.gradient_checkpointing = True
+        
+        # Set up memory pressure monitoring
+        self.memory_pressure_threshold = getattr(config, 'memory_pressure_threshold', 0.7)
+        
+        # Initialize optimization
+        self._setup_optimization()
+        
+    def _setup_optimization(self):
+        """Set up optimization components."""
+        # Create optimizer
+        self.optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=getattr(self.config, 'learning_rate', 5e-5),
+            weight_decay=getattr(self.config, 'weight_decay', 0.01),
+            betas=(
+                getattr(self.config, 'adam_beta1', 0.9),
+                getattr(self.config, 'adam_beta2', 0.999)
+            ),
+            eps=getattr(self.config, 'adam_epsilon', 1e-8)
         )
-    
-    def train(
-        self,
-        train_dataloader: torch.utils.data.DataLoader,
-        eval_dataloader: Optional[torch.utils.data.DataLoader] = None,
-        eval_steps: Optional[int] = None,
-        save_steps: Optional[int] = None,
-        save_dir: Optional[str] = None,
-        max_steps: Optional[int] = None,
-        max_epochs: Optional[int] = None,
-        callbacks: Optional[List[Callable]] = None,
-    ):
+        
+        # Create scheduler
+        total_steps = getattr(self.config, 'max_steps', 10000)
+        warmup_steps = getattr(self.config, 'warmup_steps', int(total_steps * 0.1))
+        
+        # Use linear warmup followed by cosine decay
+        def lr_lambda(step):
+            if step < warmup_steps:
+                return float(step) / float(max(1, warmup_steps))
+            progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+            return 0.5 * (1.0 + torch.cos(torch.tensor(progress * 3.14159)).item())
+        
+        self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
+        
+    def train(self, train_dataloader, eval_dataloader=None, eval_steps=100, save_steps=100, save_dir=None, max_steps=10000):
         """
         Train the model.
         
@@ -173,176 +129,154 @@ class HardwareAwareTrainer:
             train_dataloader: Training dataloader
             eval_dataloader: Evaluation dataloader
             eval_steps: Number of steps between evaluations
-            save_steps: Number of steps between model saves
-            save_dir: Directory to save models
+            save_steps: Number of steps between saving checkpoints
+            save_dir: Directory to save checkpoints
             max_steps: Maximum number of training steps
-            max_epochs: Maximum number of training epochs
-            callbacks: List of callback functions
+            
+        Returns:
+            Training metrics
         """
-        # Set up training
+        # Set model to training mode
         self.model.train()
         
-        # Create save directory if needed
-        if save_dir and not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+        # Set up save directory
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+        
+        # Get gradient accumulation steps
+        gradient_accumulation_steps = getattr(self.config, 'gradient_accumulation_steps', 1)
+        
+        # Initialize training state
+        global_step = 0
+        tr_loss = 0.0
+        best_eval_loss = float('inf')
+        
+        # Setup progress bar
+        progress_bar = tqdm(total=max_steps, desc="Training")
         
         # Training loop
-        step = 0
-        epoch = 0
-        
-        while True:
-            # Check if we've reached max steps or epochs
-            if max_steps and step >= max_steps:
-                break
-            if max_epochs and epoch >= max_epochs:
-                break
-            
-            # Epoch loop
-            for batch_idx, batch in enumerate(train_dataloader):
-                # Move batch to device
-                batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-                
-                # Optimize component activation based on input complexity
-                if hasattr(self.config, 'dynamic_component_activation') and self.config.dynamic_component_activation:
-                    if self.component_controller:
-                        self.component_controller.optimize_for_input(batch["input_ids"])
-                    elif self.use_resource_aware and hasattr(self.model, 'optimize_for_hardware'):
-                        # Use resource-aware optimization
-                        memory_stats = self.memory_tracker.end_tracking()
-                        available_memory = memory_stats.get("total_memory", 0) - memory_stats.get("used_memory", 0)
-                        self.model.optimize_for_hardware(available_memory)
-                
-                # Training step
-                loss, metrics = self.training_step(batch, batch_idx)
-                
-                # Update global step for gradient accumulation
-                if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
-                    step += 1
-                    self.global_step += 1
-                
-                # Evaluation
-                if eval_dataloader and eval_steps and step % eval_steps == 0:
-                    eval_metrics = self.evaluate(eval_dataloader)
-                    
-                    # Save best model
-                    if save_dir and eval_metrics["eval_loss"] < self.best_metric:
-                        self.best_metric = eval_metrics["eval_loss"]
-                        self.save_model(os.path.join(save_dir, "best_model"))
-                    
-                    # Back to training mode
-                    self.model.train()
-                
-                # Save checkpoint
-                if save_dir and save_steps and step % save_steps == 0:
-                    self.save_model(os.path.join(save_dir, f"checkpoint-{step}"))
-                
-                # Run callbacks
-                if callbacks:
-                    for callback in callbacks:
-                        callback(self, step, metrics)
-                
+        while global_step < max_steps:
+            for batch in train_dataloader:
                 # Check if we've reached max steps
-                if max_steps and step >= max_steps:
+                if global_step >= max_steps:
                     break
-            
-            # Increment epoch
-            epoch += 1
-            self.epoch += 1
+                
+                # Process batch to device
+                batch = {k: v.to(self.device) if hasattr(v, 'to') else v for k, v in batch.items()}
+                
+                # Forward pass
+                with torch.cuda.amp.autocast() if self.use_mixed_precision else nullcontext():
+                    outputs = self.model(**batch)
+                    
+                    # Get loss
+                    if isinstance(outputs, dict) and "loss" in outputs:
+                        loss = outputs["loss"]
+                    elif isinstance(outputs, tuple) and len(outputs) > 0 and isinstance(outputs[0], torch.Tensor):
+                        loss = outputs[0]  # Assume the first element is the loss
+                    else:
+                        raise ValueError("Model output does not contain a recognizable loss")
+                    
+                    # Scale loss for gradient accumulation
+                    if gradient_accumulation_steps > 1:
+                        loss = loss / gradient_accumulation_steps
+                
+                # Backward pass
+                if self.use_mixed_precision:
+                    self.scaler.scale(loss).backward()
+                else:
+                    loss.backward()
+                
+                # Update accumulators
+                tr_loss += loss.item()
+                
+                # Update parameters
+                if (global_step + 1) % gradient_accumulation_steps == 0:
+                    # Clip gradient norm
+                    if hasattr(self.config, 'max_grad_norm'):
+                        if self.use_mixed_precision:
+                            self.scaler.unscale_(self.optimizer)
+                        
+                        torch.nn.utils.clip_grad_norm_(
+                            self.model.parameters(), 
+                            self.config.max_grad_norm
+                        )
+                    
+                    # Update parameters
+                    if self.use_mixed_precision:
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                    else:
+                        self.optimizer.step()
+                    
+                    # Update learning rate
+                    self.scheduler.step()
+                    
+                    # Zero gradients
+                    self.optimizer.zero_grad()
+                    
+                    # Increment step
+                    global_step += 1
+                    
+                    # Update progress bar
+                    progress_bar.update(1)
+                    
+                    # Check memory pressure
+                    if self.device.type == 'cuda':
+                        memory_allocated = torch.cuda.memory_allocated(self.device)
+                        memory_reserved = torch.cuda.memory_reserved(self.device)
+                        memory_pressure = memory_allocated / memory_reserved if memory_reserved > 0 else 0
+                        
+                        # Log if high memory pressure
+                        if memory_pressure > self.memory_pressure_threshold:
+                            logger.warning(f"High memory pressure: {memory_pressure:.2f}")
+                            
+                            # Try to reduce memory pressure if possible
+                            if hasattr(self.model, 'adapt_to_memory_pressure'):
+                                self.model.adapt_to_memory_pressure(memory_pressure)
+                    
+                    # Evaluate if needed
+                    if eval_dataloader is not None and global_step % eval_steps == 0:
+                        metrics = self.evaluate(eval_dataloader)
+                        
+                        # Extract evaluation loss
+                        eval_loss = metrics.get("eval_loss", float('inf'))
+                        
+                        # Log metrics
+                        logger.info(f"Step {global_step}: loss={tr_loss/global_step:.4f}, eval_loss={eval_loss:.4f}")
+                        
+                        # Save best model
+                        if eval_loss < best_eval_loss:
+                            best_eval_loss = eval_loss
+                            
+                            if save_dir:
+                                self.save_model(os.path.join(save_dir, "best_model.pt"))
+                                logger.info(f"Saved best model with eval_loss={eval_loss:.4f}")
+                        
+                        # Set model back to training mode
+                        self.model.train()
+                    
+                    # Save checkpoint if needed
+                    if save_dir and global_step % save_steps == 0:
+                        self.save_model(os.path.join(save_dir, f"checkpoint-{global_step}.pt"))
+                        self.save_model(os.path.join(save_dir, "checkpoint-latest.pt"))
+                        logger.info(f"Saved checkpoint at step {global_step}")
+        
+        # Close progress bar
+        progress_bar.close()
         
         # Save final model
         if save_dir:
-            self.save_model(os.path.join(save_dir, "final_model"))
-    
-    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> Tuple[float, Dict[str, float]]:
-        """
-        Perform a single training step.
+            self.save_model(os.path.join(save_dir, "final_model.pt"))
+            logger.info(f"Saved final model after {global_step} steps")
         
-        Args:
-            batch: Batch of data
-            batch_idx: Batch index
-            
-        Returns:
-            Loss value and metrics dictionary
-        """
-        # Start memory tracking
-        self.memory_tracker.start_tracking()
-        
-        # Request resources for this step if using resource-aware model
-        train_resources = {}
-        if self.use_resource_aware and hasattr(self.model, 'transformer_resources'):
-            autocast_context = None
-            
-            # Request additional resources for training
-            if hasattr(self.model, 'transformer_resources'):
-                train_resources = self.model.transformer_resources.request_resources(
-                    operations=["training_step"]
-                )
-                autocast_context = train_resources.get("autocast")
-        
-        # Forward pass with mixed precision
-        mixed_precision = hasattr(self.config, 'mixed_precision') and self.config.mixed_precision
-        max_grad_norm = getattr(self.config, 'max_grad_norm', 1.0)
-        
-        with torch.cuda.amp.autocast(enabled=mixed_precision):
-            outputs = self.model(**batch)
-            loss = outputs["loss"] if isinstance(outputs, dict) and "loss" in outputs else outputs[0]
-            
-            # Scale loss for gradient accumulation
-            loss = loss / self.gradient_accumulation_steps
-        
-        # Backward pass with gradient scaling
-        if self.scaler:
-            self.scaler.scale(loss).backward()
-            
-            # Optimizer step with gradient accumulation
-            if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                self.optimizer.zero_grad()
-                
-                # Update learning rate
-                if self.lr_scheduler:
-                    self.lr_scheduler.step()
-        else:
-            loss.backward()
-            
-            # Optimizer step with gradient accumulation
-            if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-                
-                # Update learning rate
-                if self.lr_scheduler:
-                    self.lr_scheduler.step()
-        
-        # End memory tracking
-        memory_stats = self.memory_tracker.end_tracking()
-        
-        # Release resources if using resource-aware model
-        if train_resources:
-            if hasattr(self.model, 'transformer_resources'):
-                self.model.transformer_resources.release_resources(train_resources)
-        
-        # Get memory pressure if using resource-aware model
-        memory_pressure = 0.0
-        if self.resource_manager:
-            memory_pressure = self.resource_manager.get_memory_pressure()
-        
-        # Collect metrics
-        metrics = {
-            "loss": loss.item() * self.gradient_accumulation_steps,
-            "learning_rate": self.optimizer.param_groups[0]["lr"],
-            "memory_used": memory_stats["used_memory"],
-            "memory_peak": memory_stats["peak_memory"],
-            "memory_pressure": memory_pressure
+        # Return training metrics
+        return {
+            "train_loss": tr_loss / global_step,
+            "global_step": global_step,
+            "best_eval_loss": best_eval_loss
         }
-        
-        return loss.item() * self.gradient_accumulation_steps, metrics
     
-    def evaluate(self, eval_dataloader: torch.utils.data.DataLoader) -> Dict[str, float]:
+    def evaluate(self, eval_dataloader):
         """
         Evaluate the model.
         
@@ -355,323 +289,244 @@ class HardwareAwareTrainer:
         # Set model to evaluation mode
         self.model.eval()
         
+        # Initialize metrics
+        eval_loss = 0.0
+        eval_steps = 0
+        
+        # Get memory usage before evaluation
+        memory_before = torch.cuda.memory_allocated(self.device) if self.device.type == 'cuda' else 0
+        
         # Evaluation loop
-        total_loss = 0.0
-        num_batches = 0
+        for batch in tqdm(eval_dataloader, desc="Evaluating"):
+            # Process batch to device
+            batch = {k: v.to(self.device) if hasattr(v, 'to') else v for k, v in batch.items()}
+            
+            # Forward pass
+            with torch.no_grad():
+                with torch.cuda.amp.autocast() if self.use_mixed_precision else nullcontext():
+                    outputs = self.model(**batch)
+                    
+                    # Get loss
+                    if isinstance(outputs, dict) and "loss" in outputs:
+                        loss = outputs["loss"]
+                    elif isinstance(outputs, tuple) and len(outputs) > 0 and isinstance(outputs[0], torch.Tensor):
+                        loss = outputs[0]  # Assume the first element is the loss
+                    else:
+                        raise ValueError("Model output does not contain a recognizable loss")
+            
+            # Update accumulators
+            eval_loss += loss.item()
+            eval_steps += 1
         
-        # Start memory tracking
-        self.memory_tracker.start_tracking()
+        # Get memory usage after evaluation
+        memory_after = torch.cuda.memory_allocated(self.device) if self.device.type == 'cuda' else 0
+        memory_peak = torch.cuda.max_memory_allocated(self.device) if self.device.type == 'cuda' else 0
         
-        # Request evaluation resources if using resource-aware model
-        eval_resources = {}
-        if self.use_resource_aware and hasattr(self.model, 'transformer_resources'):
-            eval_resources = self.model.transformer_resources.request_resources(
-                operations=["evaluation_step"]
-            )
-        
-        with torch.no_grad():
-            for batch in eval_dataloader:
-                # Move batch to device
-                batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-                
-                # Forward pass
-                outputs = self.model(**batch)
-                loss = outputs["loss"] if isinstance(outputs, dict) and "loss" in outputs else outputs[0]
-                
-                # Accumulate loss
-                total_loss += loss.item()
-                num_batches += 1
-        
-        # End memory tracking
-        memory_stats = self.memory_tracker.end_tracking()
-        
-        # Release evaluation resources if using resource-aware model
-        if eval_resources and hasattr(self.model, 'transformer_resources'):
-            self.model.transformer_resources.release_resources(eval_resources)
-        
-        # Get memory pressure if using resource-aware model
-        memory_pressure = 0.0
-        if self.resource_manager:
-            memory_pressure = self.resource_manager.get_memory_pressure()
+        # Reset peak stats
+        if self.device.type == 'cuda':
+            torch.cuda.reset_peak_memory_stats(self.device)
         
         # Calculate metrics
         metrics = {
-            "eval_loss": total_loss / num_batches,
-            "eval_memory_used": memory_stats["used_memory"],
-            "eval_memory_peak": memory_stats["peak_memory"],
-            "eval_memory_pressure": memory_pressure
+            "eval_loss": eval_loss / max(1, eval_steps),
+            "eval_memory_used": memory_after - memory_before,
+            "eval_memory_peak": memory_peak
         }
+        
+        # Add device-specific metrics
+        if self.device.type == 'cuda':
+            metrics["eval_memory_allocated"] = torch.cuda.memory_allocated(self.device)
+            metrics["eval_memory_reserved"] = torch.cuda.memory_reserved(self.device)
+            metrics["eval_memory_pressure"] = (metrics["eval_memory_allocated"] / 
+                                            metrics["eval_memory_reserved"]
+                                            if metrics["eval_memory_reserved"] > 0 else 0)
         
         return metrics
     
-    def save_model(self, save_path: str):
+    def save_model(self, path):
         """
         Save model checkpoint.
         
         Args:
-            save_path: Path to save model
+            path: Path to save checkpoint
         """
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        # Create checkpoint
+        checkpoint = {
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict() if self.optimizer else None,
+            "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
+            "config": self.config
+        }
         
-        # Save model
-        torch.save(
-            {
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "lr_scheduler_state_dict": self.lr_scheduler.state_dict() if self.lr_scheduler else None,
-                "config": self.config,
-                "global_step": self.global_step,
-                "epoch": self.epoch,
-                "best_metric": self.best_metric,
-            },
-            save_path
-        )
+        # Save checkpoint
+        torch.save(checkpoint, path)
     
-    def load_model(self, load_path: str, load_optimizer: bool = True, load_scheduler: bool = True):
+    def load_model(self, path, load_optimizer=True):
         """
         Load model checkpoint.
         
         Args:
-            load_path: Path to load model from
+            path: Path to load checkpoint from
             load_optimizer: Whether to load optimizer state
-            load_scheduler: Whether to load scheduler state
         """
         # Load checkpoint
-        checkpoint = torch.load(load_path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device)
         
-        # Load model
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+        # Load model state
+        if "model_state_dict" in checkpoint:
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+        elif isinstance(checkpoint, dict) and not any(k.startswith(("model_state_dict", "optimizer_state_dict")) for k in checkpoint.keys()):
+            # Assume the checkpoint is a direct model state dict
+            self.model.load_state_dict(checkpoint)
+        else:
+            raise ValueError(f"Invalid checkpoint format: {path}")
         
-        # Load optimizer
-        if load_optimizer and "optimizer_state_dict" in checkpoint:
+        # Load optimizer state if requested
+        if load_optimizer and self.optimizer and "optimizer_state_dict" in checkpoint and checkpoint["optimizer_state_dict"]:
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         
-        # Load scheduler
-        if load_scheduler and "lr_scheduler_state_dict" in checkpoint and checkpoint["lr_scheduler_state_dict"]:
-            self.lr_scheduler.load_state_dict(checkpoint["lr_scheduler_state_dict"])
-        
-        # Load training state
-        self.global_step = checkpoint.get("global_step", 0)
-        self.epoch = checkpoint.get("epoch", 0)
-        self.best_metric = checkpoint.get("best_metric", float('inf'))
-    
-    def optimize_batch_size(self, sample_batch: Dict[str, torch.Tensor], min_batch_size: int = 1, max_batch_size: int = 32) -> int:
-        """
-        Optimize batch size based on available resources.
-        
-        Args:
-            sample_batch: Sample batch with batch_size=1
-            min_batch_size: Minimum batch size
-            max_batch_size: Maximum batch size
-            
-        Returns:
-            Optimal batch size
-        """
-        # If using resource-aware model, consider memory pressure
-        if self.resource_manager:
-            memory_pressure = self.resource_manager.get_memory_pressure()
-            
-            # If memory pressure is high, reduce max batch size
-            if memory_pressure > 0.7:
-                adjusted_max = int(max_batch_size * (1.0 - memory_pressure))
-                adjusted_max = max(min_batch_size, adjusted_max)
-                
-                # Use resource allocator with adjusted max
-                return self.resource_allocator.allocate_batch_size(
-                    self.model, sample_batch, min_batch_size, adjusted_max
-                )
-        
-        # Otherwise use standard resource allocator
-        return self.resource_allocator.allocate_batch_size(
-            self.model, sample_batch, min_batch_size, max_batch_size
-        )
+        # Load scheduler state if requested
+        if load_optimizer and self.scheduler and "scheduler_state_dict" in checkpoint and checkpoint["scheduler_state_dict"]:
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
-
-class ParallelDataProcessor:
-    """
-    Parallel data processor for efficient data preprocessing.
-    """
-    
-    def __init__(self, num_workers: Optional[int] = None):
-        """
-        Initialize the parallel data processor.
-        
-        Args:
-            num_workers: Number of worker processes (if None, use all CPU cores)
-        """
-        import multiprocessing
-        self.num_workers = num_workers or multiprocessing.cpu_count()
-    
-    def process_dataset(self, dataset: List[Any], processing_fn: Callable) -> List[Any]:
-        """
-        Process dataset in parallel.
-        
-        Args:
-            dataset: Dataset to process
-            processing_fn: Processing function
-            
-        Returns:
-            Processed dataset
-        """
-        import multiprocessing
-        
-        # Split dataset into chunks
-        chunk_size = max(1, len(dataset) // self.num_workers)
-        chunks = [dataset[i:i + chunk_size] for i in range(0, len(dataset), chunk_size)]
-        
-        # Process chunks in parallel
-        with multiprocessing.Pool(self.num_workers) as pool:
-            processed_chunks = pool.map(processing_fn, chunks)
-        
-        # Combine processed chunks
-        return [item for chunk in processed_chunks for item in chunk]
-
+class nullcontext:
+    """A context manager that does nothing."""
+    def __enter__(self):
+        return None
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return False
 
 class PerformanceProfiler:
     """
-    Performance profiler for model components.
+    Performance profiler for Project NEAT.
+    
+    This class profiles model performance on different hardware configurations.
     """
     
-    def __init__(self, model: UnifiedArchitecture):
+    def __init__(self, model):
         """
-        Initialize the performance profiler.
+        Initialize PerformanceProfiler.
         
         Args:
-            model: Unified architecture model
+            model: The model to profile
         """
         self.model = model
-        self.component_metrics = {}
+        
+        # Get hardware detector
+        self.hardware_detector = get_hardware_detector()
+        self.features = self.hardware_detector.get_features()
+        
+        # Set device based on available hardware
+        if self.features.is_cuda_available:
+            self.device = torch.device("cuda")
+        elif self.features.is_mps_available:
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
+        
+        # Move model to device
+        self.model.to(self.device)
     
-    def profile_component(self, component_name: str, input_batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+    def profile_component(self, component_name, sample_batch, num_runs=10):
         """
         Profile a specific component.
         
         Args:
-            component_name: Component name
-            input_batch: Input batch
+            component_name: Name of the component to profile
+            sample_batch: Sample batch for profiling
+            num_runs: Number of runs for profiling
             
         Returns:
-            Component metrics
+            Profiling metrics
         """
-        # Get active components
-        active_components = self.model.get_active_components()
+        # Get component
+        if not hasattr(self.model, component_name):
+            logger.warning(f"Component {component_name} not found in model")
+            return {"error": f"Component {component_name} not found"}
         
-        # Deactivate all components
-        self.model.set_active_components({c: False for c in active_components})
+        component = getattr(self.model, component_name)
         
-        # Activate only the target component
-        self.model.set_active_components({component_name: True})
+        # Move batch to device
+        sample_batch = {k: v.to(self.device) if hasattr(v, 'to') else v for k, v in sample_batch.items()}
         
         # Warm-up
         with torch.no_grad():
-            _ = self.model(**input_batch)
+            for _ in range(3):
+                try:
+                    component(**sample_batch)
+                except Exception as e:
+                    logger.error(f"Error during warm-up: {e}")
+                    return {"error": str(e)}
+        
+        # Measure time
+        start_time = time.time()
+        
+        # Measure memory before
+        memory_before = torch.cuda.memory_allocated(self.device) if self.device.type == 'cuda' else 0
         
         # Profile
-        # Determine the device type and synchronize as appropriate
-        device = next(self.model.parameters()).device
-        device_type = device.type
-        
-        logger = logging.getLogger('ProfileMemory')
-        process = psutil.Process()
-        
-        # Clear memory caches before measurement
-        if device_type == 'cuda' and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-            start_time = time.time()
-            start_memory_gpu = torch.cuda.memory_allocated()
-            start_memory_process = process.memory_info().rss
-            logger.info(f"Start GPU memory: {start_memory_gpu}, Process memory: {start_memory_process}")
-        elif device_type == 'mps':
-            # Metal doesn't provide direct memory allocation tracking through PyTorch
-            # Force garbage collection to make measurements more accurate
-            import gc
-            gc.collect()
-            
-            # Use process memory as a proxy
-            start_time = time.time()
-            start_memory_process = process.memory_info().rss
-            logger.info(f"Start process memory: {start_memory_process}")
-            if hasattr(torch.mps, 'synchronize'):
-                torch.mps.synchronize()
-        else:
-            start_time = time.time()
-            start_memory_process = process.memory_info().rss
-            logger.info(f"Start CPU memory: {start_memory_process}")
-        
-        # Force a small allocation to be sure we're detecting memory usage
-        dummy_tensor = torch.ones((1000, 1000), device=device)
-        
-        # Run the component
         with torch.no_grad():
-            outputs = self.model(**input_batch)
+            for _ in range(num_runs):
+                component(**sample_batch)
         
-        # Ensure the dummy tensor is not garbage collected
-        dummy_tensor_sum = dummy_tensor.sum().item()
+        # Measure time
+        end_time = time.time()
         
-        # Measure after execution
-        if device_type == 'cuda' and torch.cuda.is_available():
-            torch.cuda.synchronize()
-            end_time = time.time()
-            end_memory_gpu = torch.cuda.memory_allocated()
-            end_memory_process = process.memory_info().rss
-            logger.info(f"End GPU memory: {end_memory_gpu}, Process memory: {end_memory_process}")
-            memory_diff = end_memory_gpu - start_memory_gpu
-        elif device_type == 'mps':
-            if hasattr(torch.mps, 'synchronize'):
-                torch.mps.synchronize()
-            end_time = time.time()
-            end_memory_process = process.memory_info().rss
-            logger.info(f"End process memory: {end_memory_process}")
-            memory_diff = end_memory_process - start_memory_process
-        else:
-            end_time = time.time()
-            end_memory_process = process.memory_info().rss
-            logger.info(f"End CPU memory: {end_memory_process}")
-            memory_diff = end_memory_process - start_memory_process
-        
-        logger.info(f"Memory difference: {memory_diff} bytes")
-        
-        # Clean up the dummy tensor
-        del dummy_tensor
+        # Measure memory after
+        memory_after = torch.cuda.memory_allocated(self.device) if self.device.type == 'cuda' else 0
         
         # Calculate metrics
-        metrics = {
-            "time": end_time - start_time,
-            "memory": memory_diff,
+        time_per_run = (end_time - start_time) / num_runs
+        memory_used = memory_after - memory_before
+        
+        # Return metrics
+        return {
+            "time_per_run": time_per_run,
+            "memory_used": memory_used,
+            "runs": num_runs
         }
-        
-        # Restore active components
-        self.model.set_active_components(active_components)
-        
-        # Store metrics
-        self.component_metrics[component_name] = metrics
-        
-        return metrics
     
-    def profile_all_components(self, input_batch: Dict[str, torch.Tensor]) -> Dict[str, Dict[str, float]]:
+    def profile_all_components(self, sample_batch, num_runs=10):
         """
         Profile all components.
         
         Args:
-            input_batch: Input batch
+            sample_batch: Sample batch for profiling
+            num_runs: Number of runs for profiling
             
         Returns:
-            Metrics for all components
+            Profiling metrics for all components
         """
-        # Get all component names
-        component_names = list(self.model.get_active_components().keys())
+        # Get all components
+        components = []
+        
+        # Check if model is UnifiedArchitecture
+        if isinstance(self.model, UnifiedArchitecture):
+            # Get active components
+            active_components = self.model.get_active_components()
+            
+            # Add active components
+            for component_name, active in active_components.items():
+                if active and hasattr(self.model, component_name):
+                    components.append(component_name)
+        else:
+            # Add all attributes that are modules
+            for name, attr in self.model.__dict__.items():
+                if isinstance(attr, nn.Module):
+                    components.append(name)
         
         # Profile each component
-        for component_name in component_names:
-            self.profile_component(component_name, input_batch)
+        metrics = {}
+        for component_name in components:
+            logger.info(f"Profiling component: {component_name}")
+            component_metrics = self.profile_component(component_name, sample_batch, num_runs)
+            metrics[component_name] = component_metrics
         
-        return self.component_metrics
+        return metrics
     
-    def get_optimal_configuration(self, available_memory: int) -> Dict[str, bool]:
+    def get_optimal_configuration(self, available_memory):
         """
-        Get optimal component configuration based on profiling results.
+        Get optimal component configuration based on available memory.
         
         Args:
             available_memory: Available memory in bytes
@@ -679,31 +534,42 @@ class PerformanceProfiler:
         Returns:
             Optimal component configuration
         """
-        # Calculate value-to-cost ratio for each component
-        value_cost_ratios = {}
-        for component, metrics in self.component_metrics.items():
-            if metrics["memory"] > 0:
-                # Value is inverse of time (faster is better)
-                value = 1.0 / max(metrics["time"], 1e-6)
-                cost = metrics["memory"]
-                value_cost_ratios[component] = value / cost
+        # Initialize configuration
+        config = {}
         
-        # Sort components by value-to-cost ratio
-        sorted_components = sorted(
-            value_cost_ratios.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
-        
-        # Activate components in order of value-to-cost ratio until memory is exhausted
-        active_components = {c: False for c in self.component_metrics}
-        remaining_memory = available_memory
-        
-        for component, _ in sorted_components:
-            component_memory = self.component_metrics[component]["memory"]
+        # Check if model is UnifiedArchitecture
+        if isinstance(self.model, UnifiedArchitecture):
+            # Get active components
+            active_components = self.model.get_active_components()
             
-            if component_memory <= remaining_memory:
-                active_components[component] = True
-                remaining_memory -= component_memory
+            # Get component memory usage
+            component_memory = {}
+            for component_name, active in active_components.items():
+                if active and hasattr(self.model, component_name):
+                    # Create a minimal batch
+                    minimal_batch = {"input_ids": torch.ones((1, 10), dtype=torch.long).to(self.device)}
+                    
+                    # Profile component
+                    metrics = self.profile_component(component_name, minimal_batch, num_runs=5)
+                    
+                    # Store memory usage
+                    component_memory[component_name] = metrics.get("memory_used", 0)
+            
+            # Sort components by memory usage (highest first)
+            sorted_components = sorted(component_memory.items(), key=lambda x: x[1], reverse=True)
+            
+            # Allocate memory to components
+            memory_allocated = 0
+            for component_name, memory_usage in sorted_components:
+                if memory_allocated + memory_usage <= available_memory:
+                    # Enable component
+                    config[component_name] = True
+                    memory_allocated += memory_usage
+                else:
+                    # Disable component
+                    config[component_name] = False
+        else:
+            # For non-UnifiedArchitecture, enable everything
+            config["use_all_components"] = True
         
-        return active_components
+        return config

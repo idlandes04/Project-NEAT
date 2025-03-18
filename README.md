@@ -597,21 +597,8 @@ project-neat/
 │   └── metal_docs.md                 # Apple Metal framework integration
 ├── scripts/                          # Helper scripts
 │   ├── blt_interactive.py            # Interactive BLT model testing
-│   ├── create_mock_models.py         # Mock model creation for testing
-│   ├── download_pile_subset.py       # Download Pile subset data
-│   ├── download_training_data.py     # Download training data for components
-│   ├── example_commands.md           # Examples of CLI usage
-│   ├── generate_synthetic_data.py    # Generate synthetic test data
-│   ├── monitor_blt_training.py       # Monitor BLT training progress
-│   ├── prepare_training_dataset.py   # Prepare NEAT training dataset
-│   ├── train_blt_with_pile.sh        # Train BLT with Pile subset
-│   ├── train_byte_lm.py              # BLT training implementation
-│   ├── train_neat_model.sh           # Generic NEAT training script
-│   ├── train_neat_model_mac.sh       # macOS-specific training script
-│   └── train_neat_model_windows.bat  # Windows-specific training script
 └── main.py                           # Main script
 ```
-
 
 ## Contributing
 

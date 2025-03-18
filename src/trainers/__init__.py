@@ -1,19 +1,19 @@
 """
 Trainers module for Project NEAT.
 
-This module provides training functionality for various components of the NEAT architecture:
-- BLT entropy estimator training
-- MVoT visual codebook training
-- Full NEAT model training
-- Training and monitoring utilities
-"""
+This module provides training functionality for various components of the NEAT architecture
+through a streamlined, consolidated interface:
 
-from .blt_trainer import (
-    ByteDataset, 
-    EntropyEstimatorTrainer,
-    create_blt_model,
-    train_blt_model
-)
+Main entry points:
+- main_env_prepare: Environment preparation for training and evaluation
+- main_trainer: Unified training for all components (BLT, MVoT, full model, baseline)
+- main_eval: Unified evaluation for all components
+
+Supporting components:
+- Data preparation utilities
+- Training monitoring
+- Interactive testing
+"""
 
 from .data_preparation import (
     download_pile_subset,
@@ -33,10 +33,30 @@ from .blt_interactive import (
     test_blt_model
 )
 
-from .hardware_aware_trainer import (
-    HardwareAwareTrainer,
-    PerformanceProfiler,
-    ParallelDataProcessor
+# Import from main consolidated modules
+from .main_env_prepare import (
+    create_directory_structure,
+    clean_outputs_directory
+)
+
+from .main_trainer import (
+    train_blt_entropy,
+    train_mvot_codebook,
+    train_full_model,
+    train_baseline_model,
+    # BLT components integrated into main_trainer
+    ByteDataset,
+    EntropyEstimatorTrainer,
+    create_blt_model,
+    train_blt_model
+)
+
+from .main_eval import (
+    evaluate_blt_entropy,
+    evaluate_mvot_codebook,
+    evaluate_full_model,
+    evaluate_baseline_model,
+    run_component_ablation
 )
 
 __all__ = [
@@ -61,8 +81,16 @@ __all__ = [
     'interactive_shell',
     'test_blt_model',
     
-    # Hardware-aware training
-    'HardwareAwareTrainer',
-    'PerformanceProfiler',
-    'ParallelDataProcessor'
+    # Main consolidated modules
+    'create_directory_structure',
+    'clean_outputs_directory',
+    'train_blt_entropy',
+    'train_mvot_codebook',
+    'train_full_model',
+    'train_baseline_model',
+    'evaluate_blt_entropy',
+    'evaluate_mvot_codebook',
+    'evaluate_full_model',
+    'evaluate_baseline_model',
+    'run_component_ablation'
 ]
