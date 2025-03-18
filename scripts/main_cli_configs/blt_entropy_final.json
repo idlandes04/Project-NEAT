@@ -20,7 +20,7 @@
     "output_dir": "./outputs/byte_lm_final",
     "cache_dir": "./data/cache/byte_lm",
     "mixed_precision": true,
-    "num_workers": 8,
-    "log_steps": 50,
+    "num_workers": 16,
+    "log_steps": 20,
     "entropy_threshold": 0.5
 }
