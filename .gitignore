@@ -126,6 +126,13 @@ dmypy.json
 # Log files
 *.log
 
+# Ignore dataset files other than .py, .json, .jsonl, or .config
+data/**
+!data/**/*.py
+!data/**/*.json
+!data/**/*.jsonl
+!data/**/*.config
+
 # Ignore data files
 #data/
 
