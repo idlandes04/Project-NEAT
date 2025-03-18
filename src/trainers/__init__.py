@@ -15,13 +15,6 @@ Supporting components:
 - Interactive testing
 """
 
-from .blt_trainer import (
-    ByteDataset, 
-    EntropyEstimatorTrainer,
-    create_blt_model,
-    train_blt_model
-)
-
 from .data_preparation import (
     download_pile_subset,
     prepare_data,
@@ -50,7 +43,12 @@ from .main_trainer import (
     train_blt_entropy,
     train_mvot_codebook,
     train_full_model,
-    train_baseline_model
+    train_baseline_model,
+    # BLT components integrated into main_trainer
+    ByteDataset,
+    EntropyEstimatorTrainer,
+    create_blt_model,
+    train_blt_model
 )
 
 from .main_eval import (

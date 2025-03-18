@@ -524,7 +524,7 @@ def profile(args, config):
 def train_byte_lm_mode(args):
     """Run byte-level language model training."""
     from src.utils.config import ByteLMConfig
-    from src.trainers.blt_trainer import train_blt_model
+    from src.trainers.main_trainer import train_blt_model
     
     # Handle train_files and eval_files if they are JSON strings
     train_files = None
