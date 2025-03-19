@@ -1780,27 +1780,15 @@ class EntropyEstimatorTrainer:
         # Configure memory limits for Apple Silicon MPS
         if not force_cpu and torch.backends.mps.is_available():
             # Check if MPS watermark is already set in environment
-            watermark_ratio = os.environ.get("PYTORCH_MPS_HIGH_WATERMARK_RATIO")
-            if watermark_ratio is None:
-                # Convert memory_reserve_pct to watermark ratio (0-1 scale)
-                watermark_ratio = (100 - memory_reserve_pct) / 100
-                # Set the environment variable
-                os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = str(watermark_ratio)
-                logger.info(f"Set PYTORCH_MPS_HIGH_WATERMARK_RATIO to {watermark_ratio} (from memory_reserve_pct={memory_reserve_pct})")
-            else:
-                logger.info(f"Using existing PYTORCH_MPS_HIGH_WATERMARK_RATIO={watermark_ratio}")
-            if memory_reserve_pct > 40:
-                logger.info(f"Memory reserve requested: {memory_reserve_pct}% - this is high for MPS, using CPU mode instead")
+            try:
+                # Always use a safe fixed value for MPS on Apple Silicon
+                # Using 0.8 (80% of memory) is generally safe for M1/M2/M3 devices
+                os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.8"
+                logger.info(f"Using MPS with safe memory settings (PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.8)")
+                self.device = torch.device('mps')
+            except Exception as e:
+                logger.warning(f"Failed to setup MPS: {e}. Falling back to CPU.")
                 self.device = torch.device('cpu')
-            else:
-                try:
-                    # Set a safe fixed value (0.6) that works well in practice
-                    os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.6"
-                    logger.info(f"Using MPS with safe memory settings (PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.6)")
-                    self.device = torch.device('mps')
-                except Exception as e:
-                    logger.warning(f"Failed to setup MPS: {e}. Falling back to CPU.")
-                    self.device = torch.device('cpu')
         # Configure memory limits for NVIDIA GPUs
         elif not force_cpu and torch.cuda.is_available():
             # Set CUDA memory limits
