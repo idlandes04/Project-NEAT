@@ -13,7 +13,16 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.components.blt.byte_processor import SmallByteLMConfig, SmallByteLM
 from src.components.blt.entropy_estimator_trainer import ByteDataset, EntropyEstimatorTrainer
 from src.utils.config import ByteLMConfig
-from src.trainers.blt_trainer import train_blt_model, create_blt_model
+from src.trainers import train_blt_model, create_blt_model
+
+# Set memory watermark ratio for tests if using MPS
+if hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+    os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"  # No limit for testing
+    print("Setting MPS high watermark ratio to 0.0 for testing")
+
+# Force CPU for BLT end-to-end tests to ensure consistent behavior
+os.environ["FORCE_CPU_FOR_TESTING"] = "1"
+print("Forcing CPU for BLT tests")
 
 class TestBLTEndToEnd(unittest.TestCase):
     """
@@ -82,11 +91,13 @@ class TestBLTEndToEnd(unittest.TestCase):
             save_steps=5,
             gradient_accumulation_steps=1,
             weight_decay=0.01,
-            train_data_dir=self.train_dir,
-            eval_data_dir=self.eval_dir,
             cache_dir=self.cache_dir,
             output_dir=self.output_dir,
         )
+        
+        # Add train and eval files to config
+        config.train_files = [os.path.join(self.train_dir, f) for f in os.listdir(self.train_dir)]
+        config.eval_files = [os.path.join(self.eval_dir, f) for f in os.listdir(self.eval_dir)]
         
         # Find training files
         train_files = [os.path.join(self.train_dir, f) for f in os.listdir(self.train_dir)]
@@ -98,13 +109,18 @@ class TestBLTEndToEnd(unittest.TestCase):
         # Train the model
         model = train_blt_model(config)
         
-        # Check if checkpoint files were created
-        self.assertTrue(os.path.exists(os.path.join(self.output_dir, "checkpoint-5.pt")), 
-                       "Checkpoint file not created")
+        # Check if checkpoint files were created in the checkpoints subdirectory
+        checkpoint_path = os.path.join(self.output_dir, "checkpoints", "checkpoint-5.pt")
+        self.assertTrue(os.path.exists(checkpoint_path), 
+                       f"Checkpoint file not created at {checkpoint_path}")
         
         # Load the model and verify it can make predictions
         loaded_model = create_blt_model(config)
-        loaded_model.load_pretrained(os.path.join(self.output_dir, "checkpoint-5.pt"))
+        
+        # Load checkpoint manually with weights_only=False to allow loading ByteLMConfig
+        checkpoint = torch.load(os.path.join(self.output_dir, "checkpoints", "checkpoint-5.pt"), 
+                               map_location=torch.device('cpu'), weights_only=False)
+        loaded_model.load_state_dict(checkpoint["model_state_dict"])
         
         # Create a simple input for testing
         test_bytes = torch.tensor([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]]).long()
@@ -158,9 +174,10 @@ class TestBLTEndToEnd(unittest.TestCase):
         # Train the model using the CLI configuration
         model = train_blt_model(byte_lm_config)
         
-        # Check if checkpoint files were created
-        self.assertTrue(os.path.exists(os.path.join(self.output_dir, "checkpoint-5.pt")), 
-                        "Checkpoint file not created when using CLI config")
+        # Check if checkpoint files were created in the checkpoints subdirectory
+        checkpoint_path = os.path.join(self.output_dir, "checkpoints", "checkpoint-5.pt")
+        self.assertTrue(os.path.exists(checkpoint_path), 
+                        f"Checkpoint file not created at {checkpoint_path} when using CLI config")
     
     def test_entropy_calculation(self):
         """

@@ -55,6 +55,11 @@ def main():
     # Create CLI interface
     cli = NEATCLIInterface()
     
+    # For test debugging, print environment
+    if 'CLI_CONFIG_DIR' in os.environ:
+        print(f"Using config directory: {os.environ['CLI_CONFIG_DIR']}")
+        print(f"Available config files: {os.listdir(os.environ['CLI_CONFIG_DIR'])}")
+    
     # If no command is specified, run interactive mode
     if not args.command:
         cli.start()

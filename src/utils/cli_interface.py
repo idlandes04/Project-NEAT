@@ -25,8 +25,12 @@ from rich.syntax import Syntax
 from rich.columns import Columns
 from rich import box
 
-# CLI config directory
-CLI_CONFIG_DIR = os.path.expanduser("~/.neural_architecture_integration/scripts/main_cli_configs")
+# CLI config directory - can be overridden by environment variable
+CLI_CONFIG_DIR = os.environ.get(
+    "CLI_CONFIG_DIR",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
+                "scripts/main_cli_configs")
+)
 
 
 class NEATCLIInterface:
@@ -45,7 +49,7 @@ class NEATCLIInterface:
         self.current_config = {}
         self.current_config_name = None
         
-        # Config directory
+        # Config directory (use the global CLI_CONFIG_DIR which can be set via environment)
         self._config_dir = CLI_CONFIG_DIR
         
         # Make sure the config directory exists
@@ -224,7 +228,22 @@ class NEATCLIInterface:
         
         if choice == "0":
             return
-        # Add specific data preparation methods based on choice
+        elif choice == "1":
+            # Implement synthetic math data preparation
+            self._execute_command_with_progress("python3 main.py prepare_data --data_type synthetic_math", "Preparing Synthetic Math Data")
+        elif choice == "2":
+            # Implement byte-level data preparation
+            self._execute_command_with_progress("python3 main.py prepare_data --data_type byte_level", "Preparing Byte-Level Data")
+        elif choice == "3":
+            # Implement pile subset preparation
+            self._execute_command_with_progress("python3 main.py prepare_data --data_type pile_subset", "Preparing Pile Subset")
+        elif choice == "4":
+            # Implement component test data preparation
+            self._execute_command_with_progress("python3 main.py prepare_data --data_type component_test", "Preparing Component Test Data")
+        elif choice == "5":
+            # Configure data parameters
+            self.console.print("[yellow]Data parameter configuration is not yet implemented.[/yellow]")
+            input("Press Enter to continue...")
     
     def _testing_menu(self):
         """Show the testing menu."""
@@ -281,7 +300,7 @@ class NEATCLIInterface:
         self.console.print(Panel("Load Configuration", style=self.main_color))
         
         # Get all config files
-        config_files = glob.glob(os.path.join(CLI_CONFIG_DIR, "*.json"))
+        config_files = glob.glob(os.path.join(self._config_dir, "*.json"))
         
         if not config_files:
             self.console.print("[yellow]No configuration files found.[/yellow]")
@@ -791,6 +810,17 @@ class NEATCLIInterface:
         self.current_config["learning_rate"] = float(Prompt.ask(
             "Learning rate",
             default=str(self.current_config.get("learning_rate", 5e-5))
+        ))
+        
+        # Hardware options
+        self.current_config["force_cpu"] = Confirm.ask(
+            "Force CPU use (ignore GPU/MPS)?",
+            default=self.current_config.get("force_cpu", False)
+        )
+        
+        self.current_config["memory_reserve_pct"] = int(Prompt.ask(
+            "Memory reserve percentage (1-99)",
+            default=str(self.current_config.get("memory_reserve_pct", 20))
         ))
         
         # Options

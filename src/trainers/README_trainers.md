@@ -4,45 +4,21 @@ This directory contains training modules for various components of the NEAT arch
 
 ## Structure
 
-### Core Components
+### Main Components (Consolidated)
 
 - `__init__.py`: Exports all trainer modules and their public interfaces
-- `blt_trainer.py`: BLT (Byte-Level Transformer) entropy estimator training
-- `blt_interactive.py`: Interactive testing for trained BLT models
-- `data_preparation.py`: Data preparation utilities, including downloading datasets and creating mock models
-- `training_monitor.py`: Real-time monitoring of training progress
-- `hardware_aware_trainer.py`: Hardware-aware training with adaptive resource allocation
-
-### Consolidated Scripts (New!)
-
 - `main_env_prepare.py`: Environment preparation script for setting up data and output directories
-- `main_trainer.py`: Unified training script for all NEAT components
-- `main_eval.py`: Unified evaluation script for all NEAT components
+- `main_trainer.py`: Unified training script for all NEAT components (includes hardware-aware training, training monitoring, and data preparation)
+- `main_eval.py`: Unified evaluation script for all NEAT components (includes BLT interactive testing)
 
 ## Usage
 
-### Original Approach
+The main trainer scripts provide a clean, streamlined interface. These scripts consolidate functionality from previously separate files:
 
-These modules can be used directly from `main.py` via command-line arguments:
+- `main_trainer.py`: Includes functionality from `hardware_aware_trainer.py` (HardwareAwareTrainer, PerformanceProfiler) and `training_monitor.py` (TrainingMonitor, GPUStats) as well as data preparation utilities from `data_preparation.py`
+- `main_eval.py`: Includes interactive testing functionality from `blt_interactive.py` (BLTInteractiveTester)
 
-```bash
-# Train a BLT entropy estimator
-python main.py train --training_type blt_entropy \
-  --train_data_dir ./data/pile_subset/train \
-  --eval_data_dir ./data/pile_subset/eval \
-  --byte_lm_hidden_size 128 \
-  --byte_lm_num_layers 2 \
-  --batch_size 64 \
-  --max_steps 10000
-
-# Test a trained BLT model interactively
-python main.py test --test_type blt_interactive \
-  --blt_model_path ./outputs/byte_lm/best_model.pt
-```
-
-### Consolidated Approach (Recommended)
-
-The new consolidated scripts provide a cleaner, more streamlined interface:
+This consolidation reduces file count while maintaining all functionality.
 
 ```bash
 # Prepare the environment
@@ -105,11 +81,14 @@ The consolidated scripts support all Project NEAT components:
 
 ## Development
 
-When adding new trainers or enhancing existing ones:
+When adding new training functionality:
 
-1. Create a new file with a descriptive name (e.g., `mycomponent_trainer.py`)
-2. Add public functions/classes to `__init__.py`
-3. Update the consolidated scripts (`main_trainer.py` and `main_eval.py`) to use your new component
-4. Add documentation in this README.md
+1. Decide which consolidated file is appropriate:
+   - `main_env_prepare.py`: For environment setup and preparation functions
+   - `main_trainer.py`: For model training and data preparation functions
+   - `main_eval.py`: For model evaluation and testing functions
+2. Add your new functionality to the appropriate file
+3. Add public functions/classes to `__init__.py` if needed
+4. Update this README.md with documentation of your additions
 
-All trainers should be designed with flexibility and hardware awareness in mind, using the interfaces provided by `hardware_aware_trainer.py` when appropriate.
+All trainers should be designed with flexibility and hardware awareness in mind, using the interfaces provided within main_trainer.py.

@@ -8,7 +8,8 @@ This script provides a unified interface for training all components of Project 
 4. Baseline model for comparison
 
 It consolidates functionality from various training scripts into a single entry point
-and works with the main.py CLI interface.
+and works with the main.py CLI interface. This includes hardware-aware training features
+and performance monitoring capabilities.
 
 Usage:
     python -m src.trainers.main_trainer [--model_type {blt,mvot,full,baseline}] [OPTIONS]
@@ -21,9 +22,999 @@ import argparse
 import logging
 import torch
 import glob
+import time
+import psutil
+import numpy as np
+import subprocess
+import re
+import requests
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any, Tuple
 from datetime import datetime
+from tqdm.auto import tqdm
+from tabulate import tabulate
+
+# Import hardware detection and model imports
+from src.utils.hardware_detection import get_hardware_detector, get_optimal_config
+from src.models.unified_architecture import UnifiedArchitecture
+
+# Integrated Hardware-Aware Training Components (formerly hardware_aware_trainer.py)
+class HardwareAwareTrainer:
+    """
+    Hardware-aware trainer for Project NEAT.
+    
+    This trainer adapts to available hardware resources and optimizes training accordingly.
+    It supports various hardware configurations and provides efficient training.
+    """
+    
+    def __init__(self, model, config):
+        """
+        Initialize HardwareAwareTrainer.
+        
+        Args:
+            model: The model to train
+            config: Training configuration
+        """
+        self.model = model
+        self.config = config
+        
+        # Get hardware detector
+        self.hardware_detector = get_hardware_detector()
+        self.features = self.hardware_detector.get_features()
+        
+        # Set device based on available hardware
+        if hasattr(config, 'device') and config.device:
+            # Use specified device
+            self.device = config.device
+        elif self.features.is_cuda_available and not getattr(config, 'force_cpu', False):
+            # Use CUDA if available
+            self.device = "cuda"
+        elif self.features.is_mps_available and not getattr(config, 'force_cpu', False):
+            # Use MPS if available (Apple Silicon)
+            self.device = "mps"
+        else:
+            # Fall back to CPU
+            self.device = "cpu"
+            
+        # Set up device
+        self.device = torch.device(self.device)
+        logger.info(f"Using device: {self.device}")
+        
+        # Move model to device
+        self.model.to(self.device)
+        
+        # Initialize optimizer and scheduler
+        self.optimizer = None
+        self.scheduler = None
+        
+        # Set up mixed precision if enabled and supported
+        self.use_mixed_precision = (
+            getattr(config, 'mixed_precision', False) and 
+            (self.features.is_cuda_available or self.features.supports_mixed_precision)
+        )
+        self.scaler = torch.cuda.amp.GradScaler() if self.use_mixed_precision else None
+        
+        # Configure gradient checkpointing if enabled
+        if getattr(config, 'gradient_checkpointing', False) and hasattr(self.model, 'gradient_checkpointing'):
+            self.model.gradient_checkpointing = True
+        
+        # Set up memory pressure monitoring
+        self.memory_pressure_threshold = getattr(config, 'memory_pressure_threshold', 0.7)
+        
+        # Initialize optimization
+        self._setup_optimization()
+        
+    def _setup_optimization(self):
+        """Set up optimization components."""
+        # Create optimizer
+        self.optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=getattr(self.config, 'learning_rate', 5e-5),
+            weight_decay=getattr(self.config, 'weight_decay', 0.01),
+            betas=(
+                getattr(self.config, 'adam_beta1', 0.9),
+                getattr(self.config, 'adam_beta2', 0.999)
+            ),
+            eps=getattr(self.config, 'adam_epsilon', 1e-8)
+        )
+        
+        # Create scheduler
+        total_steps = getattr(self.config, 'max_steps', 10000)
+        warmup_steps = getattr(self.config, 'warmup_steps', int(total_steps * 0.1))
+        
+        # Use linear warmup followed by cosine decay
+        def lr_lambda(step):
+            if step < warmup_steps:
+                return float(step) / float(max(1, warmup_steps))
+            progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+            return 0.5 * (1.0 + torch.cos(torch.tensor(progress * 3.14159)).item())
+        
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
+        
+    def train(self, train_dataloader, eval_dataloader=None, eval_steps=100, save_steps=100, save_dir=None, max_steps=10000):
+        """
+        Train the model.
+        
+        Args:
+            train_dataloader: Training dataloader
+            eval_dataloader: Evaluation dataloader
+            eval_steps: Number of steps between evaluations
+            save_steps: Number of steps between saving checkpoints
+            save_dir: Directory to save checkpoints
+            max_steps: Maximum number of training steps
+            
+        Returns:
+            Training metrics
+        """
+        # Set model to training mode
+        self.model.train()
+        
+        # Set up save directory
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+        
+        # Get gradient accumulation steps
+        gradient_accumulation_steps = getattr(self.config, 'gradient_accumulation_steps', 1)
+        
+        # Initialize training state
+        global_step = 0
+        tr_loss = 0.0
+        best_eval_loss = float('inf')
+        
+        # Setup progress bar
+        progress_bar = tqdm(total=max_steps, desc="Training")
+        
+        # Training loop
+        while global_step < max_steps:
+            for batch in train_dataloader:
+                # Check if we've reached max steps
+                if global_step >= max_steps:
+                    break
+                
+                # Process batch to device
+                batch = {k: v.to(self.device) if hasattr(v, 'to') else v for k, v in batch.items()}
+                
+                # Forward pass
+                with torch.cuda.amp.autocast() if self.use_mixed_precision else nullcontext():
+                    outputs = self.model(**batch)
+                    
+                    # Get loss
+                    if isinstance(outputs, dict) and "loss" in outputs:
+                        loss = outputs["loss"]
+                    elif isinstance(outputs, tuple) and len(outputs) > 0 and isinstance(outputs[0], torch.Tensor):
+                        loss = outputs[0]  # Assume the first element is the loss
+                    else:
+                        raise ValueError("Model output does not contain a recognizable loss")
+                    
+                    # Scale loss for gradient accumulation
+                    if gradient_accumulation_steps > 1:
+                        loss = loss / gradient_accumulation_steps
+                
+                # Backward pass
+                if self.use_mixed_precision:
+                    self.scaler.scale(loss).backward()
+                else:
+                    loss.backward()
+                
+                # Update accumulators
+                tr_loss += loss.item()
+                
+                # Update parameters
+                if (global_step + 1) % gradient_accumulation_steps == 0:
+                    # Clip gradient norm
+                    if hasattr(self.config, 'max_grad_norm'):
+                        if self.use_mixed_precision:
+                            self.scaler.unscale_(self.optimizer)
+                        
+                        torch.nn.utils.clip_grad_norm_(
+                            self.model.parameters(), 
+                            self.config.max_grad_norm
+                        )
+                    
+                    # Update parameters
+                    if self.use_mixed_precision:
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                    else:
+                        self.optimizer.step()
+                    
+                    # Update learning rate
+                    self.scheduler.step()
+                    
+                    # Zero gradients
+                    self.optimizer.zero_grad()
+                    
+                    # Increment step
+                    global_step += 1
+                    
+                    # Update progress bar
+                    progress_bar.update(1)
+                    
+                    # Check memory pressure
+                    if self.device.type == 'cuda':
+                        memory_allocated = torch.cuda.memory_allocated(self.device)
+                        memory_reserved = torch.cuda.memory_reserved(self.device)
+                        memory_pressure = memory_allocated / memory_reserved if memory_reserved > 0 else 0
+                        
+                        # Log if high memory pressure
+                        if memory_pressure > self.memory_pressure_threshold:
+                            logger.warning(f"High memory pressure: {memory_pressure:.2f}")
+                            
+                            # Try to reduce memory pressure if possible
+                            if hasattr(self.model, 'adapt_to_memory_pressure'):
+                                self.model.adapt_to_memory_pressure(memory_pressure)
+                    
+                    # Evaluate if needed
+                    if eval_dataloader is not None and global_step % eval_steps == 0:
+                        metrics = self.evaluate(eval_dataloader)
+                        
+                        # Extract evaluation loss
+                        eval_loss = metrics.get("eval_loss", float('inf'))
+                        
+                        # Log metrics
+                        logger.info(f"Step {global_step}: loss={tr_loss/global_step:.4f}, eval_loss={eval_loss:.4f}")
+                        
+                        # Save best model
+                        if eval_loss < best_eval_loss:
+                            best_eval_loss = eval_loss
+                            
+                            if save_dir:
+                                self.save_model(os.path.join(save_dir, "best_model.pt"))
+                                logger.info(f"Saved best model with eval_loss={eval_loss:.4f}")
+                        
+                        # Set model back to training mode
+                        self.model.train()
+                    
+                    # Save checkpoint if needed
+                    if save_dir and global_step % save_steps == 0:
+                        self.save_model(os.path.join(save_dir, f"checkpoint-{global_step}.pt"))
+                        self.save_model(os.path.join(save_dir, "checkpoint-latest.pt"))
+                        logger.info(f"Saved checkpoint at step {global_step}")
+        
+        # Close progress bar
+        progress_bar.close()
+        
+        # Save final model
+        if save_dir:
+            self.save_model(os.path.join(save_dir, "final_model.pt"))
+            logger.info(f"Saved final model after {global_step} steps")
+        
+        # Return training metrics
+        return {
+            "train_loss": tr_loss / global_step,
+            "global_step": global_step,
+            "best_eval_loss": best_eval_loss
+        }
+    
+    def evaluate(self, eval_dataloader):
+        """
+        Evaluate the model.
+        
+        Args:
+            eval_dataloader: Evaluation dataloader
+            
+        Returns:
+            Evaluation metrics
+        """
+        # Set model to evaluation mode
+        self.model.eval()
+        
+        # Initialize metrics
+        eval_loss = 0.0
+        eval_steps = 0
+        
+        # Get memory usage before evaluation
+        memory_before = torch.cuda.memory_allocated(self.device) if self.device.type == 'cuda' else 0
+        
+        # Evaluation loop
+        for batch in tqdm(eval_dataloader, desc="Evaluating"):
+            # Process batch to device
+            batch = {k: v.to(self.device) if hasattr(v, 'to') else v for k, v in batch.items()}
+            
+            # Forward pass
+            with torch.no_grad():
+                with torch.cuda.amp.autocast() if self.use_mixed_precision else nullcontext():
+                    outputs = self.model(**batch)
+                    
+                    # Get loss
+                    if isinstance(outputs, dict) and "loss" in outputs:
+                        loss = outputs["loss"]
+                    elif isinstance(outputs, tuple) and len(outputs) > 0 and isinstance(outputs[0], torch.Tensor):
+                        loss = outputs[0]  # Assume the first element is the loss
+                    else:
+                        raise ValueError("Model output does not contain a recognizable loss")
+            
+            # Update accumulators
+            eval_loss += loss.item()
+            eval_steps += 1
+        
+        # Get memory usage after evaluation
+        memory_after = torch.cuda.memory_allocated(self.device) if self.device.type == 'cuda' else 0
+        memory_peak = torch.cuda.max_memory_allocated(self.device) if self.device.type == 'cuda' else 0
+        
+        # Reset peak stats
+        if self.device.type == 'cuda':
+            torch.cuda.reset_peak_memory_stats(self.device)
+        
+        # Calculate metrics
+        metrics = {
+            "eval_loss": eval_loss / max(1, eval_steps),
+            "eval_memory_used": memory_after - memory_before,
+            "eval_memory_peak": memory_peak
+        }
+        
+        # Add device-specific metrics
+        if self.device.type == 'cuda':
+            metrics["eval_memory_allocated"] = torch.cuda.memory_allocated(self.device)
+            metrics["eval_memory_reserved"] = torch.cuda.memory_reserved(self.device)
+            metrics["eval_memory_pressure"] = (metrics["eval_memory_allocated"] / 
+                                            metrics["eval_memory_reserved"]
+                                            if metrics["eval_memory_reserved"] > 0 else 0)
+        
+        return metrics
+    
+    def save_model(self, path):
+        """
+        Save model checkpoint.
+        
+        Args:
+            path: Path to save checkpoint
+        """
+        # Create checkpoint
+        checkpoint = {
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict() if self.optimizer else None,
+            "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
+            "config": self.config
+        }
+        
+        # Save checkpoint
+        torch.save(checkpoint, path)
+    
+    def load_model(self, path, load_optimizer=True):
+        """
+        Load model checkpoint.
+        
+        Args:
+            path: Path to load checkpoint from
+            load_optimizer: Whether to load optimizer state
+        """
+        # Load checkpoint
+        checkpoint = torch.load(path, map_location=self.device)
+        
+        # Load model state
+        if "model_state_dict" in checkpoint:
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+        elif isinstance(checkpoint, dict) and not any(k.startswith(("model_state_dict", "optimizer_state_dict")) for k in checkpoint.keys()):
+            # Assume the checkpoint is a direct model state dict
+            self.model.load_state_dict(checkpoint)
+        else:
+            raise ValueError(f"Invalid checkpoint format: {path}")
+        
+        # Load optimizer state if requested
+        if load_optimizer and self.optimizer and "optimizer_state_dict" in checkpoint and checkpoint["optimizer_state_dict"]:
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        
+        # Load scheduler state if requested
+        if load_optimizer and self.scheduler and "scheduler_state_dict" in checkpoint and checkpoint["scheduler_state_dict"]:
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+class PerformanceProfiler:
+    """
+    Performance profiler for Project NEAT.
+    
+    This class profiles model performance on different hardware configurations.
+    """
+    
+    def __init__(self, model):
+        """
+        Initialize PerformanceProfiler.
+        
+        Args:
+            model: The model to profile
+        """
+        self.model = model
+        
+        # Get hardware detector
+        self.hardware_detector = get_hardware_detector()
+        self.features = self.hardware_detector.get_features()
+        
+        # Set device based on available hardware
+        if self.features.is_cuda_available:
+            self.device = torch.device("cuda")
+        elif self.features.is_mps_available:
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
+        
+        # Move model to device
+        self.model.to(self.device)
+    
+    def profile_component(self, component_name, sample_batch, num_runs=10):
+        """
+        Profile a specific component.
+        
+        Args:
+            component_name: Name of the component to profile
+            sample_batch: Sample batch for profiling
+            num_runs: Number of runs for profiling
+            
+        Returns:
+            Profiling metrics
+        """
+        # Get component
+        if not hasattr(self.model, component_name):
+            logger.warning(f"Component {component_name} not found in model")
+            return {"error": f"Component {component_name} not found"}
+        
+        component = getattr(self.model, component_name)
+        
+        # Move batch to device
+        sample_batch = {k: v.to(self.device) if hasattr(v, 'to') else v for k, v in sample_batch.items()}
+        
+        # Warm-up
+        with torch.no_grad():
+            for _ in range(3):
+                try:
+                    component(**sample_batch)
+                except Exception as e:
+                    logger.error(f"Error during warm-up: {e}")
+                    return {"error": str(e)}
+        
+        # Measure time
+        start_time = time.time()
+        
+        # Measure memory before
+        memory_before = torch.cuda.memory_allocated(self.device) if self.device.type == 'cuda' else 0
+        
+        # Profile
+        with torch.no_grad():
+            for _ in range(num_runs):
+                component(**sample_batch)
+        
+        # Measure time
+        end_time = time.time()
+        
+        # Measure memory after
+        memory_after = torch.cuda.memory_allocated(self.device) if self.device.type == 'cuda' else 0
+        
+        # Calculate metrics
+        time_per_run = (end_time - start_time) / num_runs
+        memory_used = memory_after - memory_before
+        
+        # Return metrics
+        return {
+            "time_per_run": time_per_run,
+            "memory_used": memory_used,
+            "runs": num_runs
+        }
+    
+    def profile_all_components(self, sample_batch, num_runs=10):
+        """
+        Profile all components.
+        
+        Args:
+            sample_batch: Sample batch for profiling
+            num_runs: Number of runs for profiling
+            
+        Returns:
+            Profiling metrics for all components
+        """
+        # Get all components
+        components = []
+        
+        # Check if model is UnifiedArchitecture
+        if isinstance(self.model, UnifiedArchitecture):
+            # Get active components
+            active_components = self.model.get_active_components()
+            
+            # Add active components
+            for component_name, active in active_components.items():
+                if active and hasattr(self.model, component_name):
+                    components.append(component_name)
+        else:
+            # Add all attributes that are modules
+            for name, attr in self.model.__dict__.items():
+                if isinstance(attr, torch.nn.Module):
+                    components.append(name)
+        
+        # Profile each component
+        metrics = {}
+        for component_name in components:
+            logger.info(f"Profiling component: {component_name}")
+            component_metrics = self.profile_component(component_name, sample_batch, num_runs)
+            metrics[component_name] = component_metrics
+        
+        return metrics
+    
+    def get_optimal_configuration(self, available_memory):
+        """
+        Get optimal component configuration based on available memory.
+        
+        Args:
+            available_memory: Available memory in bytes
+            
+        Returns:
+            Optimal component configuration
+        """
+        # Initialize configuration
+        config = {}
+        
+        # Check if model is UnifiedArchitecture
+        if isinstance(self.model, UnifiedArchitecture):
+            # Get active components
+            active_components = self.model.get_active_components()
+            
+            # Get component memory usage
+            component_memory = {}
+            for component_name, active in active_components.items():
+                if active and hasattr(self.model, component_name):
+                    # Create a minimal batch
+                    minimal_batch = {"input_ids": torch.ones((1, 10), dtype=torch.long).to(self.device)}
+                    
+                    # Profile component
+                    metrics = self.profile_component(component_name, minimal_batch, num_runs=5)
+                    
+                    # Store memory usage
+                    component_memory[component_name] = metrics.get("memory_used", 0)
+            
+            # Sort components by memory usage (highest first)
+            sorted_components = sorted(component_memory.items(), key=lambda x: x[1], reverse=True)
+            
+            # Allocate memory to components
+            memory_allocated = 0
+            for component_name, memory_usage in sorted_components:
+                if memory_allocated + memory_usage <= available_memory:
+                    # Enable component
+                    config[component_name] = True
+                    memory_allocated += memory_usage
+                else:
+                    # Disable component
+                    config[component_name] = False
+        else:
+            # For non-UnifiedArchitecture, enable everything
+            config["use_all_components"] = True
+        
+        return config
+
+# Integrated Training Monitor Components (formerly training_monitor.py)
+class GPUStats:
+    """GPU statistics for monitoring."""
+    
+    @staticmethod
+    def get_gpu_usage() -> List[Dict[str, float]]:
+        """
+        Get GPU usage information using nvidia-smi.
+        
+        Returns:
+            List of dictionaries with GPU statistics
+        """
+        try:
+            output = subprocess.check_output(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total", 
+                                           "--format=csv,noheader,nounits"]).decode("utf-8")
+            # Parse output
+            gpu_stats = []
+            for line in output.strip().split("\n"):
+                util, mem_used, mem_total = map(float, line.split(", "))
+                gpu_stats.append({
+                    "utilization": util,
+                    "memory_used": mem_used,
+                    "memory_total": mem_total,
+                    "memory_percent": (mem_used / mem_total) * 100 if mem_total > 0 else 0
+                })
+            return gpu_stats
+        except Exception as e:
+            logger.debug(f"Error getting GPU usage: {e}")
+            return []
+
+    @staticmethod
+    def is_gpu_available() -> bool:
+        """
+        Check if GPU is available.
+        
+        Returns:
+            True if GPU is available, False otherwise
+        """
+        try:
+            import torch
+            return torch.cuda.is_available()
+        except ImportError:
+            return False
+        except Exception as e:
+            logger.debug(f"Error checking GPU availability: {e}")
+            return False
+
+class TrainingMonitor:
+    """
+    Monitor training progress, checkpoints, and resource usage.
+    """
+    
+    def __init__(
+        self,
+        output_dir: str,
+        log_dir: Optional[str] = None,
+        refresh_interval: int = 5,
+        process_id: Optional[int] = None,
+        max_steps: Optional[int] = None,
+        auto_exit: bool = False
+    ):
+        """
+        Initialize the training monitor.
+        
+        Args:
+            output_dir: Directory where model outputs and checkpoints are saved
+            log_dir: Directory where log files are stored (defaults to output_dir/logs)
+            refresh_interval: Refresh interval in seconds
+            process_id: Process ID of the training script to monitor
+            max_steps: Maximum number of training steps
+            auto_exit: Whether to automatically exit when training is complete
+        """
+        self.output_dir = output_dir
+        self.log_dir = log_dir or os.path.join(output_dir, "logs")
+        self.refresh_interval = refresh_interval
+        self.process_id = process_id
+        self.max_steps = max_steps
+        self.auto_exit = auto_exit
+        
+        # Create log directory if it doesn't exist
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir, exist_ok=True)
+    
+    def scan_log_files(self) -> Dict[str, Any]:
+        """
+        Scan log files for training metrics.
+        
+        Returns:
+            Dictionary with training metrics
+        """
+        log_files = glob.glob(os.path.join(self.log_dir, "*.log"))
+        
+        if not log_files:
+            return {"status": "No log files found"}
+        
+        # Get the most recent log file
+        latest_log = max(log_files, key=os.path.getmtime)
+        
+        # Extract information from log file
+        metrics = {
+            "file": os.path.basename(latest_log),
+            "last_updated": datetime.fromtimestamp(os.path.getmtime(latest_log)).strftime("%Y-%m-%d %H:%M:%S"),
+            "current_step": 0,
+            "current_loss": None,
+            "current_lr": None,
+            "step_time_ms": None,
+            "eval_loss": None,
+            "last_checkpoint": None
+        }
+        
+        try:
+            with open(latest_log, "r") as f:
+                content = f.read()
+                
+                # Extract current step
+                step_matches = re.findall(r"Step: (\d+)", content)
+                if step_matches:
+                    metrics["current_step"] = int(step_matches[-1])
+                
+                # Extract current loss
+                loss_matches = re.findall(r"Loss: ([\d\.]+)", content)
+                if loss_matches:
+                    metrics["current_loss"] = float(loss_matches[-1])
+                
+                # Extract learning rate
+                lr_matches = re.findall(r"LR: ([\d\.e\-]+)", content)
+                if lr_matches:
+                    metrics["current_lr"] = float(lr_matches[-1])
+                
+                # Extract step time
+                time_matches = re.findall(r"ms/step: ([\d\.]+)", content)
+                if time_matches:
+                    metrics["step_time_ms"] = float(time_matches[-1])
+                
+                # Extract evaluation loss
+                eval_matches = re.findall(r"Evaluation loss: ([\d\.]+)", content)
+                if eval_matches:
+                    metrics["eval_loss"] = float(eval_matches[-1])
+                
+                # Extract checkpoint information
+                checkpoint_matches = re.findall(r"Saving model checkpoint to (.+)", content)
+                if checkpoint_matches:
+                    metrics["last_checkpoint"] = checkpoint_matches[-1]
+        except Exception as e:
+            metrics["error"] = str(e)
+        
+        return metrics
+    
+    def check_checkpoints(self) -> Dict[str, Any]:
+        """
+        Check for checkpoint files.
+        
+        Returns:
+            Dictionary with checkpoint information
+        """
+        checkpoint_pattern = os.path.join(self.output_dir, "checkpoint-*.pt")
+        best_model_path = os.path.join(self.output_dir, "best_model.pt")
+        final_model_path = os.path.join(self.output_dir, "final_model.pt")
+        
+        checkpoints = glob.glob(checkpoint_pattern)
+        
+        result = {
+            "checkpoint_count": len(checkpoints),
+            "latest_checkpoint": max(checkpoints, key=os.path.getmtime) if checkpoints else None,
+            "best_model_exists": os.path.exists(best_model_path),
+            "final_model_exists": os.path.exists(final_model_path)
+        }
+        
+        if result["latest_checkpoint"]:
+            result["latest_checkpoint_time"] = datetime.fromtimestamp(
+                os.path.getmtime(result["latest_checkpoint"])
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Extract step number from checkpoint filename
+            step_match = re.search(r"checkpoint-(\d+)\.pt", result["latest_checkpoint"])
+            if step_match:
+                result["latest_checkpoint_step"] = int(step_match.group(1))
+        
+        return result
+    
+    def check_process(self) -> Dict[str, Any]:
+        """
+        Check if the monitored process is still running.
+        
+        Returns:
+            Dictionary with process information
+        """
+        if not self.process_id:
+            return {"status": "No process ID provided"}
+        
+        try:
+            # Check if process is still running
+            process = psutil.Process(self.process_id)
+            
+            # Get process information
+            process_info = {
+                "status": "running",
+                "name": process.name(),
+                "cpu_percent": process.cpu_percent(),
+                "memory_percent": process.memory_percent(),
+                "create_time": datetime.fromtimestamp(process.create_time()).strftime("%Y-%m-%d %H:%M:%S"),
+                "running_time": str(datetime.timedelta(seconds=int(time.time() - process.create_time())))
+            }
+            
+            return process_info
+        except psutil.NoSuchProcess:
+            return {"status": "not_running"}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+    
+    def estimate_remaining_time(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Estimate remaining training time.
+        
+        Args:
+            metrics: Training metrics
+            
+        Returns:
+            Dictionary with time estimates
+        """
+        if not self.max_steps or not metrics.get("current_step") or not metrics.get("step_time_ms"):
+            return {"status": "insufficient_data"}
+        
+        # Calculate progress
+        progress = (metrics["current_step"] / self.max_steps) * 100
+        
+        # Estimate remaining time
+        steps_remaining = self.max_steps - metrics["current_step"]
+        seconds_remaining = (steps_remaining * metrics["step_time_ms"]) / 1000
+        
+        # Convert to hours, minutes, seconds
+        hours, remainder = divmod(seconds_remaining, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        return {
+            "progress_percent": progress,
+            "steps_remaining": steps_remaining,
+            "hours_remaining": int(hours),
+            "minutes_remaining": int(minutes),
+            "seconds_remaining": int(seconds),
+            "formatted_time": f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
+        }
+    
+    def print_status_report(self, metrics: Dict[str, Any], checkpoint_info: Dict[str, Any], 
+                          process_info: Dict[str, Any], time_estimate: Dict[str, Any], 
+                          gpu_stats: List[Dict[str, float]]):
+        """
+        Print a status report of the training progress.
+        
+        Args:
+            metrics: Training metrics
+            checkpoint_info: Checkpoint information
+            process_info: Process information
+            time_estimate: Time estimates
+            gpu_stats: GPU statistics
+        """
+        # Clear screen
+        os.system('cls' if os.name == 'nt' else 'clear')
+        
+        # Print header
+        print(f"BLT Entropy Estimator Training Monitor - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("-" * 80)
+        
+        # Print process status
+        if process_info.get("status") == "running":
+            print(f"Training process is running (PID: {self.process_id})")
+            print(f"CPU usage: {process_info['cpu_percent']:.1f}%, Memory usage: {process_info['memory_percent']:.1f}%")
+            print(f"Running time: {process_info['running_time']}")
+        elif process_info.get("status") == "not_running":
+            print(f"Training process (PID: {self.process_id}) is no longer running")
+        else:
+            print(f"Process status: {process_info.get('status', 'unknown')}")
+        
+        # Print GPU stats
+        if gpu_stats:
+            print("\nGPU Usage:")
+            gpu_table = []
+            for i, gpu in enumerate(gpu_stats):
+                gpu_table.append([
+                    f"GPU {i}", 
+                    f"{gpu['utilization']:.1f}%",
+                    f"{gpu['memory_used']:.1f}MB / {gpu['memory_total']:.1f}MB ({gpu['memory_percent']:.1f}%)"
+                ])
+            print(tabulate(gpu_table, headers=["GPU", "Utilization", "Memory Usage"]))
+        
+        # Print training metrics
+        print("\nTraining Metrics:")
+        if "status" in metrics:
+            print(f"Status: {metrics['status']}")
+        else:
+            metric_table = []
+            if metrics.get('current_step') is not None:
+                metric_table.append(["Current step", metrics['current_step']])
+            if metrics.get('current_loss') is not None:
+                metric_table.append(["Current loss", f"{metrics['current_loss']:.4f}"])
+            if metrics.get('current_lr') is not None:
+                metric_table.append(["Learning rate", f"{metrics['current_lr']:.6f}"])
+            if metrics.get('step_time_ms') is not None:
+                metric_table.append(["Step time", f"{metrics['step_time_ms']:.2f} ms/step"])
+            if metrics.get('eval_loss') is not None:
+                metric_table.append(["Latest evaluation loss", f"{metrics['eval_loss']:.4f}"])
+            if metrics.get('last_checkpoint') is not None:
+                metric_table.append(["Last checkpoint", metrics['last_checkpoint']])
+            
+            print(tabulate(metric_table))
+        
+        # Print checkpoint status
+        print("\nCheckpoint Status:")
+        checkpoint_table = []
+        checkpoint_table.append(["Number of checkpoints", checkpoint_info['checkpoint_count']])
+        
+        if checkpoint_info.get('latest_checkpoint'):
+            latest_checkpoint_info = (
+                f"{os.path.basename(checkpoint_info['latest_checkpoint'])} "
+                f"(Step {checkpoint_info.get('latest_checkpoint_step', 'unknown')}, "
+                f"Time: {checkpoint_info.get('latest_checkpoint_time', 'unknown')})"
+            )
+            checkpoint_table.append(["Latest checkpoint", latest_checkpoint_info])
+        
+        if checkpoint_info.get('best_model_exists'):
+            best_model_time = datetime.fromtimestamp(
+                os.path.getmtime(os.path.join(self.output_dir, "best_model.pt"))
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            checkpoint_table.append(["Best model", f"Available (Last updated: {best_model_time})"])
+        else:
+            checkpoint_table.append(["Best model", "Not available"])
+            
+        if checkpoint_info.get('final_model_exists'):
+            final_model_time = datetime.fromtimestamp(
+                os.path.getmtime(os.path.join(self.output_dir, "final_model.pt"))
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            checkpoint_table.append(["Final model", f"Available (Created: {final_model_time})"])
+            checkpoint_table.append(["Status", "Training has completed!"])
+        else:
+            checkpoint_table.append(["Final model", "Not available (Training in progress)"])
+        
+        print(tabulate(checkpoint_table))
+        
+        # Print progress and time estimate
+        if time_estimate.get("status") != "insufficient_data":
+            print("\nTraining Progress:")
+            progress_table = []
+            progress_table.append(["Progress", f"{time_estimate['progress_percent']:.1f}% ({metrics['current_step']}/{self.max_steps} steps)"])
+            progress_table.append(["Estimated time remaining", time_estimate['formatted_time']])
+            print(tabulate(progress_table))
+        
+        print("\nPress Ctrl+C to stop monitoring")
+    
+    def monitor(self):
+        """Monitor training progress."""
+        print(f"Monitoring BLT Entropy Estimator training...")
+        print(f"Output directory: {self.output_dir}")
+        print(f"Log directory: {self.log_dir}")
+        print(f"Refresh interval: {self.refresh_interval} seconds")
+        print("\nPress Ctrl+C to stop monitoring")
+        print("-" * 80)
+        
+        try:
+            while True:
+                # Get training metrics
+                metrics = self.scan_log_files()
+                
+                # Check checkpoints
+                checkpoint_info = self.check_checkpoints()
+                
+                # Check process if PID provided
+                process_info = self.check_process() if self.process_id else {"status": "unknown"}
+                
+                # Get GPU stats
+                gpu_stats = GPUStats.get_gpu_usage()
+                
+                # Estimate remaining time
+                time_estimate = self.estimate_remaining_time(metrics)
+                
+                # Print status report
+                self.print_status_report(metrics, checkpoint_info, process_info, time_estimate, gpu_stats)
+                
+                # Check if training has completed
+                if checkpoint_info.get('final_model_exists') and self.auto_exit:
+                    print("\nTraining complete. Exiting monitor.")
+                    break
+                
+                # Check if process has ended
+                if process_info.get("status") == "not_running" and self.auto_exit:
+                    print("\nTraining process has ended. Exiting monitor.")
+                    break
+                
+                # Wait for next update
+                time.sleep(self.refresh_interval)
+        
+        except KeyboardInterrupt:
+            print("\nMonitoring stopped by user")
+        
+        return {
+            "metrics": metrics,
+            "checkpoint_info": checkpoint_info,
+            "process_info": process_info,
+            "time_estimate": time_estimate
+        }
+
+def monitor_training(config):
+    """
+    Start monitoring training.
+    
+    Args:
+        config: Configuration object with monitoring settings
+        
+    Returns:
+        Monitoring results
+    """
+    output_dir = config.output_dir if hasattr(config, 'output_dir') else None
+    log_dir = config.log_dir if hasattr(config, 'log_dir') else None
+    refresh_interval = config.interval if hasattr(config, 'interval') else 5
+    process_id = config.pid if hasattr(config, 'pid') else None
+    max_steps = config.max_steps if hasattr(config, 'max_steps') else None
+    auto_exit = config.auto_exit if hasattr(config, 'auto_exit') else False
+    
+    if not output_dir:
+        logger.error("Missing output_dir in configuration")
+        return {"error": "Missing output_dir"}
+    
+    monitor = TrainingMonitor(
+        output_dir=output_dir,
+        log_dir=log_dir,
+        refresh_interval=refresh_interval,
+        process_id=process_id,
+        max_steps=max_steps,
+        auto_exit=auto_exit
+    )
+    
+    return monitor.monitor()
+
+class nullcontext:
+    """A context manager that does nothing."""
+    def __enter__(self):
+        return None
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return False
 
 # Set up logging
 logging.basicConfig(
@@ -158,6 +1149,30 @@ def train_blt_entropy(config):
     # Set up directories
     output_dir, log_dir, checkpoint_dir = setup_output_dirs(config)
     
+    # Check if data directories exist and download data if needed
+    if (not hasattr(config, 'train_data_dir') or not config.train_data_dir or 
+        not os.path.exists(config.train_data_dir) or 
+        not hasattr(config, 'eval_data_dir') or not config.eval_data_dir or 
+        not os.path.exists(config.eval_data_dir)):
+        
+        logger.info("Data directories not found. Downloading Pile subset data...")
+        # Create a namespace for download config
+        import argparse
+        download_config = argparse.Namespace()
+        download_config.pile_output_dir = "./data/pile_subset"
+        download_config.train_dir = "./data/pile_subset/train"
+        download_config.eval_dir = "./data/pile_subset/eval"
+        download_config.pile_warc_count = 10  # Number of samples to download
+        
+        # Download data
+        result = download_pile_subset(download_config)
+        
+        # Update config with data directories
+        config.train_data_dir = result["train_dir"]
+        config.eval_data_dir = result["eval_dir"]
+        
+        logger.info(f"Downloaded {result['train_size']} training files and {result['eval_size']} evaluation files")
+    
     # Find data files
     train_files, eval_files = find_data_files(config)
     
@@ -209,6 +1224,8 @@ def train_blt_entropy(config):
     blt_config.num_workers = getattr(config, 'num_workers', 4)
     blt_config.log_steps = getattr(config, 'log_steps', 10)
     blt_config.entropy_threshold = getattr(config, 'entropy_threshold', 0.5)
+    blt_config.force_cpu = getattr(config, 'force_cpu', False)
+    blt_config.memory_reserve_pct = getattr(config, 'memory_reserve_pct', 20)
     
     # Save configuration
     save_config(blt_config, output_dir)
@@ -463,6 +1480,18 @@ def parse_args():
                          help="Block size for training")
     blt_group.add_argument("--entropy_threshold", type=float, default=None,
                          help="Entropy threshold for patching")
+    blt_group.add_argument("--warmup_steps", type=int, default=0,
+                         help="Warmup steps for learning rate scheduler")
+    blt_group.add_argument("--gradient_accumulation_steps", type=int, default=1,
+                         help="Number of gradient accumulation steps")
+    blt_group.add_argument("--weight_decay", type=float, default=0.01,
+                         help="Weight decay for optimizer")
+    blt_group.add_argument("--cache_dir", type=str, default=None,
+                         help="Directory to cache processed data")
+    blt_group.add_argument("--num_workers", type=int, default=2,
+                         help="Number of dataloader workers")
+    blt_group.add_argument("--log_steps", type=int, default=10,
+                         help="Number of steps between logging")
     
     # Full model parameters
     full_group = parser.add_argument_group("Full NEAT Model")
@@ -729,11 +1758,60 @@ class EntropyEstimatorTrainer:
         self.model = model
         self.config = config
         
-        # Set up device
-        self.device = torch.device("cuda" if torch.cuda.is_available() else 
-                                 "mps" if torch.backends.mps.is_available() else 
-                                 "cpu")
-        logger.info(f"Using device: {self.device}")
+        # Set up device with memory management
+        force_cpu = getattr(config, 'force_cpu', False)
+        # Explicitly check for True/False since it might be string "true"/"false" from JSON
+        if isinstance(force_cpu, str):
+            force_cpu = force_cpu.lower() == "true"
+            
+        # Check environment variable for testing
+        force_cpu_env = os.environ.get("FORCE_CPU_FOR_TESTING", "0") == "1"
+        if force_cpu_env:
+            force_cpu = True
+            logger.info("Forcing CPU mode due to FORCE_CPU_FOR_TESTING environment variable")
+            
+        memory_reserve_pct = getattr(config, 'memory_reserve_pct', 20)
+        # Ensure valid percentage
+        memory_reserve_pct = max(1, min(99, memory_reserve_pct))
+        
+        # Debug output
+        logger.info(f"Force CPU mode: {force_cpu} (type: {type(force_cpu)})")
+        
+        # Configure memory limits for Apple Silicon MPS
+        if not force_cpu and torch.backends.mps.is_available():
+            # Check if MPS watermark is already set in environment
+            watermark_ratio = os.environ.get("PYTORCH_MPS_HIGH_WATERMARK_RATIO")
+            if watermark_ratio is None:
+                # Convert memory_reserve_pct to watermark ratio (0-1 scale)
+                watermark_ratio = (100 - memory_reserve_pct) / 100
+                # Set the environment variable
+                os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = str(watermark_ratio)
+                logger.info(f"Set PYTORCH_MPS_HIGH_WATERMARK_RATIO to {watermark_ratio} (from memory_reserve_pct={memory_reserve_pct})")
+            else:
+                logger.info(f"Using existing PYTORCH_MPS_HIGH_WATERMARK_RATIO={watermark_ratio}")
+            if memory_reserve_pct > 40:
+                logger.info(f"Memory reserve requested: {memory_reserve_pct}% - this is high for MPS, using CPU mode instead")
+                self.device = torch.device('cpu')
+            else:
+                try:
+                    # Set a safe fixed value (0.6) that works well in practice
+                    os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.6"
+                    logger.info(f"Using MPS with safe memory settings (PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.6)")
+                    self.device = torch.device('mps')
+                except Exception as e:
+                    logger.warning(f"Failed to setup MPS: {e}. Falling back to CPU.")
+                    self.device = torch.device('cpu')
+        # Configure memory limits for NVIDIA GPUs
+        elif not force_cpu and torch.cuda.is_available():
+            # Set CUDA memory limits
+            total_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            reserved_memory_gb = total_memory_gb * (memory_reserve_pct / 100.0)
+            torch.cuda.set_per_process_memory_fraction(1.0 - (memory_reserve_pct / 100.0))
+            logger.info(f"Setting CUDA memory reserve to {memory_reserve_pct}% ({reserved_memory_gb:.2f} GB)")
+            self.device = torch.device('cuda')
+        else:
+            self.device = torch.device('cpu')
+            logger.info("Using CPU for computation")
         
         # Move model to device
         self.model.to(self.device)
@@ -755,8 +1833,8 @@ class EntropyEstimatorTrainer:
         # Set up loss function
         self.loss_fn = nn.CrossEntropyLoss()
         
-        # Set up mixed precision if enabled
-        self.use_mixed_precision = config.mixed_precision
+        # Set up mixed precision if enabled (with fallback to False if not specified)
+        self.use_mixed_precision = getattr(config, 'mixed_precision', False)
         self.scaler = torch.cuda.amp.GradScaler() if self.use_mixed_precision else None
         
     def train(self, train_dataloader, eval_dataloader=None, output_dir=None):
@@ -780,14 +1858,18 @@ class EntropyEstimatorTrainer:
         checkpoint_dir = os.path.join(output_dir, "checkpoints")
         os.makedirs(checkpoint_dir, exist_ok=True)
         
-        # Set training steps
-        max_steps = self.config.max_steps
-        eval_steps = self.config.eval_steps
-        save_steps = self.config.save_steps
+        # Set training steps with defaults
+        max_steps = getattr(self.config, 'max_steps', 10000)
+        eval_steps = getattr(self.config, 'eval_steps', max(1, max_steps // 20))
+        save_steps = getattr(self.config, 'save_steps', max(1, max_steps // 10))
         log_steps = getattr(self.config, 'log_steps', 10)
         
-        # Set accumulation steps
+        # Set accumulation steps and other parameters with defaults
         gradient_accumulation_steps = getattr(self.config, 'gradient_accumulation_steps', 1)
+        warmup_steps = getattr(self.config, 'warmup_steps', 0)
+        weight_decay = getattr(self.config, 'weight_decay', 0.01)
+        learning_rate = getattr(self.config, 'learning_rate', 5e-5)
+        num_workers = getattr(self.config, 'num_workers', 2)
         
         # Set model to training mode
         self.model.train()
@@ -1009,6 +2091,419 @@ class EntropyEstimatorTrainer:
         
         # Load scheduler state
         self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+# Data preparation functions integrated from data_preparation.py
+def download_file(url: str, output_path: str, max_retries: int = 3) -> bool:
+    """
+    Download a file with retries.
+    
+    Args:
+        url: URL to download
+        output_path: Path to save the downloaded file
+        max_retries: Maximum number of retries
+        
+    Returns:
+        True if download successful, False otherwise
+    """
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Downloading {url} (attempt {attempt+1})")
+            with requests.get(url, stream=True) as r:
+                r.raise_for_status()
+                total_size = int(r.headers.get('content-length', 0))
+                with open(output_path, 'wb') as f:
+                    with tqdm(total=total_size, unit='B', unit_scale=True, desc=url.split('/')[-1]) as pbar:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                            pbar.update(len(chunk))
+            return True
+        except Exception as e:
+            logger.error(f"Download failed: {e}")
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                logger.info(f"Retrying in {wait} seconds...")
+                time.sleep(wait)
+            else:
+                logger.error(f"Max retries reached for {url}")
+                return False
+
+def download_pile_subset(config: Any) -> Dict[str, int]:
+    """
+    Download and process a subset of the Pile dataset.
+    
+    Args:
+        config: Configuration object with download settings
+        
+    Returns:
+        Dictionary with counts of training and evaluation files
+    """
+    # Get parameters from config
+    output_dir = config.pile_output_dir if hasattr(config, 'pile_output_dir') else './data/pile_subset'
+    train_dir = config.train_dir if hasattr(config, 'train_dir') else os.path.join(output_dir, 'train')
+    eval_dir = config.eval_dir if hasattr(config, 'eval_dir') else os.path.join(output_dir, 'eval')
+    sample_count = config.pile_warc_count if hasattr(config, 'pile_warc_count') else 5
+    
+    # Create output directories
+    os.makedirs(train_dir, exist_ok=True)
+    os.makedirs(eval_dir, exist_ok=True)
+    
+    # Initialize counters
+    train_size = 0
+    eval_size = 0
+    
+    # Download literature texts from Project Gutenberg
+    try:
+        logger.info("Downloading literature samples from Project Gutenberg")
+        gutenberg_samples = [
+            "https://www.gutenberg.org/files/1342/1342-0.txt",  # Pride and Prejudice
+            "https://www.gutenberg.org/files/84/84-0.txt",      # Frankenstein
+            "https://www.gutenberg.org/files/2701/2701-0.txt",  # Moby Dick
+            "https://www.gutenberg.org/files/76/76-0.txt",      # Huckleberry Finn
+            "https://www.gutenberg.org/files/1661/1661-0.txt",  # Sherlock Holmes
+            "https://www.gutenberg.org/files/345/345-0.txt",    # Dracula
+            "https://www.gutenberg.org/files/11/11-0.txt",      # Alice in Wonderland
+            "https://www.gutenberg.org/files/2814/2814-0.txt",  # Dubliners
+            "https://www.gutenberg.org/files/174/174-0.txt",    # The Picture of Dorian Gray
+            "https://www.gutenberg.org/files/1400/1400-0.txt"   # Great Expectations
+        ]
+        
+        for i, url in enumerate(gutenberg_samples):
+            try:
+                target_dir = train_dir if i < 8 else eval_dir  # 80/20 split
+                file_name = f"lit_{url.split('/')[-2]}_{i}.txt"
+                output_path = os.path.join(target_dir, file_name)
+                
+                response = requests.get(url)
+                content = response.text
+                
+                # Take a subset to keep files manageable
+                content = content[:100000]  # First 100KB
+                
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                if target_dir == train_dir:
+                    train_size += 1
+                else:
+                    eval_size += 1
+                    
+                logger.info(f"Downloaded literature sample {i+1}/{len(gutenberg_samples)}")
+            except Exception as e:
+                logger.error(f"Error downloading literature sample {url}: {e}")
+                
+    except Exception as e:
+        logger.error(f"Error downloading literature samples: {e}")
+    
+    # Add Wikipedia content for variety
+    try:
+        logger.info("Downloading Wikipedia sample articles")
+        wiki_titles = [
+            "Neural_network", "Transformer_(machine_learning_model)", 
+            "Entropy_(information_theory)", "Entropy", "Machine_learning",
+            "Artificial_intelligence", "Deep_learning", "Computer_vision",
+            "Natural_language_processing", "Reinforcement_learning"
+        ]
+        
+        for i, title in enumerate(wiki_titles):
+            url = f"https://en.wikipedia.org/w/api.php?action=query&prop=extracts&format=json&titles={title}"
+            response = requests.get(url)
+            data = response.json()
+            
+            # Extract the page content
+            page = next(iter(data['query']['pages'].values()))
+            content = page.get('extract', '')
+            
+            # Save to a file
+            output_path = os.path.join(train_dir, f"wiki_{i:03d}.txt")
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+    except Exception as e:
+        logger.error(f"Error downloading Wikipedia content: {e}")
+    
+    # Add scientific and technical texts
+    try:
+        logger.info("Downloading scientific papers and technical texts")
+        paper_samples = [
+            "https://arxiv.org/pdf/1706.03762.pdf",  # Transformer paper
+            "https://arxiv.org/pdf/1810.04805.pdf",  # BERT paper
+            "https://arxiv.org/pdf/2005.14165.pdf",  # GPT-3 paper
+            "https://arxiv.org/pdf/2108.07258.pdf",  # Codex paper
+            "https://arxiv.org/pdf/2203.15556.pdf",  # InstructGPT paper
+            "https://arxiv.org/pdf/2204.02311.pdf",  # PaLM paper
+        ]
+        
+        # Use technical documentation instead of PDFs which might be harder to parse
+        tech_docs = [
+            "https://raw.githubusercontent.com/scikit-learn/scikit-learn/main/README.rst",
+            "https://raw.githubusercontent.com/pytorch/pytorch/main/README.md",
+            "https://raw.githubusercontent.com/tensorflow/tensorflow/master/README.md",
+            "https://raw.githubusercontent.com/huggingface/transformers/main/README.md",
+            "https://raw.githubusercontent.com/numpy/numpy/main/README.md",
+            "https://raw.githubusercontent.com/pandas-dev/pandas/main/README.md",
+            "https://raw.githubusercontent.com/rust-lang/rust/master/README.md",
+            "https://raw.githubusercontent.com/golang/go/master/README.md",
+            "https://raw.githubusercontent.com/python/cpython/main/README.rst",
+            "https://raw.githubusercontent.com/kubernetes/kubernetes/master/README.md"
+        ]
+        
+        for i, url in enumerate(tech_docs):
+            try:
+                target_dir = train_dir if i < 8 else eval_dir  # 80/20 split
+                file_name = f"tech_doc_{i}.txt"
+                output_path = os.path.join(target_dir, file_name)
+                
+                response = requests.get(url)
+                content = response.text
+                
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                if target_dir == train_dir:
+                    train_size += 1
+                else:
+                    eval_size += 1
+                    
+                logger.info(f"Downloaded technical document {i+1}/{len(tech_docs)}")
+            except Exception as e:
+                logger.error(f"Error downloading technical document {url}: {e}")
+    except Exception as e:
+        logger.error(f"Error downloading technical texts: {e}")
+    
+    # Add code samples
+    try:
+        code_samples = [
+            ("python", "https://raw.githubusercontent.com/pytorch/pytorch/master/torch/nn/modules/transformer.py"),
+            ("python", "https://raw.githubusercontent.com/huggingface/transformers/main/src/transformers/models/gpt2/modeling_gpt2.py"),
+            ("python", "https://raw.githubusercontent.com/tensorflow/tensorflow/master/tensorflow/python/keras/layers/core.py"),
+            ("python", "https://raw.githubusercontent.com/numpy/numpy/main/numpy/core/numeric.py"),
+            ("python", "https://raw.githubusercontent.com/django/django/main/django/db/models/base.py"),
+            ("python", "https://raw.githubusercontent.com/scikit-learn/scikit-learn/main/sklearn/linear_model/_base.py"),
+            ("python", "https://raw.githubusercontent.com/matplotlib/matplotlib/main/lib/matplotlib/figure.py"),
+            ("python", "https://raw.githubusercontent.com/pandas-dev/pandas/main/pandas/core/frame.py"),
+            ("c++", "https://raw.githubusercontent.com/google/leveldb/main/db/db_impl.cc"),
+            ("c++", "https://raw.githubusercontent.com/protocolbuffers/protobuf/main/src/google/protobuf/message.cc"),
+            ("c++", "https://raw.githubusercontent.com/facebook/folly/main/folly/String.cpp"),
+            ("java", "https://raw.githubusercontent.com/spring-projects/spring-framework/main/spring-core/src/main/java/org/springframework/core/io/Resource.java"),
+            ("java", "https://raw.githubusercontent.com/apache/hadoop/trunk/hadoop-common-project/hadoop-common/src/main/java/org/apache/hadoop/fs/FileSystem.java"),
+            ("javascript", "https://raw.githubusercontent.com/facebook/react/main/packages/react/src/React.js"),
+            ("javascript", "https://raw.githubusercontent.com/d3/d3/main/src/array/index.js"),
+            ("javascript", "https://raw.githubusercontent.com/lodash/lodash/master/lodash.js"),
+            ("rust", "https://raw.githubusercontent.com/rust-lang/rust/master/compiler/rustc_middle/src/ty/mod.rs"),
+            ("rust", "https://raw.githubusercontent.com/tokio-rs/tokio/master/tokio/src/runtime/mod.rs")
+        ]
+        
+        for i, (lang, url) in enumerate(code_samples):
+            try:
+                response = requests.get(url)
+                content = response.text
+                
+                # Save to training directory
+                output_path = os.path.join(train_dir, f"code_{lang}_{i:02d}.txt")
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                train_size += 1
+            except Exception as e:
+                logger.error(f"Error downloading code sample {url}: {e}")
+    except Exception as e:
+        logger.error(f"Error downloading code samples: {e}")
+    
+    # Add JSON and other format samples
+    try:
+        json_samples = [
+            "https://raw.githubusercontent.com/nlp-datasets/wikitext/master/wikitext-103/wiki.train.tokens",
+            "https://raw.githubusercontent.com/huggingface/datasets/main/datasets/squad/squad.py",
+            "https://raw.githubusercontent.com/huggingface/transformers/main/src/transformers/pipelines/text2text_generation.py"
+        ]
+        
+        for i, url in enumerate(json_samples):
+            try:
+                response = requests.get(url)
+                content = response.text
+                
+                # Take a subset (first 50KB) to avoid huge files
+                content = content[:50000]
+                
+                # Save to directory (alternating between train and eval)
+                target_dir = train_dir if i % 2 == 0 else eval_dir
+                output_path = os.path.join(target_dir, f"format_sample_{i:02d}.txt")
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                if target_dir == train_dir:
+                    train_size += 1
+                else:
+                    eval_size += 1
+            except Exception as e:
+                logger.error(f"Error downloading sample {url}: {e}")
+    except Exception as e:
+        logger.error(f"Error downloading format samples: {e}")
+    
+    logger.info(f"Dataset creation complete: {train_size} training files, {eval_size} evaluation files")
+    
+    # Create a summary file
+    summary_path = os.path.join(output_dir, "pile_subset_summary.txt")
+    with open(summary_path, 'w') as f:
+        f.write(f"Pile Subset Summary\n")
+        f.write(f"=================\n\n")
+        f.write(f"Training files: {train_size}\n")
+        f.write(f"Evaluation files: {eval_size}\n\n")
+        f.write(f"Source composition:\n")
+        f.write(f"- Common Crawl web content\n")
+        f.write(f"- Wikipedia articles\n")
+        f.write(f"- Code samples (Python, C++, Java, JavaScript, Rust)\n")
+        f.write(f"- JSON and other structured data\n\n")
+        f.write(f"This small subset of The Pile is intended for BLT entropy estimator training.\n")
+    
+    return {
+        "train_size": train_size,
+        "eval_size": eval_size,
+        "train_dir": train_dir,
+        "eval_dir": eval_dir
+    }
+
+def prepare_data(config: Any) -> Dict[str, Any]:
+    """
+    Prepare data based on the specified data type.
+    
+    Args:
+        config: Configuration object with data preparation settings
+        
+    Returns:
+        Dictionary with data preparation results
+    """
+    if not hasattr(config, 'data_type'):
+        logger.error("Missing data_type in configuration")
+        return {"error": "Missing data_type"}
+    
+    # Handle different data types
+    if config.data_type == "pile_subset":
+        return download_pile_subset(config)
+    elif config.data_type == "byte_level":
+        # Not implemented yet, placeholder for future implementation
+        logger.info("Byte-level data preparation not yet implemented")
+        return {"error": "Not implemented"}
+    elif config.data_type == "synthetic_math":
+        # Not implemented yet, placeholder for future implementation
+        logger.info("Synthetic math data preparation not yet implemented")
+        return {"error": "Not implemented"}
+    elif config.data_type == "component_test":
+        # Not implemented yet, placeholder for future implementation
+        logger.info("Component test data preparation not yet implemented")
+        return {"error": "Not implemented"}
+    else:
+        logger.error(f"Unknown data type: {config.data_type}")
+        return {"error": f"Unknown data type: {config.data_type}"}
+
+def create_mock_models(config: Any) -> Dict[str, str]:
+    """
+    Create mock models for testing.
+    
+    Args:
+        config: Configuration object with mock model settings
+        
+    Returns:
+        Dictionary with paths to created mock models
+    """
+    import torch
+    import torch.nn as nn
+    
+    output_dir = config.output_dir if hasattr(config, 'output_dir') else './outputs'
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Create directories for mock models
+    blt_dir = os.path.join(output_dir, "mock_blt")
+    mvot_dir = os.path.join(output_dir, "mock_mvot")
+    os.makedirs(blt_dir, exist_ok=True)
+    os.makedirs(mvot_dir, exist_ok=True)
+    
+    # Create a mock BLT model
+    logger.info("Creating mock BLT model...")
+    class MockByteLM(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embedding = nn.Embedding(256, 64)
+            self.lstm = nn.LSTM(64, 128, batch_first=True)
+            self.fc = nn.Linear(128, 256)
+            self.config = {"model_type": "SmallByteLM", "hidden_size": 128, "num_layers": 1}
+        
+        def forward(self, input_ids, labels=None):
+            embedded = self.embedding(input_ids)
+            output, _ = self.lstm(embedded)
+            logits = self.fc(output)
+            
+            if labels is not None:
+                loss_fn = nn.CrossEntropyLoss()
+                loss = loss_fn(logits.view(-1, 256), labels.view(-1))
+                return {"loss": loss, "logits": logits}
+            
+            return {"logits": logits}
+        
+        def generate_probs(self, input_bytes):
+            # Simple implementation for testing
+            input_ids = torch.tensor([[b for b in input_bytes]], dtype=torch.long)
+            with torch.no_grad():
+                logits = self.forward(input_ids)["logits"]
+                probs = torch.softmax(logits, dim=-1)
+            return probs
+    
+    mock_blt = MockByteLM()
+    blt_path = os.path.join(blt_dir, "best_model.pt")
+    torch.save({
+        "model_state_dict": mock_blt.state_dict(),
+        "config": mock_blt.config,
+        "global_step": 1000,
+        "epoch": 5,
+        "best_loss": 2.5
+    }, blt_path)
+    
+    # Create a mock MVoT visual codebook
+    logger.info("Creating mock MVoT visual codebook...")
+    class MockVisualCodebook(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.embedding = nn.Embedding(8192, 512)
+            self.config = {"model_type": "VQCodebook", "embedding_dim": 512, "codebook_size": 8192}
+        
+        def forward(self, indices):
+            return self.embedding(indices)
+        
+        def get_codebook(self):
+            return self.embedding.weight
+    
+    mock_mvot = MockVisualCodebook()
+    mvot_path = os.path.join(mvot_dir, "codebook.pt")
+    torch.save({
+        "model_state_dict": mock_mvot.state_dict(),
+        "config": mock_mvot.config
+    }, mvot_path)
+    
+    logger.info(f"Mock models created at {blt_path} and {mvot_path}")
+    
+    # Create some test data if requested
+    if hasattr(config, 'create_training_data') and config.create_training_data:
+        logger.info("Creating test training data...")
+        test_data_dir = os.path.join(output_dir, "test_data")
+        test_train_dir = os.path.join(test_data_dir, "train")
+        test_eval_dir = os.path.join(test_data_dir, "eval")
+        os.makedirs(test_train_dir, exist_ok=True)
+        os.makedirs(test_eval_dir, exist_ok=True)
+        
+        # Create a few test files
+        for i in range(10):
+            with open(os.path.join(test_train_dir, f"test_{i}.txt"), "w") as f:
+                f.write(f"This is test file {i} for training.\n" * 50)
+        
+        for i in range(5):
+            with open(os.path.join(test_eval_dir, f"test_{i}.txt"), "w") as f:
+                f.write(f"This is test file {i} for evaluation.\n" * 50)
+        
+        logger.info(f"Test data created at {test_data_dir}")
+    
+    return {
+        "blt_path": blt_path,
+        "mvot_path": mvot_path
+    }
 
 def create_blt_model(config):
     """

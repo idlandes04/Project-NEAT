@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils.config import ModelConfig, get_default_config
 from src.models.unified_architecture import UnifiedArchitecture
-from src.trainers.hardware_aware_trainer import HardwareAwareTrainer
+from src.trainers import HardwareAwareTrainer
 from src.utils.hardware_detection import get_hardware_detector
 
 def parse_args():

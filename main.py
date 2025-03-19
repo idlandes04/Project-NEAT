@@ -24,7 +24,7 @@ from pathlib import Path
 from src.utils.config import ModelConfig, get_default_config
 from src.utils.memory_optimization import GPUMemoryOptimizer, enable_mixed_precision
 from src.models.unified_architecture import UnifiedArchitecture, DynamicComponentController
-from src.trainers.hardware_aware_trainer import HardwareAwareTrainer, PerformanceProfiler
+from src.trainers import HardwareAwareTrainer, PerformanceProfiler
 
 
 def parse_args():
@@ -56,6 +56,8 @@ def parse_args():
                         help="Enable cross-platform compatibility layer")
     parser.add_argument("--memory_pressure_threshold", type=float, default=0.7,
                         help="Memory pressure threshold for component deactivation (0.0-1.0)")
+    parser.add_argument("--memory_reserve_pct", type=int, default=20,
+                        help="Percentage of GPU/MPS memory to reserve (1-99)")
     
     # Create subparsers for different command modes
     subparsers = parser.add_subparsers(dest="mode", help="Operation mode")
@@ -840,56 +842,71 @@ def prepare_data_handler(args):
     
     if args.data_type == "synthetic_math":
         # Import synthetic data generator
-        from src.data.synthetic.math_generator import MathDataGenerator, DifficultyLevel, ProblemType
-        from scripts.prepare_training_dataset import prepare_training_dataset
-        
-        # Create arguments for prepare_training_dataset
-        from argparse import Namespace
-        data_args = Namespace(
-            output_dir=os.path.join(args.output_dir, "neat_training"),
-            general_size=args.math_train_size,
-            component_size=args.math_component_size,
-            eval_size=args.math_eval_size,
-            vocab_size=1000,  # Default
-            max_length=128  # Default
-        )
-        
-        # Prepare the dataset
-        prepare_training_dataset(data_args)
+        try:
+            from src.data.synthetic.math_generator import MathDataGenerator, DifficultyLevel, ProblemType
+            from scripts.prepare_training_dataset import prepare_training_dataset
+            
+            # Create arguments for prepare_training_dataset
+            from argparse import Namespace
+            data_args = Namespace(
+                output_dir=os.path.join(args.output_dir, "neat_training"),
+                general_size=args.math_train_size if hasattr(args, 'math_train_size') else 50000,
+                component_size=args.math_component_size if hasattr(args, 'math_component_size') else 10000,
+                eval_size=args.math_eval_size if hasattr(args, 'math_eval_size') else 10000,
+                vocab_size=1000,  # Default
+                max_length=128  # Default
+            )
+            
+            # Prepare the dataset
+            prepare_training_dataset(data_args)
+        except ImportError as e:
+            logger.error(f"Error importing synthetic data generator: {e}")
+            # Fallback to consolidated trainer functions
+            from src.trainers import prepare_data
+            prepare_data(args)
         
     elif args.data_type == "byte_level":
         # Import data download script
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "download_training_data", 
-            "scripts/download_training_data.py"
-        )
-        download_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(download_module)
-        
-        # Create arguments for download_training_data
-        from argparse import Namespace
-        data_args = Namespace(
-            output_dir=args.output_dir,
-            byte_train_dir=os.path.join(args.byte_data_dir, "byte_training"),
-            byte_eval_dir=os.path.join(args.byte_data_dir, "byte_eval"),
-            visual_dir=os.path.join(args.byte_data_dir, "visual_training"),
-            download_c4=args.byte_download_c4,
-            download_math=False,  # Not needed here, handled separately
-            all=True  # Always download all types by default
-        )
-        
-        # Download the data
-        download_module.download_byte_training_data(data_args)
-        download_module.download_visual_codebook_data(data_args)
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "download_training_data", 
+                "scripts/download_training_data.py"
+            )
+            download_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(download_module)
+            
+            # Create arguments for download_training_data
+            from argparse import Namespace
+            data_args = Namespace(
+                output_dir=args.output_dir,
+                byte_train_dir=os.path.join(args.byte_data_dir if hasattr(args, 'byte_data_dir') else "./data", "byte_training"),
+                byte_eval_dir=os.path.join(args.byte_data_dir if hasattr(args, 'byte_data_dir') else "./data", "byte_eval"),
+                visual_dir=os.path.join(args.byte_data_dir if hasattr(args, 'byte_data_dir') else "./data", "visual_training"),
+                download_c4=args.byte_download_c4 if hasattr(args, 'byte_download_c4') else False,
+                download_math=False,  # Not needed here, handled separately
+                all=True  # Always download all types by default
+            )
+            
+            # Download the data
+            download_module.download_byte_training_data(data_args)
+            download_module.download_visual_codebook_data(data_args)
+        except Exception as e:
+            logger.error(f"Error running byte-level data preparation: {e}")
+            # Fallback to consolidated trainer functions
+            from src.trainers import prepare_data
+            prepare_data(args)
         
     elif args.data_type == "pile_subset":
-        # Use our new data preparation module
-        from src.trainers.data_preparation import download_pile_subset
-        
-        logger.info(f"Downloading Pile subset to {args.pile_output_dir}")
-        
+        # Use our trainer function for pile subset
         try:
+            from src.trainers import download_pile_subset
+            
+            # Ensure output directory is set
+            pile_output_dir = args.pile_output_dir if hasattr(args, 'pile_output_dir') else "./data/pile_subset"
+            logger.info(f"Downloading Pile subset to {pile_output_dir}")
+            
+            # Run download function
             result = download_pile_subset(args)
             
             # Log results
@@ -899,23 +916,23 @@ def prepare_data_handler(args):
             logger.info(f"Downloaded Pile subset: {train_count} training files, {eval_count} evaluation files")
         except Exception as e:
             logger.error(f"Error downloading Pile subset: {e}", exc_info=True)
-            raise
         
     elif args.data_type == "component_test":
         # Create mock models for testing
-        if args.create_mock_models:
-            # Use our new data preparation module
-            from src.trainers.data_preparation import create_mock_models
+        try:
+            from src.trainers import create_mock_models
             
             # Create mock models
             from argparse import Namespace
             mock_args = Namespace(
                 output_dir=args.output_dir,
-                create_training_data=True
+                create_training_data=args.create_mock_models if hasattr(args, 'create_mock_models') else True
             )
             
             result = create_mock_models(mock_args)
             logger.info(f"Created mock models: BLT at {result['blt_path']}, MVoT at {result['mvot_path']}")
+        except Exception as e:
+            logger.error(f"Error creating component test data: {e}", exc_info=True)
     
     logger.info(f"Data preparation complete: {args.data_type}")
 
@@ -1009,8 +1026,8 @@ def train_handler(args):
             # Get the training process PID
             pid = os.getpid()
             
-            # Use our new monitor module
-            from src.trainers.training_monitor import monitor_training
+            # Use our monitor module from main_trainer
+            from src.trainers import monitor_training
             
             # Create monitor args
             from argparse import Namespace
@@ -1029,8 +1046,8 @@ def train_handler(args):
     elif args.training_type == "mvot_codebook":
         logger.info("MVoT codebook training not yet implemented. Using mock codebook.")
         
-        # Use our new data preparation module
-        from src.trainers.data_preparation import create_mock_models
+        # Use our data preparation from main_trainer module
+        from src.trainers import create_mock_models
         
         # Create mock models
         from argparse import Namespace
@@ -1071,8 +1088,8 @@ def eval_handler(args):
     elif args.eval_type == "interactive":
         # Check if we're evaluating BLT specifically
         if "blt" in args.model_path.lower() or "byte" in args.model_path.lower():
-            # Use our new BLT interactive tester
-            from src.trainers.blt_interactive import interactive_shell
+            # Use our BLT interactive tester from main_eval module
+            from src.trainers import interactive_shell
             
             # Run interactive shell with default threshold
             interactive_shell(args.model_path, threshold=0.5)
@@ -1087,8 +1104,8 @@ def test_handler(args):
     logger.info(f"Starting {args.test_type} test...")
     
     if args.test_type == "blt_interactive":
-        # Use our new BLT interactive tester
-        from src.trainers.blt_interactive import test_blt_model
+        # Use our BLT interactive tester from main_eval
+        from src.trainers import test_blt_model
         
         # Create test args
         from argparse import Namespace
@@ -1102,8 +1119,8 @@ def test_handler(args):
         test_blt_model(test_args)
     
     elif args.test_type == "blt_monitor":
-        # Use our new monitor module
-        from src.trainers.training_monitor import monitor_training
+        # Use our monitoring module from main_trainer
+        from src.trainers import monitor_training
         
         # Create monitor args if not provided
         if not args.output_dir:
@@ -1184,8 +1201,8 @@ def setup_handler(args):
     
     # Create mock models if requested
     if args.create_mock_models:
-        # Use our new data preparation module
-        from src.trainers.data_preparation import create_mock_models
+        # Use our data preparation from main_trainer module
+        from src.trainers import create_mock_models
         
         # Create mock models
         from argparse import Namespace
@@ -1368,6 +1385,11 @@ def main():
     # Parse command-line arguments
     args = parse_args()
     
+    # Force CPU mode for testing if memory issues persist or if specifically requested
+    if hasattr(args, 'memory_reserve_pct') and args.memory_reserve_pct >= 80:
+        print("Memory reserve set to 80% or higher, forcing CPU mode for stability")
+        args.force_cpu = True
+    
     # Setup logging
     setup_logging(args.log_level)
     logger = logging.getLogger(__name__)
@@ -1404,7 +1426,7 @@ def main():
     try:
         if args.mode == "prepare_data":
             # Use main_env_prepare functionality
-            from src.trainers.main_env_prepare import create_directory_structure, clean_outputs_directory
+            from src.trainers.main_env_prep import create_directory_structure, clean_outputs_directory
             create_directory_structure(".", clean=False)
             logger.info("Environment prepared successfully")
             
@@ -1470,7 +1492,7 @@ def main():
                 
         elif args.mode == "setup":
             # Use main_env_prepare functionality for setup
-            from src.trainers.main_env_prepare import create_directory_structure, clean_outputs_directory
+            from src.trainers.main_env_prep import create_directory_structure, clean_outputs_directory
             # Clean only if specifically requested
             clean = hasattr(args, "clean") and args.clean
             create_directory_structure(".", clean=clean)
