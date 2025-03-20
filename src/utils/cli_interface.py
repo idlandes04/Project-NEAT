@@ -10,8 +10,10 @@ import sys
 import json
 import time
 import glob
-from typing import Dict, List, Optional, Union, Any
+import platform
+from typing import Dict, List, Optional, Union, Any, Tuple
 from pathlib import Path
+from dataclasses import dataclass, field, asdict
 
 from rich.console import Console
 from rich.panel import Panel
@@ -32,6 +34,109 @@ CLI_CONFIG_DIR = os.environ.get(
                 "scripts/main_cli_configs")
 )
 
+@dataclass
+class ConfigSchema:
+    """Unified configuration schema for Project NEAT components."""
+    # Common parameters
+    model_type: str = "blt"  # blt, mvot, full, baseline
+    output_dir: str = "./outputs"
+    
+    # BLT model parameters
+    hidden_size: int = 128
+    num_layers: int = 2
+    num_heads: int = 4
+    dropout: float = 0.1
+    block_size: int = 128
+    entropy_threshold: float = 0.5
+    
+    # Training data parameters
+    train_data_dir: str = "./data/pile_subset/train"
+    eval_data_dir: str = "./data/pile_subset/eval"
+    cache_dir: str = "./data/cache/byte_lm"
+    
+    # Training hyperparameters
+    batch_size: int = 32
+    max_steps: int = 10000
+    eval_steps: int = 250
+    save_steps: int = 500
+    learning_rate: float = 5e-5
+    warmup_steps: int = 250
+    gradient_accumulation_steps: int = 2
+    weight_decay: float = 0.01
+    
+    # Hardware options
+    mixed_precision: bool = True
+    force_cpu: bool = False
+    num_workers: int = 2
+    log_steps: int = 50
+    
+    # Reserved for CLI use (not passed to trainer)
+    cli_reserved_fields: List[str] = field(default_factory=lambda: [
+        "mode", "training_type", "byte_lm_hidden_size", "byte_lm_num_layers", 
+        "byte_lm_num_heads", "byte_lm_dropout", "memory_reserve_pct"
+    ])
+    
+    # Parameter mapping from CLI to trainer
+    cli_param_mapping: Dict[str, str] = field(default_factory=lambda: {
+        "byte_lm_hidden_size": "hidden_size",
+        "byte_lm_num_layers": "num_layers", 
+        "byte_lm_num_heads": "num_heads",
+        "byte_lm_dropout": "dropout",
+        "resume_from": "resume_from",
+        "training_dir": "output_dir"
+    })
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to dictionary, excluding default factory fields."""
+        result = {}
+        for field_name, field_value in asdict(self).items():
+            if field_name not in ["cli_reserved_fields", "cli_param_mapping"]:
+                result[field_name] = field_value
+        return result
+    
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'ConfigSchema':
+        """Create ConfigSchema from dictionary, handling unknown fields."""
+        # Filter out any keys that are not in the ConfigSchema
+        valid_keys = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered_dict = {k: v for k, v in config_dict.items() if k in valid_keys}
+        return cls(**filtered_dict)
+    
+    def get_cli_command(self, python_cmd: str = "python3") -> List[str]:
+        """Generate command line arguments from config."""
+        cmd = [python_cmd, "-m", "src.trainers.main_trainer"]
+        
+        # Add model type first
+        cmd.extend(["--model_type", self.model_type])
+        
+        # Convert to dict for iteration
+        config_dict = self.to_dict()
+        
+        # Skip model_type since we already added it
+        for key, value in config_dict.items():
+            if key == "model_type" or key in self.cli_reserved_fields:
+                continue
+                
+            # Apply parameter mapping if needed
+            param_name = self.cli_param_mapping.get(key, key)
+            
+            # Handle different value types
+            if isinstance(value, bool):
+                if value:
+                    cmd.append(f"--{param_name}")
+            elif value is not None:
+                cmd.append(f"--{param_name}")
+                cmd.append(str(value))
+        
+        return cmd
+    
+    def adapt_for_platform(self) -> None:
+        """Adapt configuration for the current platform."""
+        # Check for Apple Silicon
+        if platform.system() == 'Darwin' and 'arm' in platform.processor().lower():
+            # Force mixed precision to False for MPS
+            self.mixed_precision = False
+
 
 class NEATCLIInterface:
     """Main CLI interface for Project NEAT."""
@@ -46,7 +151,8 @@ class NEATCLIInterface:
         self.text_color = "white"
         
         # Current config
-        self.current_config = {}
+        self.current_config = ConfigSchema()
+        self.current_config_dict = self.current_config.to_dict()
         self.current_config_name = None
         
         # Config directory (use the global CLI_CONFIG_DIR which can be set via environment)
@@ -54,6 +160,12 @@ class NEATCLIInterface:
         
         # Make sure the config directory exists
         os.makedirs(self._config_dir, exist_ok=True)
+        
+        # Python executable
+        try:
+            self.python_cmd = sys.executable or "python3"
+        except Exception:
+            self.python_cmd = "python3"
     
     def start(self):
         """Start the CLI interface."""
@@ -195,16 +307,45 @@ class NEATCLIInterface:
         menu_table.add_row("2", "Component-Wise Evaluation")
         menu_table.add_row("3", "Ablation Study")
         menu_table.add_row("4", "Interactive Evaluation")
-        menu_table.add_row("5", "Configure Evaluation Parameters")
+        menu_table.add_row("5", "BLT Model Analysis")
+        menu_table.add_row("6", "Configure Evaluation Parameters")
         menu_table.add_row("0", "Return to Main Menu")
         
         self.console.print(menu_table)
         
-        choice = Prompt.ask("Enter your choice", choices=["0", "1", "2", "3", "4", "5"])
+        choice = Prompt.ask("Enter your choice", choices=["0", "1", "2", "3", "4", "5", "6"])
         
         if choice == "0":
             return
+        elif choice == "5":
+            self._blt_model_analysis()
         # Add specific evaluation methods based on choice
+        
+    def _blt_model_analysis(self):
+        """Run comprehensive BLT model analysis."""
+        self._clear_screen()
+        self.console.print(Panel("BLT Model Analysis", style=self.main_color))
+
+        # Get model path
+        model_path = Prompt.ask("Enter path to BLT model checkpoint", default="./outputs/byte_lm/best_model.pt")
+
+        # Prepare command with python executable detection
+        python_cmd = "python3"
+        try:
+            import sys
+            python_cmd = sys.executable or "python3"
+        except Exception:
+            pass
+
+        # Execute command
+        cmd = [
+            python_cmd, "-m", "src.trainers.main_eval",
+            "--model_type", "blt",
+            "--model_path", model_path,
+            "--eval_mode", "analyze"
+        ]
+
+        self._execute_command_with_progress(" ".join(cmd), "BLT Model Analysis")
     
     def _data_preparation_menu(self):
         """Show the data preparation menu."""
@@ -332,7 +473,16 @@ class NEATCLIInterface:
         
         try:
             with open(selected_file, 'r') as f:
-                self.current_config = json.load(f)
+                config_dict = json.load(f)
+                
+            # Convert dict to ConfigSchema
+            self.current_config = ConfigSchema.from_dict(config_dict)
+            
+            # Keep the original dict for compatibility with existing code
+            self.current_config_dict = config_dict
+            
+            # Apply platform-specific adaptations
+            self.current_config.adapt_for_platform()
             
             self.current_config_name = config_name
             self.console.print(f"[green]Configuration '{config_name}' loaded successfully![/green]")
@@ -350,7 +500,7 @@ class NEATCLIInterface:
         self._clear_screen()
         self.console.print(Panel("Save Configuration", style=self.main_color))
         
-        if not self.current_config:
+        if self.current_config is None:
             self.console.print("[yellow]No configuration to save. Please configure settings first.[/yellow]")
             input("Press Enter to continue...")
             return
@@ -362,24 +512,28 @@ class NEATCLIInterface:
         if self.current_config_name:
             default_name = self.current_config_name
         else:
-            # Generate a default name based on config type
-            if self.current_config.get("training_type") == "blt_entropy":
+            # Generate a default name based on model type
+            model_type = self.current_config.model_type
+            if model_type == "blt":
                 default_name = "blt_entropy_train"
-            elif self.current_config.get("training_type") == "mvot_codebook":
+            elif model_type == "mvot":
                 default_name = "mvot_codebook_train"
-            elif self.current_config.get("training_type") == "full_model":
+            elif model_type == "full":
                 default_name = "full_model_train"
+            elif model_type == "baseline":
+                default_name = "baseline_train"
             else:
                 default_name = "custom_config"
         
         config_name = Prompt.ask("Enter configuration name", default=default_name)
         
-        # Save configuration
+        # Save configuration - either use the config schema or the dict for backward compatibility
         config_path = os.path.join(CLI_CONFIG_DIR, f"{config_name}.json")
         
         try:
             with open(config_path, 'w') as f:
-                json.dump(self.current_config, f, indent=4)
+                # Save the config as a JSON-serializable dict
+                json.dump(self.current_config.to_dict(), f, indent=4)
             
             self.current_config_name = config_name
             self.console.print(f"[green]Configuration saved as '{config_name}.json'![/green]")
@@ -390,7 +544,7 @@ class NEATCLIInterface:
     
     def _display_config_summary(self):
         """Display a summary of the current configuration."""
-        if not self.current_config:
+        if self.current_config is None:
             self.console.print("[yellow]No configuration loaded.[/yellow]")
             return
         
@@ -401,13 +555,44 @@ class NEATCLIInterface:
         summary_table.add_column("Parameter", style=f"{self.accent_color}")
         summary_table.add_column("Value", style=self.text_color)
         
-        # Add main parameters to the table
-        for key, value in self.current_config.items():
-            # Skip complex nested parameters
-            if not isinstance(value, dict) and not isinstance(value, list):
-                summary_table.add_row(key, str(value))
+        # Group parameters by category
+        categories = {
+            "Model Parameters": ["model_type", "hidden_size", "num_layers", "num_heads", "dropout", 
+                               "block_size", "entropy_threshold"],
+            "Training Data": ["train_data_dir", "eval_data_dir", "cache_dir", "output_dir"],
+            "Training Hyperparameters": ["batch_size", "max_steps", "eval_steps", "save_steps", 
+                                       "learning_rate", "warmup_steps", "gradient_accumulation_steps", 
+                                       "weight_decay"],
+            "Hardware Options": ["mixed_precision", "force_cpu", "num_workers", "log_steps"]
+        }
+        
+        # Get config as dict for consistent handling
+        config_dict = self.current_config.to_dict()
+        
+        # Add section headers and parameters
+        for category, params in categories.items():
+            # Add section header
+            summary_table.add_row(f"[bold]{category}[/bold]", "")
+            
+            # Add parameters in this category
+            for param in params:
+                if param in config_dict:
+                    summary_table.add_row(f"  {param}", str(config_dict[param]))
+        
+        # Add any remaining parameters not in categories
+        all_category_params = [p for params in categories.values() for p in params]
+        remaining_params = [p for p in config_dict if p not in all_category_params]
+        
+        if remaining_params:
+            summary_table.add_row("[bold]Other Parameters[/bold]", "")
+            for param in sorted(remaining_params):
+                summary_table.add_row(f"  {param}", str(config_dict[param]))
         
         self.console.print(summary_table)
+        
+        # Check for platform-specific settings
+        if platform.system() == 'Darwin' and 'arm' in platform.processor().lower():
+            self.console.print("[yellow]Note: Running on Apple Silicon - mixed precision is disabled[/yellow]")
     
     def _train_full_model(self):
         """Initialize training for the full NEAT model."""
@@ -483,7 +668,11 @@ class NEATCLIInterface:
             if os.path.exists(config_path):
                 try:
                     with open(config_path, 'r') as f:
-                        self.current_config = json.load(f)
+                        config_dict = json.load(f)
+                    
+                    # Convert to ConfigSchema object
+                    self.current_config = ConfigSchema.from_dict(config_dict)
+                    self.current_config_dict = config_dict
                     self.current_config_name = config_name
                     self.console.print(f"[green]Loaded configuration: {config_name}[/green]")
                 except Exception as e:
@@ -494,7 +683,7 @@ class NEATCLIInterface:
                 return
         
         # Configure or use current config
-        if not self._ensure_config("blt_entropy", auto_confirm=auto_confirm):
+        if not self._ensure_config("blt", auto_confirm=auto_confirm):
             return
         
         # Confirm training if needed
@@ -505,60 +694,17 @@ class NEATCLIInterface:
             except (EOFError, KeyboardInterrupt):
                 self.console.print("[yellow]Assuming yes...[/yellow]")
         
-        # Prepare command with python executable detection
-        python_cmd = "python3"
-        try:
-            import sys
-            python_cmd = sys.executable or "python3"
-        except Exception:
-            pass
+        # Apply platform-specific adaptations
+        self.current_config.adapt_for_platform()
         
-        # Get output directory
-        output_dir = self.current_config.get("output_dir", "./outputs")
+        # Special handling for Apple Silicon - log message for user
+        if platform.system() == 'Darwin' and 'arm' in platform.processor().lower():
+            self.console.print("[yellow]Detected Apple Silicon. Using MPS-optimized settings...[/yellow]")
+            if "memory_reserve_pct" in self.current_config_dict:
+                self.console.print("[yellow]Removing memory_reserve_pct parameter for MPS compatibility[/yellow]")
         
-        # Use the consolidated main_trainer script for BLT training
-        cmd = [
-            python_cmd, "-m", "src.trainers.main_trainer",
-            "--model_type", "blt"
-        ]
-        
-        # Add output directory
-        if output_dir:
-            cmd.extend(["--output_dir", output_dir])
-        
-        # Add parameters from config, excluding duplicates with output_dir
-        excluded_keys = ["mode", "training_type", "output_dir"]
-        
-        # Parameter name mapping from our config to the script's expected names
-        param_mapping = {
-            "byte_lm_hidden_size": "hidden_size",
-            "byte_lm_num_layers": "num_layers",
-            "byte_lm_num_heads": "num_heads",
-            "byte_lm_dropout": "dropout",
-            "resume_from": "resume_from",
-            "training_dir": "output_dir"  # Use training_dir as output_dir if specified
-        }
-        
-        for key, value in self.current_config.items():
-            # Skip excluded keys
-            if key in excluded_keys:
-                continue
-            
-            # Map parameter name if needed
-            param_name = param_mapping.get(key, key)
-            
-            # Handle different value types
-            if isinstance(value, bool):
-                if value:
-                    cmd.append(f"--{param_name}")
-            elif isinstance(value, list):
-                # Directly handle lists for train_files and eval_files
-                if key in ["train_files", "eval_files"] and value:
-                    # Just pass the directory for the script to handle
-                    continue
-            elif value is not None:
-                cmd.append(f"--{param_name}")
-                cmd.append(str(value))
+        # Use the ConfigSchema to build our command
+        cmd = self.current_config.get_cli_command(self.python_cmd)
         
         # Log the command being executed
         self.console.print(f"[dim]Command: {' '.join(cmd)}[/dim]")
@@ -734,108 +880,126 @@ class NEATCLIInterface:
     
     def _configure_blt_entropy(self):
         """Configure BLT entropy estimator training parameters."""
-        # General parameters
-        self.current_config["resume_from"] = Prompt.ask(
-            "Resume from checkpoint (leave empty for new training)",
-            default=self.current_config.get("resume_from", "")
-        ) or None
+        # Create a ConfigSchema if not already present
+        if not isinstance(self.current_config, ConfigSchema):
+            self.current_config = ConfigSchema()
         
-        self.current_config["train_data_dir"] = Prompt.ask(
+        # Ensure model type is set correctly
+        self.current_config.model_type = "blt"
+        
+        # Training data parameters
+        train_data_dir = Prompt.ask(
             "Training data directory",
-            default=self.current_config.get("train_data_dir", "./data/pile_subset/train")
+            default=self.current_config.train_data_dir
         )
+        self.current_config.train_data_dir = train_data_dir
         
-        self.current_config["eval_data_dir"] = Prompt.ask(
+        eval_data_dir = Prompt.ask(
             "Evaluation data directory",
-            default=self.current_config.get("eval_data_dir", "./data/pile_subset/eval")
+            default=self.current_config.eval_data_dir
         )
+        self.current_config.eval_data_dir = eval_data_dir
         
-        self.current_config["output_dir"] = Prompt.ask(
+        output_dir = Prompt.ask(
             "Output directory",
-            default=self.current_config.get("output_dir", "./outputs/byte_lm")
+            default=self.current_config.output_dir
         )
+        self.current_config.output_dir = output_dir
         
-        self.current_config["cache_dir"] = Prompt.ask(
+        cache_dir = Prompt.ask(
             "Cache directory",
-            default=self.current_config.get("cache_dir", "./data/cache/byte_lm")
+            default=self.current_config.cache_dir
         )
+        self.current_config.cache_dir = cache_dir
         
         # Model parameters
-        self.current_config["byte_lm_hidden_size"] = int(Prompt.ask(
+        hidden_size = int(Prompt.ask(
             "Hidden size",
-            default=str(self.current_config.get("byte_lm_hidden_size", 64))
+            default=str(self.current_config.hidden_size)
         ))
+        self.current_config.hidden_size = hidden_size
         
-        self.current_config["byte_lm_num_layers"] = int(Prompt.ask(
+        num_layers = int(Prompt.ask(
             "Number of layers",
-            default=str(self.current_config.get("byte_lm_num_layers", 2))
+            default=str(self.current_config.num_layers)
         ))
+        self.current_config.num_layers = num_layers
         
-        self.current_config["byte_lm_num_heads"] = int(Prompt.ask(
+        num_heads = int(Prompt.ask(
             "Number of attention heads",
-            default=str(self.current_config.get("byte_lm_num_heads", 4))
+            default=str(self.current_config.num_heads)
         ))
+        self.current_config.num_heads = num_heads
         
-        self.current_config["byte_lm_dropout"] = float(Prompt.ask(
+        dropout = float(Prompt.ask(
             "Dropout probability",
-            default=str(self.current_config.get("byte_lm_dropout", 0.1))
+            default=str(self.current_config.dropout)
         ))
+        self.current_config.dropout = dropout
         
-        self.current_config["block_size"] = int(Prompt.ask(
+        block_size = int(Prompt.ask(
             "Block size",
-            default=str(self.current_config.get("block_size", 128))
+            default=str(self.current_config.block_size)
         ))
+        self.current_config.block_size = block_size
         
         # Training parameters
-        self.current_config["batch_size"] = int(Prompt.ask(
+        batch_size = int(Prompt.ask(
             "Batch size",
-            default=str(self.current_config.get("batch_size", 32))
+            default=str(self.current_config.batch_size)
         ))
+        self.current_config.batch_size = batch_size
         
-        self.current_config["max_steps"] = int(Prompt.ask(
+        max_steps = int(Prompt.ask(
             "Maximum training steps",
-            default=str(self.current_config.get("max_steps", 1000))
+            default=str(self.current_config.max_steps)
         ))
+        self.current_config.max_steps = max_steps
         
-        self.current_config["eval_steps"] = int(Prompt.ask(
+        eval_steps = int(Prompt.ask(
             "Evaluation steps",
-            default=str(self.current_config.get("eval_steps", 100))
+            default=str(self.current_config.eval_steps)
         ))
+        self.current_config.eval_steps = eval_steps
         
-        self.current_config["save_steps"] = int(Prompt.ask(
+        save_steps = int(Prompt.ask(
             "Save steps",
-            default=str(self.current_config.get("save_steps", 200))
+            default=str(self.current_config.save_steps)
         ))
+        self.current_config.save_steps = save_steps
         
-        self.current_config["learning_rate"] = float(Prompt.ask(
+        learning_rate = float(Prompt.ask(
             "Learning rate",
-            default=str(self.current_config.get("learning_rate", 5e-5))
+            default=str(self.current_config.learning_rate)
         ))
+        self.current_config.learning_rate = learning_rate
         
         # Hardware options
-        self.current_config["force_cpu"] = Confirm.ask(
+        force_cpu = Confirm.ask(
             "Force CPU use (ignore GPU/MPS)?",
-            default=self.current_config.get("force_cpu", False)
+            default=self.current_config.force_cpu
         )
+        self.current_config.force_cpu = force_cpu
         
-        self.current_config["memory_reserve_pct"] = int(Prompt.ask(
-            "Memory reserve percentage (1-99)",
-            default=str(self.current_config.get("memory_reserve_pct", 20))
-        ))
+        # Mixed precision is determined automatically for Apple Silicon
+        if not (platform.system() == 'Darwin' and 'arm' in platform.processor().lower()):
+            mixed_precision = Confirm.ask(
+                "Use mixed precision training?",
+                default=self.current_config.mixed_precision
+            )
+            self.current_config.mixed_precision = mixed_precision
+        else:
+            self.console.print("[yellow]Apple Silicon detected. Mixed precision is disabled on MPS.[/yellow]")
+            self.current_config.mixed_precision = False
         
-        # Options
-        self.current_config["mixed_precision"] = Confirm.ask(
-            "Use mixed precision training?",
-            default=self.current_config.get("mixed_precision", True)
-        )
-        
-        self.current_config["entropy_threshold"] = float(Prompt.ask(
+        entropy_threshold = float(Prompt.ask(
             "Entropy threshold",
-            default=str(self.current_config.get("entropy_threshold", 0.5))
+            default=str(self.current_config.entropy_threshold)
         ))
+        self.current_config.entropy_threshold = entropy_threshold
         
-        # Ensure training_dir matches output_dir
-        self.current_config["training_dir"] = self.current_config["output_dir"]
+        # Update the config dict for backwards compatibility
+        self.current_config_dict = self.current_config.to_dict()
     
     def _configure_mvot_codebook(self):
         """Configure MVoT visual codebook training parameters."""
@@ -862,23 +1026,32 @@ class NEATCLIInterface:
         self._clear_screen()
         self.console.print(Panel("Quick Test Training (5 Steps)", style=self.main_color))
         
-        # Load the test configuration
+        # Try to load the test configuration
         config_name = "blt_entropy_test"
         config_path = os.path.join(self._config_dir, f"{config_name}.json")
         
         if os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
-                    self.current_config = json.load(f)
+                    config_dict = json.load(f)
+                
+                # Create ConfigSchema from the loaded dict
+                self.current_config = ConfigSchema.from_dict(config_dict)
+                # Also store original dict for compatibility
+                self.current_config_dict = config_dict
+                
                 self.current_config_name = config_name
-                self.console.print(f"Loaded configuration: {config_name}")
+                self.console.print(f"[green]Loaded configuration: {config_name}[/green]")
             except Exception as e:
                 self.console.print(f"[red]Error loading configuration {config_name}: {e}[/red]")
-                # Use a default configuration
+                # Create a default test configuration
                 self._create_default_test_config()
         else:
             # Create the default test configuration
             self._create_default_test_config()
+        
+        # Apply platform-specific adaptations
+        self.current_config.adapt_for_platform()
         
         # Ask for confirmation if needed
         if not auto_confirm:
@@ -888,50 +1061,16 @@ class NEATCLIInterface:
             except (EOFError, KeyboardInterrupt):
                 self.console.print("[yellow]Assuming yes...[/yellow]")
         
-        # Use the consolidated main_trainer for BLT training
-        python_cmd = "python3"
-        try:
-            import sys
-            python_cmd = sys.executable or "python3"
-        except Exception:
-            pass
+        # Create a modified copy of the current configuration for testing
+        test_config = ConfigSchema.from_dict(self.current_config.to_dict())
+        test_config.max_steps = 5
+        test_config.eval_steps = 5
+        test_config.save_steps = 5
+        test_config.log_steps = 1
+        test_config.batch_size = min(test_config.batch_size, 8)  # Smaller batch for faster testing
         
-        # Start building command
-        cmd = [
-            python_cmd, "-m", "src.trainers.main_trainer",
-            "--model_type", "blt",
-            "--max_steps", "5",  # Override to make it quick
-            "--eval_steps", "5",
-            "--save_steps", "5"
-        ]
-        
-        # Track which parameters we've already added to avoid duplicates
-        added_params = set()
-        added_params.add("max_steps")  # We've already added these
-        added_params.add("eval_steps")
-        added_params.add("save_steps")
-        
-        # Add parameters from config
-        for key, value in self.current_config.items():
-            # Skip mode and training_type which are not script parameters
-            if key in ["mode", "training_type"] or key in added_params:
-                continue
-                
-            # Handle different value types
-            if isinstance(value, bool):
-                if value:
-                    cmd.append(f"--{key}")
-                    added_params.add(key)
-            elif isinstance(value, list):
-                if value:  # Only if non-empty
-                    param_value = self._format_list_args(value)
-                    cmd.append(f"--{key}")
-                    cmd.append(param_value)
-                    added_params.add(key)
-            elif value is not None:
-                cmd.append(f"--{key}")
-                cmd.append(str(value))
-                added_params.add(key)
+        # Get command using the test configuration
+        cmd = test_config.get_cli_command(self.python_cmd)
         
         # Log the command being executed
         self.console.print(f"[dim]Command: {' '.join(cmd)}[/dim]")
@@ -941,31 +1080,31 @@ class NEATCLIInterface:
     
     def _create_default_test_config(self):
         """Create a default test configuration for quick testing."""
-        self.current_config = {
-            "mode": "train",
-            "training_type": "blt_entropy",
-            "train_data_dir": "./data/pile_subset/train",
-            "eval_data_dir": "./data/pile_subset/eval",
-            "hidden_size": 64,
-            "num_layers": 2,
-            "num_heads": 4,
-            "dropout": 0.1,
-            "block_size": 128,
-            "batch_size": 32,
-            "max_steps": 10,
-            "eval_steps": 5,
-            "save_steps": 5,
-            "learning_rate": 5e-5,
-            "warmup_steps": 1,
-            "gradient_accumulation_steps": 1,
-            "weight_decay": 0.01,
-            "mixed_precision": True,
-            "output_dir": "./outputs/byte_lm_test",
-            "cache_dir": "./data/cache/byte_lm", 
-            "num_workers": 2,
-            "log_steps": 1,
-            "entropy_threshold": 0.5
-        }
+        self.current_config = ConfigSchema(
+            model_type="blt",
+            hidden_size=64,
+            num_layers=2,
+            num_heads=4,
+            dropout=0.1,
+            block_size=128,
+            batch_size=8,
+            max_steps=10,
+            eval_steps=5,
+            save_steps=5,
+            learning_rate=5e-5,
+            warmup_steps=1,
+            gradient_accumulation_steps=1,
+            weight_decay=0.01,
+            mixed_precision=False,
+            output_dir="./outputs/byte_lm_test",
+            cache_dir="./data/cache/byte_lm",
+            num_workers=2,
+            log_steps=1,
+            entropy_threshold=0.5
+        )
+        
+        # Save as dict for compatibility
+        self.current_config_dict = self.current_config.to_dict()
         self.current_config_name = "default_test_config"
     
     def _format_list_args(self, arg_list):
@@ -1062,140 +1201,124 @@ class NEATCLIInterface:
             # Execute command with progress display
             self._execute_command_with_progress(" ".join(cmd), "Hardware Detection", auto_continue=auto_continue)
     
-    def _ensure_config(self, training_type: str, auto_confirm=False) -> bool:
-        """Ensure we have a valid configuration for the specified training type.
+    def _ensure_config(self, model_type: str, auto_confirm=False) -> bool:
+        """Ensure we have a valid configuration for the specified model type.
         
         Args:
-            training_type: Type of training to configure for
+            model_type: Type of model to configure for (blt, mvot, full, baseline)
             auto_confirm: If True, skip confirmation prompts and use defaults
             
         Returns:
             bool: True if a valid config is available, False otherwise
         """
-        # Check if we have a config matching the training type
-        if self.current_config and self.current_config.get("training_type") == training_type:
+        # Check if we have a config matching the model type
+        if hasattr(self.current_config, 'model_type') and self.current_config.model_type == model_type:
             # We have a matching config
             return True
         
         # Check if we have any config
-        if self.current_config:
-            # We have a config but not matching the training type
+        if self.current_config is not None:
+            # We have a config but not matching the model type
             if not auto_confirm:
                 try:
-                    if not Confirm.ask(f"Current configuration is for {self.current_config.get('training_type')}. Configure for {training_type} instead?"):
+                    current_type = getattr(self.current_config, 'model_type', 'unknown')
+                    if not Confirm.ask(f"Current configuration is for {current_type}. Configure for {model_type} instead?"):
                         return False
                 except (EOFError, KeyboardInterrupt):
                     self.console.print("[yellow]Assuming yes...[/yellow]")
             
             # In auto mode or user confirmed, we'll reconfigure
         
-        # We need to configure
-        self.current_config = {
-            "mode": "train",
-            "training_type": training_type
+        # Map model type to config files
+        config_file_options = {
+            "blt": [
+                "blt_entropy_train.json",
+                "blt_entropy_mps.json",
+                "blt_entropy_test.json", 
+                "blt_entropy_final.json"
+            ],
+            "mvot": ["mvot_codebook_train.json", "mvot_codebook_standard.json"],
+            "full": ["full_model_train.json", "full_model_standard.json"],
+            "baseline": ["baseline_train.json", "baseline_standard.json"]
         }
         
-        if training_type == "blt_entropy":
-            # Try to load default config - first try specific file based on name
-            default_configs = [
-                "blt_entropy_train.json",
-                "blt_quick_train.json",
-                "blt_entropy_standard.json",
-                "blt_entropy_full_train.json"
-            ]
-            
-            # Try to find any matching config file
-            for config_file in default_configs:
-                config_path = os.path.join(CLI_CONFIG_DIR, config_file)
-                if os.path.exists(config_path):
-                    try:
-                        with open(config_path, "r") as f:
-                            self.current_config = json.load(f)
-                        self.current_config_name = os.path.basename(config_path).replace(".json", "")
-                        self.console.print(f"[green]Loaded default configuration '{self.current_config_name}'[/green]")
-                        return True
-                    except Exception as e:
-                        self.console.print(f"[yellow]Failed to load {config_file}: {e}[/yellow]")
-                        continue
-            
-            # If we reach here, no config was loaded - use manual config if interactive
-            if not auto_confirm:
+        default_configs = config_file_options.get(model_type, [])
+        
+        # Try to find any matching config file
+        for config_file in default_configs:
+            config_path = os.path.join(CLI_CONFIG_DIR, config_file)
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r") as f:
+                        config_dict = json.load(f)
+                    
+                    # Create ConfigSchema from the loaded dict
+                    self.current_config = ConfigSchema.from_dict(config_dict)
+                    # Also store original dict for compatibility
+                    self.current_config_dict = config_dict
+                    
+                    # Set the model type explicitly
+                    self.current_config.model_type = model_type
+                    
+                    # Apply platform-specific adaptations
+                    self.current_config.adapt_for_platform()
+                    
+                    self.current_config_name = os.path.basename(config_path).replace(".json", "")
+                    self.console.print(f"[green]Loaded default configuration '{self.current_config_name}'[/green]")
+                    return True
+                except Exception as e:
+                    self.console.print(f"[yellow]Failed to load {config_file}: {e}[/yellow]")
+                    continue
+        
+        # If we reach here, no config was loaded - use manual config if interactive
+        if not auto_confirm:
+            if model_type == "blt":
                 self._configure_blt_entropy()
                 return True
-            else:
-                # In automatic mode, use built-in defaults
-                self.current_config = {
-                    "mode": "train",
-                    "training_type": "blt_entropy",
-                    "train_data_dir": "./data/pile_subset/train",
-                    "eval_data_dir": "./data/pile_subset/eval",
-                    "byte_lm_hidden_size": 64,
-                    "byte_lm_num_layers": 2,
-                    "byte_lm_num_heads": 4,
-                    "block_size": 128,
-                    "batch_size": 32,
-                    "max_steps": 10,
-                    "output_dir": "./outputs",
-                    "training_dir": "./outputs/byte_lm_default",
-                    "cache_dir": "./data/cache/byte_lm",
-                    "entropy_threshold": 0.5
-                }
-                self.current_config_name = "default_blt_config"
-                return True
-                
-        elif training_type == "mvot_codebook":
-            if not auto_confirm:
+            elif model_type == "mvot":
                 self._configure_mvot_codebook()
                 return True
-            else:
-                # Use built-in defaults
-                self.current_config = {
-                    "mode": "train",
-                    "training_type": "mvot_codebook",
-                    "output_dir": "./outputs",
-                    "training_dir": "./outputs/mvot_codebook"
-                }
-                self.current_config_name = "default_mvot_config"
-                return True
-                
-        elif training_type == "full_model":
-            if not auto_confirm:
+            elif model_type == "full":
                 self._configure_full_model()
                 return True
-            else:
-                # Use built-in defaults
-                self.current_config = {
-                    "mode": "train",
-                    "training_type": "full_model",
-                    "output_dir": "./outputs",
-                    "training_dir": "./outputs/full_model",
-                    "hidden_size": 256,
-                    "num_layers": 4,
-                    "num_attention_heads": 8,
-                    "max_steps": 1000
-                }
-                self.current_config_name = "default_full_model_config"
-                return True
-                
-        elif training_type == "baseline":
-            if not auto_confirm:
+            elif model_type == "baseline":
                 self._configure_baseline()
                 return True
             else:
-                # Use built-in defaults
-                self.current_config = {
-                    "mode": "train",
-                    "training_type": "baseline",
-                    "output_dir": "./outputs",
-                    "training_dir": "./outputs/baseline"
-                }
-                self.current_config_name = "default_baseline_config"
-                return True
+                self.console.print(f"[red]Unknown model type: {model_type}[/red]")
+                return False
+        else:
+            # In automatic mode, create a basic default configuration
+            self.current_config = ConfigSchema()
+            self.current_config.model_type = model_type
+            
+            # Set a type-specific output directory
+            if model_type == "blt":
+                self.current_config.output_dir = "./outputs/byte_lm"
+                self.current_config.cache_dir = "./data/cache/byte_lm"
+            elif model_type == "mvot":
+                self.current_config.output_dir = "./outputs/mvot_codebook"
+                self.current_config.cache_dir = "./data/cache/mvot"
+            elif model_type == "full":
+                self.current_config.output_dir = "./outputs/full_model"
+                self.current_config.cache_dir = "./data/cache/full_model"
+            elif model_type == "baseline":
+                self.current_config.output_dir = "./outputs/baseline"
+                self.current_config.cache_dir = "./data/cache/baseline"
+            
+            # Apply platform-specific adaptations
+            self.current_config.adapt_for_platform()
+            
+            # Save as dict for compatibility
+            self.current_config_dict = self.current_config.to_dict()
+            
+            self.current_config_name = f"default_{model_type}_config"
+            return True
         
         return False
     
     def _execute_command_with_progress(self, cmd: str, title: str, auto_continue=False):
-        """Execute a command and show progress.
+        """Execute a command and show progress with comprehensive error handling.
         
         Args:
             cmd: Command to execute
@@ -1252,13 +1375,20 @@ class NEATCLIInterface:
             
             # Execute the command
             import subprocess
-            process = subprocess.Popen(
-                fixed_cmd, 
-                shell=True, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.STDOUT,
-                universal_newlines=True
-            )
+            try:
+                process = subprocess.Popen(
+                    fixed_cmd, 
+                    shell=True, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True
+                )
+            except Exception as e:
+                progress.update(task, description=f"[red]✗[/red] Failed to start process: {e}")
+                self.console.print(f"[red]Error starting process: {e}[/red]")
+                if not auto_continue:
+                    input("\nPress Enter to continue...")
+                return
             
             # Stream output
             output_lines = []
@@ -1271,8 +1401,17 @@ class NEATCLIInterface:
                     if len(line) > 50:
                         display_line += "..."
                     progress.update(task, description=f"Running {title}... Latest: {display_line}")
+                    
+                    # Check for known failure patterns in real-time
+                    if "CUDA out of memory" in line:
+                        progress.update(task, description=f"[red]⚠️ CUDA OUT OF MEMORY DETECTED![/red]")
+                    elif "MPS backend out of memory" in line or "MPS: failed to allocate" in line:
+                        progress.update(task, description=f"[red]⚠️ MPS OUT OF MEMORY DETECTED![/red]")
+                    elif "No such file or directory" in line:
+                        progress.update(task, description=f"[red]⚠️ FILE NOT FOUND ERROR DETECTED![/red]")
             except Exception as e:
                 progress.update(task, description=f"Error reading output: {e}")
+                self.console.print(f"[red]Error reading process output: {e}[/red]")
             
             # Wait for the process to complete
             try:
@@ -1285,6 +1424,7 @@ class NEATCLIInterface:
                     progress.update(task, description=f"[red]✗[/red] {title} failed with code {process.returncode}")
             except Exception as e:
                 progress.update(task, description=f"Error waiting for process: {e}")
+                self.console.print(f"[red]Error waiting for process to complete: {e}[/red]")
         
         # Show output
         if output_lines:
@@ -1306,17 +1446,81 @@ class NEATCLIInterface:
                     style=self.main_color
                 ))
             
-            # If command failed, try to highlight the error
+            # If command failed, try to highlight the error with intelligent error detection
             if process.returncode != 0:
-                # Look for common error messages
-                error_lines = []
-                for line in output_lines:
-                    if any(err in line.lower() for err in ["error", "exception", "traceback", "failed"]):
-                        error_lines.append(line)
+                # Look for common error messages with categorization
+                error_categories = {
+                    "Memory Errors": ["cuda out of memory", "mps backend out of memory", "mps: failed to allocate", 
+                                    "memory error", "oom", "out of memory"],
+                    "File/Path Errors": ["no such file or directory", "file not found", "path not found", 
+                                        "cannot open", "can't find"],
+                    "Syntax/Code Errors": ["syntaxerror", "nameerror", "typeerror", "attributeerror", 
+                                         "valueerror", "indexerror", "keyerror"],
+                    "Import Errors": ["importerror", "modulenotfounderror", "no module named"],
+                    "Device Errors": ["device not found", "cuda error", "mps error", "device side assert", 
+                                    "illegal memory access"],
+                    "Initialization Errors": ["failed to initialize", "initialization error", 
+                                            "could not initialize"]
+                }
                 
-                if error_lines:
-                    self.console.print("\n[bold red]Error Summary:[/bold red]")
-                    self.console.print(Panel("\n".join(error_lines[-10:]), style="red"))
+                # Collect and categorize errors
+                categorized_errors = {category: [] for category in error_categories}
+                general_errors = []
+                
+                for line in output_lines:
+                    line_lower = line.lower()
+                    
+                    # Check if line contains any error
+                    if any(err in line_lower for err in ["error", "exception", "traceback", "failed", "assertion"]):
+                        categorized = False
+                        
+                        # Try to categorize the error
+                        for category, patterns in error_categories.items():
+                            if any(pattern in line_lower for pattern in patterns):
+                                categorized_errors[category].append(line)
+                                categorized = True
+                                break
+                        
+                        # Add to general errors if not categorized
+                        if not categorized:
+                            general_errors.append(line)
+                
+                # Display errors by category
+                self.console.print("\n[bold red]Error Summary:[/bold red]")
+                
+                # Display categorized errors first
+                for category, errors in categorized_errors.items():
+                    if errors:
+                        self.console.print(f"[bold yellow]{category}:[/bold yellow]")
+                        for error in errors[-3:]:  # Show at most 3 errors per category
+                            self.console.print(f"  • {error}")
+                
+                # Display general errors
+                if general_errors:
+                    self.console.print("[bold yellow]Other Errors:[/bold yellow]")
+                    for error in general_errors[-5:]:  # Show at most 5 general errors
+                        self.console.print(f"  • {error}")
+                
+                # Provide troubleshooting suggestions based on error categories
+                if categorized_errors["Memory Errors"]:
+                    self.console.print("\n[bold green]Troubleshooting Suggestions (Memory Error):[/bold green]")
+                    self.console.print("• Reduce batch size in configuration")
+                    self.console.print("• Reduce model size (hidden_size, num_layers)")
+                    self.console.print("• Try using gradient checkpointing")
+                    if platform.system() == 'Darwin' and 'arm' in platform.processor().lower():
+                        self.console.print("• On Apple Silicon, try using the MPS-optimized configuration")
+                
+                elif categorized_errors["File/Path Errors"]:
+                    self.console.print("\n[bold green]Troubleshooting Suggestions (File/Path Error):[/bold green]")
+                    self.console.print("• Check that all data directories exist")
+                    self.console.print("• Verify paths are correct in configuration")
+                    self.console.print("• Make sure required data files are downloaded")
+                
+                elif categorized_errors["Device Errors"]:
+                    self.console.print("\n[bold green]Troubleshooting Suggestions (Device Error):[/bold green]")
+                    self.console.print("• Try with --force_cpu to use CPU instead")
+                    self.console.print("• Check that your GPU drivers are up to date")
+                    self.console.print("• Restart your machine to reset the GPU state")
         
         # Handle waiting for user input
         if not auto_continue:
