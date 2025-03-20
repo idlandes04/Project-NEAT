@@ -31,6 +31,11 @@ import tempfile
 import textwrap
 from colorama import Fore, Back, Style, init as colorama_init
 
+# Add ByteLMConfig to safe globals for loading checkpoints with weights_only=True
+from torch.serialization import add_safe_globals
+from src.utils.config import ByteLMConfig
+add_safe_globals([ByteLMConfig])
+
 # Initialize colorama for cross-platform colored terminal output
 colorama_init()
 
@@ -71,7 +76,8 @@ class BLTInteractiveTester:
             from ..components.blt.byte_processor import SmallByteLM
             
             # Load checkpoint
-            checkpoint = torch.load(self.model_path, map_location=torch.device('cpu'))
+            # Load model with ByteLMConfig added to safe globals
+            checkpoint = torch.load(self.model_path, map_location=torch.device('cpu'), weights_only=True)
             
             # Create model from checkpoint
             if "config" in checkpoint:
@@ -458,7 +464,8 @@ class BLTModelAnalyzer:
         """
         try:
             # Load the model checkpoint
-            checkpoint = torch.load(self.model_path, map_location=torch.device('cpu'), weights_only=False)
+            # Load model with ByteLMConfig added to safe globals
+            checkpoint = torch.load(self.model_path, map_location=torch.device('cpu'), weights_only=True)
             
             # Extract model configuration
             model_config = {}
@@ -1042,8 +1049,8 @@ def evaluate_full_model(config):
     from src.utils.config import ModelConfig
     
     try:
-        # Load model configuration from checkpoint
-        checkpoint = torch.load(config.model_path, map_location="cpu")
+        # Load model configuration from checkpoint with ByteLMConfig added to safe globals
+        checkpoint = torch.load(config.model_path, map_location="cpu", weights_only=True)
         
         # Extract configuration from checkpoint
         if "config" in checkpoint:
@@ -1176,8 +1183,8 @@ def run_component_ablation(config):
     from src.trainers.hardware_aware_trainer import HardwareAwareTrainer
     
     try:
-        # Load model configuration from checkpoint
-        checkpoint = torch.load(config.model_path, map_location="cpu")
+        # Load model configuration from checkpoint with ByteLMConfig added to safe globals
+        checkpoint = torch.load(config.model_path, map_location="cpu", weights_only=True)
         
         # Extract configuration from checkpoint
         if "config" in checkpoint:
