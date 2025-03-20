@@ -101,12 +101,18 @@ class BLTInteractiveTester:
                 # Assume it's a direct model
                 self.model = SmallByteLM()
             
-            # Load state dict
+            # Load state dict with key mapping for compatibility
             if "model_state_dict" in checkpoint:
-                self.model.load_state_dict(checkpoint["model_state_dict"])
+                state_dict = checkpoint["model_state_dict"]
             else:
                 # Assume checkpoint is the model state dict
-                self.model.load_state_dict(checkpoint)
+                state_dict = checkpoint
+            
+            # Apply key mapping for compatibility between different model formats
+            mapped_state_dict = self._map_state_dict_keys(state_dict)
+            
+            # Load the mapped state dict
+            self.model.load_state_dict(mapped_state_dict)
             
             # Set model to evaluation mode
             self.model.eval()
@@ -115,6 +121,93 @@ class BLTInteractiveTester:
         except Exception as e:
             logger.error(f"Error loading model: {e}")
             raise
+    
+    def _map_state_dict_keys(self, state_dict):
+        """
+        Map state dict keys between different naming formats for compatibility.
+        
+        This handles differences between formats like:
+        - 'byte_embeddings.weight' vs 'embedding.weight'
+        - 'position_embeddings.weight' vs 'position_embedding.weight'
+        - 'transformer.layers.0.xxx' vs 'layers.0.xxx'
+        
+        Args:
+            state_dict: Original state dict
+            
+        Returns:
+            Mapped state dict with keys compatible with the current model
+        """
+        # Create a new state dict to store the mapped keys
+        mapped_dict = {}
+        
+        # Detect format based on the presence of specific keys
+        old_format = any(k.startswith("byte_embeddings.") for k in state_dict.keys())
+        transformer_prefix = any(k.startswith("transformer.layers.") for k in state_dict.keys())
+        
+        # Log the detected format
+        if old_format:
+            logger.info("Detected old model format with 'byte_embeddings' keys")
+        if transformer_prefix:
+            logger.info("Detected model with 'transformer.layers' prefix")
+        
+        # Define key mapping patterns
+        key_mappings = {}
+        
+        # Handle embeddings
+        if old_format:
+            key_mappings["byte_embeddings.weight"] = "embedding.weight"
+            key_mappings["position_embeddings.weight"] = "position_embedding.weight"
+        
+        # Apply mappings and handle transformer prefix
+        for old_key, tensor in state_dict.items():
+            # Check if key is in our explicit mapping
+            if old_key in key_mappings:
+                new_key = key_mappings[old_key]
+                mapped_dict[new_key] = tensor
+                logger.debug(f"Mapped key: {old_key} -> {new_key}")
+            # Handle transformer.layers prefix
+            elif transformer_prefix and old_key.startswith("transformer.layers."):
+                new_key = old_key.replace("transformer.layers.", "layers.")
+                mapped_dict[new_key] = tensor
+                logger.debug(f"Mapped key: {old_key} -> {new_key}")
+            # Handle other pattern differences (add more patterns as needed)
+            elif "layer_norm" in old_key and "layer_norm." not in old_key:
+                # Handle layer_norm1 vs layer_norm.1 differences if they exist
+                new_key = old_key.replace("layer_norm", "layer_norm.")
+                mapped_dict[new_key] = tensor
+                logger.debug(f"Mapped key: {old_key} -> {new_key}")
+            else:
+                # Keep key as-is if no mapping is needed
+                mapped_dict[old_key] = tensor
+        
+        # Check for missing keys in the mapped dict compared to model's state dict
+        expected_keys = set(self.model.state_dict().keys())
+        mapped_keys = set(mapped_dict.keys())
+        
+        missing_keys = expected_keys - mapped_keys
+        if missing_keys:
+            logger.warning(f"Some keys are missing after mapping: {missing_keys}")
+            
+            # Try additional pattern-based mappings for missing keys
+            additional_mappings = []
+            for missing_key in missing_keys:
+                # Look for potential matches based on key endings
+                for old_key in state_dict.keys():
+                    if old_key.split('.')[-1] == missing_key.split('.')[-1]:
+                        additional_mappings.append((old_key, missing_key))
+                        break
+            
+            # Apply any additional mappings found
+            for old_key, new_key in additional_mappings:
+                mapped_dict[new_key] = state_dict[old_key]
+                logger.info(f"Applied additional mapping: {old_key} -> {new_key}")
+        
+        # Final check for missing keys
+        final_missing = set(self.model.state_dict().keys()) - set(mapped_dict.keys())
+        if final_missing:
+            logger.warning(f"Keys still missing after all mapping attempts: {final_missing}")
+            
+        return mapped_dict
     
     def compute_entropy(self, input_bytes: bytes) -> np.ndarray:
         """
@@ -484,6 +577,20 @@ class BLTModelAnalyzer:
                 state_dict = checkpoint['model_state_dict']
             elif 'state_dict' in checkpoint:
                 state_dict = checkpoint['state_dict']
+            else:
+                # Assume checkpoint itself is the state dict
+                state_dict = checkpoint
+            
+            # Detect model format
+            if state_dict:
+                old_format = any(k.startswith("byte_embeddings.") for k in state_dict.keys())
+                transformer_prefix = any(k.startswith("transformer.layers.") for k in state_dict.keys())
+                
+                # Add model format info to analysis results
+                model_config['detected_format'] = {
+                    'uses_byte_embeddings_prefix': old_format,
+                    'uses_transformer_layers_prefix': transformer_prefix
+                }
             
             # Parameter statistics
             param_stats = {}
@@ -501,6 +608,14 @@ class BLTModelAnalyzer:
                     'stds': param_stds,
                     'total': total_params
                 }
+                
+                # Add key format analysis for documentation
+                key_format = {
+                    'embedding_keys': [k for k in state_dict.keys() if 'embedding' in k.lower()],
+                    'layer_keys': [k for k in state_dict.keys() if 'layer' in k.lower()][:5],  # Just first 5 for brevity
+                    'total_keys': len(state_dict)
+                }
+                param_stats['key_format'] = key_format
             
             # Training statistics
             training_stats = {}
@@ -528,25 +643,37 @@ class BLTModelAnalyzer:
             List of dictionaries with entropy analysis results
         """
         try:
-            # Create and load the model
+            # Create and load the model (using the key mapping functionality)
             tester = BLTInteractiveTester(self.model_path, threshold=0.5)
+            
+            # Log information about model format
+            logger.info(f"Using BLT model with {tester.model.__class__.__name__} for entropy distribution analysis")
             
             # Process text samples
             results = []
-            for sample in text_samples:
-                # Analyze text using the tester
-                result = tester.analyze_text(sample)
-                
-                # Extract relevant metrics
-                results.append({
-                    'text': sample[:50] + '...' if len(sample) > 50 else sample,
-                    'length': result['text_size'],
-                    'mean_entropy': result['mean_entropy'],
-                    'max_entropy': result['max_entropy'],
-                    'min_entropy': result['min_entropy'],
-                    'boundary_count': result['boundary_count'],
-                    'boundary_ratio': result['boundary_ratio']
-                })
+            for i, sample in enumerate(text_samples):
+                try:
+                    # Analyze text using the tester
+                    result = tester.analyze_text(sample)
+                    
+                    # Extract relevant metrics
+                    results.append({
+                        'text': sample[:50] + '...' if len(sample) > 50 else sample,
+                        'length': result['text_size'],
+                        'mean_entropy': result['mean_entropy'],
+                        'max_entropy': result['max_entropy'],
+                        'min_entropy': result['min_entropy'],
+                        'boundary_count': result['boundary_count'],
+                        'boundary_ratio': result['boundary_ratio']
+                    })
+                except Exception as sample_error:
+                    logger.warning(f"Error processing sample {i+1}: {sample_error}")
+                    # Add a placeholder result with error information
+                    results.append({
+                        'text': sample[:50] + '...' if len(sample) > 50 else sample,
+                        'error': str(sample_error),
+                        'length': len(sample.encode('utf-8'))
+                    })
             
             return results
         except Exception as e:
