@@ -281,3 +281,165 @@ Several risks could impact our ability to deliver a robust CLI training/evaluati
    - Risk: Evaluation of large models may cause OOM errors
    - Mitigation: Implement progressive loading and evaluation in chunks
    - Fallback: Add automatic precision reduction options for large models
+
+## 7. Optimized BLT Training Plan
+
+Based on the current BLT model analysis showing uniform entropy values (all ~7.9976) and a 100% boundary ratio, we need to implement a properly optimized training plan to create an effective byte-level entropy estimator. This section outlines our approach to producing a production-quality BLT model.
+
+### 7.1 Training Configuration Enhancement
+
+Current issues observed:
+- Uniform entropy values (7.9976) across all samples
+- 100% boundary ratio (every byte marked as a boundary)
+- Ineffective entropy discrimination
+
+#### Enhanced Model Architecture:
+```json
+{
+  "model_type": "blt",
+  "hidden_size": 256,         // Increased from 128
+  "num_layers": 4,            // Increased from 2
+  "num_heads": 8,             // Increased from 4
+  "dropout": 0.2,             // Increased from 0.1 for regularization
+  "block_size": 256,          // Increased context window
+  "batch_size": 64,           // Larger batches for better gradient estimates
+  "max_steps": 20000,         // Extended training as requested
+  "eval_steps": 500,          // More frequent evaluation
+  "save_steps": 1000,
+  "learning_rate": {
+    "initial": 5e-5,
+    "min": 1e-6,
+    "schedule": "cosine"      // Cosine decay with warmup
+  },
+  "warmup_steps": 1000,       // 5% of total steps
+  "gradient_accumulation_steps": 4,
+  "weight_decay": 0.01,
+  "mixed_precision": true,
+  "entropy_threshold_annealing": {
+    "enabled": true,
+    "start": 0.8,             // Start with high threshold
+    "end": 0.5,               // End with moderate threshold
+    "steps": 10000            // Anneal over half the training
+  },
+  "gradient_clipping": 1.0    // Add clipping for stability
+}
+```
+
+### 7.2 Enhanced Data Pipeline
+
+#### Diversified Data Sources:
+1. **Text Corpus**: 
+   - Source: Portion of The Pile dataset (~10GB)
+   - Focus: Natural language, code, academic papers
+   - Format: UTF-8 encoded text files
+
+2. **Binary Data Mixture**:
+   - Source: Curated collection of binary files (images, executables, archives) (~5GB)
+   - Purpose: Train on high-entropy non-text sequences
+
+3. **Synthetic Patterns**:
+   - Generated sequences with known entropy profiles
+   - Alternating high/low entropy regions
+   - Repeating patterns with varying frequencies
+
+#### Data Processing:
+1. Preprocessing steps:
+   - Chunking files into sequences of 1024 bytes
+   - Creating sliding windows with 50% overlap
+   - Balancing data sources in each batch (33% text, 33% binary, 33% synthetic)
+
+2. Validation strategy:
+   - Hold out 10% of each data source
+   - Create special validation sets with known entropy profiles
+
+3. Caching strategy:
+   - Preprocess and cache all training data
+   - Store in memory-mapped format for efficient loading
+   - Implement multi-threaded data loading with prefetching
+
+### 7.3 Training Implementation
+
+#### Training optimizations:
+1. Hardware utilization:
+   - Auto-detect optimal batch size based on GPU memory
+   - Implement gradient checkpointing to handle larger models
+   - Dynamic precision switching based on platform
+
+2. Monitoring improvements:
+   - Track entropy distribution histograms throughout training
+   - Monitor boundary ratio on validation set (target: 15-30%)
+   - Implement early stopping if boundary ratio exceeds 50% or falls below 5%
+
+3. Loss function enhancements:
+   - Standard cross-entropy for next byte prediction
+   - Additional auxiliary loss to encourage entropy diversity
+   - Regularization term to penalize uniform entropy distributions
+
+4. Checkpointing strategy:
+   - Save best model by validation perplexity
+   - Save best model by entropy distribution quality
+   - Save model every 1000 steps with version history
+
+### 7.4 Evaluation and Fine-tuning
+
+1. Evaluation metrics:
+   - Perplexity on validation set
+   - Entropy distribution statistics (mean, variance, histogram)
+   - Boundary ratio on different data types
+   - Manual inspection of entropy profiles on sample data
+
+2. Post-training fine-tuning:
+   - Fine-tune entropy threshold on validation set
+   - Calibrate probability distributions if necessary
+   - Optimize inference speed with quantization
+
+3. Integration testing:
+   - End-to-end testing with NEAT architecture
+   - Performance profiling under different loads
+   - Cross-platform validation (Mac/Windows/Linux)
+
+### 7.5 Implementation Schedule
+
+1. Data Pipeline Setup (Day 1)
+   - Create data preprocessing scripts
+   - Implement efficient data loading
+   - Generate synthetic test data
+
+2. Training Infrastructure (Day 1)
+   - Configure optimized training environment
+   - Set up monitoring and logging
+   - Implement enhanced model architecture
+
+3. Training Execution (Days 2-4)
+   - Run main training for 20,000 steps
+   - Monitor and adjust hyperparameters if needed
+   - Perform interim evaluations
+
+4. Evaluation and Refinement (Day 5)
+   - Comprehensive model evaluation
+   - Fine-tune entropy thresholds
+   - Generate evaluation report
+
+5. Integration and Deployment (Day 6)
+   - Integrate with NEAT architecture
+   - Finalize documentation
+   - Create deployment package
+
+### 7.6 Expected Outcomes
+
+After implementing this optimized training plan, we expect:
+
+1. A production-quality BLT model with:
+   - Proper entropy discrimination between different byte patterns
+   - Boundary ratio between 15-30% on average text
+   - Variable entropy profiles based on data complexity
+
+2. Performance characteristics:
+   - Fast inference (< 10ms per 1KB on CPU)
+   - Reasonable memory footprint (< 100MB for model)
+   - Consistent cross-platform behavior
+
+3. Integration benefits:
+   - Efficient patching for the NEAT architecture
+   - Stable entropy estimation for complex inputs
+   - Configurable thresholds for different workloads
