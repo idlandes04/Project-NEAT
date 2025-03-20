@@ -944,12 +944,15 @@ class SmallByteLM(nn.Module):
         except Exception as e:
             print(f"Error loading BLT model checkpoint: {e}. Using untrained model.")
         
-    def generate_probs(self, input_bytes: Optional[torch.Tensor] = None, temperature: float = 1.0, input_ids: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def generate_probs(self, input_bytes: Optional[Union[torch.Tensor, bytes, List[int]]] = None, temperature: float = 1.0, input_ids: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Generate probability distribution for next bytes.
         
         Args:
-            input_bytes: Input byte sequence [batch_size, seq_len]
+            input_bytes: Input byte sequence as one of:
+                - torch.Tensor [batch_size, seq_len]
+                - bytes object
+                - List of integers
             temperature: Temperature for sampling (higher = more diverse)
             input_ids: Alternative name for input_bytes (for compatibility)
             
@@ -961,6 +964,27 @@ class SmallByteLM(nn.Module):
             input_bytes = input_ids
         elif input_bytes is None and input_ids is None:
             raise ValueError("Either input_bytes or input_ids must be provided")
+        
+        # Convert input to tensor if needed
+        if not isinstance(input_bytes, torch.Tensor):
+            if isinstance(input_bytes, bytes):
+                # Convert bytes to tensor
+                input_bytes = torch.tensor([[b for b in input_bytes]], dtype=torch.long)
+            elif isinstance(input_bytes, list) and all(isinstance(b, int) for b in input_bytes):
+                # Convert list of integers to tensor
+                input_bytes = torch.tensor([input_bytes], dtype=torch.long)
+            else:
+                raise ValueError(f"Unsupported input type: {type(input_bytes)}. Expected torch.Tensor, bytes, or list of integers")
+        
+        # Ensure input has batch dimension
+        if len(input_bytes.shape) == 1:
+            # Add batch dimension
+            input_bytes = input_bytes.unsqueeze(0)
+        
+        # Ensure input is within byte range (0-255)
+        if torch.any(input_bytes > 255):
+            # Convert to byte values by taking modulo 256
+            input_bytes = input_bytes % 256
             
         logits = self.forward(input_bytes=input_bytes)
         

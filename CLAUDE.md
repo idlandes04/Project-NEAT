@@ -243,133 +243,7 @@
 - Create component-wise ablation testing to isolate benefits
 - Implement comparative evaluation frameworks for baseline models
 
-## Project Reflections and Planning
-
-### Current State Assessment (Updated: 2025-03-16)
-We've successfully completed all phases through 2.3.3, implementing a comprehensive platform-agnostic architecture with robust test-time learning, cross-component communication, and hardware-aware resource management. All tests now pass across diverse environments, demonstrating the robustness of our implementation to handle varying hardware configurations from Apple Silicon to NVIDIA GPUs to systems without dedicated graphics acceleration.
-
-We are now beginning Phase 3.1.x (Testing and Benchmarking) to demonstrate the benefits of our architecture compared to traditional approaches.
-
-Key achievements to date include:
-
-1. **Core Components**:
-   - **Titans Memory System**: Long-context memory with adaptive decay and test-time learning (1.1.x)
-   - **Transformer² Adaptation**: SVD-based weight adaptation with task embedding matching (1.2.x)
-   - **BLT Core**: Byte-level entropy estimation and variable-length patch handling (1.3.x)
-   - **MVoT Processing**: Visual codebook integration, modality decisions, and byte-token mapping (1.4.x)
-
-2. **Component Integration**:
-   - **Robust Messaging System**: Priority-based pub/sub architecture for component communication (2.1.1)
-   - **State Management**: Centralized state tracking with deadlock prevention (2.1.2-2.1.3)
-   - **Feedback Loops**: Three essential feedback mechanisms (2.1.2):
-     - Task-Memory correlation for efficient memory allocation
-     - Surprise-driven adaptation for dynamic parameter adjustment
-     - Multimodal coordination between text and visual representations
-   - **Cross-Component Integration**: Verified coherent operation of all components (2.1.3)
-
-3. **Test-Time Learning Framework**:
-   - **Coordinated Gradient Computation**: Centralized system for test-time learning (2.2.1)
-   - **Gradient Isolation**: Controlled gradient flow between components (2.2.1)
-   - **Memory-Efficient Learning**: Optimized computation with checkpointing and parameter offloading (2.2.1)
-   - **Adaptive Learning Rate Management**: Component-specific scheduling with stability monitoring (2.2.2)
-   - **Emergency Stabilization**: Detection and recovery from learning instability (2.2.2)
-   - **Optimization Quality Monitoring**: Comprehensive quality assessment system (2.2.3)
-   - **Cross-Component Correction**: Coordinated correction mechanisms for harmonious learning (2.2.3)
-
-4. **Hardware-Aware Integration**:
-   - **Component Resource Management**: Dynamic resource allocation based on component importance (2.3.1)
-   - **Platform-Agnostic Implementation**: Robust fallback paths ensuring compatibility across hardware (2.3.1)
-   - **Memory Pressure Adaptation**: Automatic component deactivation under system constraints (2.3.2)
-   - **Hardware Capability Detection**: Intelligent feature detection enabling optimal hardware utilization (2.3.2)
-   - **Priority-Based Execution**: Scheduling system ensuring critical operations execute promptly (2.3.3)
-   - **Parallel Execution Optimization**: Identification and execution of independent operations concurrently (2.3.3)
-   - **Adaptive Batching System**: Dynamic batch size adjustment based on hardware and component characteristics (2.3.3)
-   - **End-to-End Integration Testing**: Comprehensive test suite validating the full system pipeline
-   - **Cross-Platform Testing**: Verified operation on both Apple Silicon and x86 architectures
-
-These achievements represent significant progress in our architectural vision: loose coupling with controlled interactions, efficient cross-component communication, coordinated behavior through feedback mechanisms, synchronized test-time learning, and robust hardware-aware resource management.
-
-### Current Focus: Testing and Benchmarking Framework (Phase 3.1.x)
-
-We are now beginning Phase 3.1.x - Testing and Benchmarking. Our immediate priorities are:
-
-1. **Synthetic Data Generator Integration** (Task 3.1.1)
-   - Integrate existing mathematical problem generator from synthetic_data.py
-   - Extend the generator to create progressive difficulty levels
-   - Implement controlled distribution shifts for testing generalization
-   - Create component-specific training data pipelines
-   - Pre-train the BLT Entropy Estimator and MVoT Visual Codebook models
-
-2. **Baseline Transformer Implementation** (Task 3.1.2)
-   - Create parameter-matched vanilla transformer for fair comparison
-   - Implement shared evaluation harness for consistent benchmarking
-   - Design metrics for measuring component-specific benefits
-   - Create visualization tools for performance comparison
-
-3. **Component-Wise Ablation Testing** (Task 3.1.3)
-   - Design test suite for isolating component contributions
-   - Implement controlled experiments for measuring synergistic effects
-   - Create visualization of component interactions and benefits
-   - Develop automated testing pipeline for continuous evaluation
-
-### Testing Strategy
-
-To effectively evaluate our NEAT architecture's benefits compared to traditional approaches, we need:
-
-1. **A robust synthetic data generator** that can:
-   - Create mathematical problems at varying difficulty levels
-   - Generate controlled distribution shifts between training and test sets
-   - Support both in-distribution and out-of-distribution testing
-
-2. **A two-phase training and evaluation approach**:
-   - Initial training on in-distribution data to establish baseline capability
-   - Evaluation on both in-distribution and out-of-distribution problems
-   - Comparison of performance drop between in-distribution and out-of-distribution problems
-
-3. **Component-wise ablation testing**:
-   - Test performance with individual components enabled/disabled
-   - Measure synergistic effects of component combinations
-   - Quantify memory usage and computational efficiency
-
-4. **Comprehensive metrics covering**:
-   - Accuracy on mathematical problem-solving
-   - Memory usage efficiency
-   - Computational throughput
-   - Generalization capability
-
-### User Interface Improvements
-
-**Interactive CLI Interface (Completed, March 2025)**
-- **Key Insight 1**: A hierarchical menu system with rich visuals significantly improves user experience for complex model training.
-- **Key Insight 2**: Configuration management (save/load) enables reproducible experiments and faster iteration.
-- **Key Insight 3**: Real-time progress tracking with visual feedback keeps users informed during long-running operations.
-- **Key Insight 4**: Quick test functionality enables rapid verification of the model training pipeline.
-- **Key Insight 5**: Platform-specific command adaptation ensures compatibility across different environments.
-- **Key Insight 6**: Single interface for all operations (training, evaluation, testing, data preparation) simplifies workflow.
-- **Key Insight 7**: Visual consistency with the project's theming creates a cohesive and professional experience.
-- **Key Insight 8**: Proper error handling and fallback mechanisms prevent frustrating user experiences.
-
-### Next Steps
-
-Our immediate next steps are:
-
-1. **Integrate the synthetic data generator**:
-   - Adapt code from synthetic_data.py to work with our NEAT architecture
-   - Create a component for generating mathematical problems at various difficulty levels
-   - Implement data loaders for efficient training
-
-2. **Pre-train the necessary component models**:
-   - Set up the byte-level entropy estimator training (using our new CLI interface)
-   - Configure the MVoT visual codebook training
-   - Create a training pipeline for these foundational models
-
-3. **Implement a baseline transformer model**:
-   - Design a parameter-matched vanilla transformer
-   - Ensure it uses the same training data and evaluation metrics
-   - Create a fair comparison framework
-
-By following this strategy, we'll systematically demonstrate the benefits of our component-based NEAT architecture over traditional monolithic approaches, especially in terms of adaptability, efficiency, and generalization capability.
-
+```
 project-neat/
 ├── src/
 │   ├── components/
@@ -381,10 +255,13 @@ project-neat/
 │   │   │   ├── visual_codebook.py    # VQ-VAE integration
 │   │   │   ├── token_processor.py    # Multimodal token processing
 │   │   │   ├── decision/             # Decision mechanisms
+│   │   │   │   └── decision_mechanism.py # Visualization decision logic
 │   │   │   └── mapping/              # Byte-token mapping
+│   │   │       └── byte_token_mapper.py # Mapping between BLT and token space
 │   │   ├── blt/                      # BLT byte processor
 │   │   │   ├── byte_processor.py     # Entropy-based patching
-│   │   │   └── entropy_estimator_trainer.py # Byte-level entropy estimation
+│   │   │   ├── entropy_estimator_trainer.py # Byte-level entropy estimation
+│   │   │   └── profiling.py          # BLT performance profiling
 │   │   ├── feedback/                 # Component feedback mechanisms
 │   │   │   ├── task_memory_feedback.py # Task-memory correlation
 │   │   │   ├── adaptation_feedback.py  # Surprise-driven adaptation
@@ -401,32 +278,68 @@ project-neat/
 │   │   ├── unified_architecture_resource_adapter.py # Resource-aware architecture
 │   │   └── transformer.py            # Base transformer implementation
 │   ├── trainers/                     # Training infrastructure
-│   │   └── hardware_aware_trainer.py # Platform-specific training
-│   ├── data/                         # Data handling (new for Phase 3.1.1)
+│   │   ├── main_trainer.py           # Unified training pipeline
+│   │   ├── main_eval.py              # Model evaluation and analysis
+│   │   └── main_env_prep.py          # Environment preparation
+│   ├── data/                         # Data handling
 │   │   ├── synthetic/                # Synthetic data generation
 │   │   │   └── math_generator.py     # Mathematical problem generator
 │   │   └── loaders/                  # Data loading utilities
+│   │       └── math_data_loader.py   # Math data loading utilities
 │   └── utils/                        # Utility functions
 │       ├── config.py                 # Configuration handling
+│       ├── cli_interface.py          # Interactive CLI interface
 │       ├── memory_optimization.py    # Memory usage optimization
-│       └── component_resource_management.py # Component-specific resource allocation
+│       ├── component_resource_management.py # Component-specific resource allocation
+│       ├── hardware_detection.py     # Hardware capability detection
+│       ├── platform_compatibility.py # Cross-platform operation compatibility
+│       ├── execution/                # Execution scheduling optimization
+│       │   ├── scheduler.py          # Priority-based execution scheduler
+│       │   ├── dependency_analyzer.py # Operation dependency analysis
+│       │   ├── batch_optimizer.py    # Adaptive batch size optimization
+│       │   ├── parallel_executor.py  # Parallel execution engine
+│       │   └── benchmark.py          # Performance benchmarking utilities
+│       └── execution_integration.py  # Integration with resource management
 ├── tests/                            # Test cases
+│   ├── mock_vqvae/                   # Mock VQ-VAE for testing
+│   │   └── mock_codebook.py          # Mock visual codebook
+│   ├── test_adaptive_learning.py     # Adaptive learning tests
+│   ├── test_advanced_problems.py     # Advanced problem solving tests
+│   ├── test_blt_end_to_end.py        # BLT end-to-end integration tests
+│   ├── test_cli_e2e.py               # CLI end-to-end tests
+│   ├── test_component_resource_management.py # Resource management tests
 │   ├── test_components.py            # Component-level tests
+│   ├── test_execution_integration.py # Execution integration tests
+│   ├── test_execution_scheduling.py  # Execution scheduling tests
+│   ├── test_feedback.py              # Feedback mechanism tests
+│   ├── test_hardware_capability_adaptation.py # Hardware adaptation tests
 │   ├── test_integration.py           # Integration tests
 │   ├── test_learning.py              # Learning system tests
-│   ├── test_feedback.py              # Feedback mechanism tests
+│   ├── test_learning_integration.py  # Learning integration tests
 │   ├── test_messaging.py             # Messaging system tests
-│   ├── test_component_resource_management.py # Resource management tests
-│   ├── test_resource_aware_architecture.py  # Resource-aware architecture tests
-│   └── test_synthetic_data.py        # Tests for synthetic data generator (new)
+│   ├── test_mvot_codebook.py         # MVoT codebook tests
+│   ├── test_mvot_decision.py         # MVoT decision mechanism tests
+│   ├── test_mvot_mapping.py          # MVoT mapping tests
+│   ├── test_resource_aware_architecture.py # Resource-aware architecture tests
+│   ├── test_synthetic_data.py        # Synthetic data generator tests
+│   └── test_train_neat_model_mac.py  # Mac-specific training tests
 ├── docs/                             # Documentation
 │   ├── PLAN_MAIN.MD                  # Project planning document
 │   ├── TECHNICAL.md                  # Technical details and theory
-│   ├── phase2.2.2-3_plan.md          # Hardware-aware integration plan
-│   ├── synthetic_data.py             # Original synthetic data implementation
+│   ├── BLT_REFACTORING_PLAN.md       # BLT refactoring plan & progress
+│   ├── pc_training_plan.md           # PC-specific training plan
 │   └── metal_docs.md                 # Apple Metal framework integration
 ├── scripts/                          # Helper scripts
-│   ├── train_byte_lm.py              # BLT training script
-│   └── train_baseline.py             # Baseline model training script (new)
-└── main.py                           # Main script
+│   ├── generate_simple_math_data.py  # Simple math data generator
+│   ├── generate_synthetic_data.py    # Advanced synthetic data generator
+│   ├── run_cli.py                    # CLI launcher script
+│   ├── main_cli_configs/             # CLI configuration files
+│   │   ├── blt_entropy_final.json    # Final BLT entropy config
+│   │   ├── blt_entropy_mps.json      # MPS-optimized BLT config
+│   │   ├── blt_entropy_test.json     # BLT testing config
+│   │   └── blt_entropy_train.json    # BLT training config
+│   └── patch/                        # Analysis scripts
+│       ├── analyze_blt_model.py      # BLT model analysis
+│       └── eval_pretrained_blt.py    # Pretrained BLT evaluation
+└── main.py                           # Main entry point script
 ```
