@@ -1783,8 +1783,10 @@ class EntropyEstimatorTrainer:
             try:
                 # Always use a safe fixed value for MPS on Apple Silicon
                 # Using 0.8 (80% of memory) is generally safe for M1/M2/M3 devices
+                # Set low watermark to 0.0 to avoid errors where it was set to 1.4 for some reason.
                 os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.8"
-                logger.info(f"Using MPS with safe memory settings (PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.8)")
+                os.environ["PYTORCH_MPS_LOW_WATERMARK_RATIO"] = "0.0"
+                logger.info(f"Using MPS with safe memory settings (HIGH=0.8, LOW=0.0)")
                 self.device = torch.device('mps')
             except Exception as e:
                 logger.warning(f"Failed to setup MPS: {e}. Falling back to CPU.")

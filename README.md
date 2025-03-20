@@ -90,13 +90,15 @@ gantt
     MVoT Implementation (1.4.x)        :done, mvot, 2025-02-15, 2025-02-28
     
     section Integration
-    Cross-Component Communication (2.1.x) :done, comms, 2025-03-01, 2025-03-15
-    Test-Time Learning Sync (2.2.x)       :done, ttl, 2025-03-15, 2025-03-25
-    Hardware-Aware Integration (2.3.x)    :done, hwint, 2025-03-25, 2025-04-10
+    Cross-Component Communication (2.1.x) :done, comms, 2025-03-01, 2025-03-10
+    Test-Time Learning Sync (2.2.x)       :done, ttl, 2025-03-10, 2025-03-15
+    Hardware-Aware Integration (2.3.x)    :done, hwint, 2025-03-15, 2025-03-25
+    CLI and API Refactoring (2.4.x)       :done, cli, 2025-03-25, 2025-04-05
     
     section Testing & Benchmarking
-    Synthetic Data Generator (3.1.1)      :done, synthetic, 2025-04-10, 2025-04-20
-    Baseline Testing (3.1.2)          :active, baseline, 2025-04-21, 2025-04-30
+    Synthetic Data Generator (3.1.1)      :done, synthetic, 2025-04-05, 2025-04-10
+    Cross-Platform Support                 :done, crossplat, 2025-04-10, 2025-04-15
+    Baseline Testing (3.1.2)          :active, baseline, 2025-04-15, 2025-04-25
     Component Ablation Tests (3.1.3)      :ablation, after baseline, 14d
     Memory & Learning Evaluation (3.2.x)  :memory, after ablation, 14d
 ```
@@ -115,19 +117,24 @@ gantt
 - ✅ **Cross-Component Communication**: Message-based pub-sub system
 - ✅ **Test-Time Learning**: Coordinated gradient computation and learning rate management
 - ✅ **Hardware-Aware Integration**: Resource allocation and execution optimization
+- ✅ **CLI Interface**: Rich, interactive command-line interface with configuration management
 
-### Latest Achievement: Synthetic Data Generator Integration (Phase 3.1.1) 
+### Latest Achievement: Cross-Platform Training Support (March 2025)
 
-We've just completed Phase 3.1.1, which focuses on synthetic data generation for training and evaluation:
+We've significantly improved the project's cross-platform capabilities:
 
-- ✅ **Advanced Problem Types**: Implemented multi-step reasoning, algebraic equations, and non-linear sequences
-- ✅ **Component-Specific Testing**: Created targeted problems for each NEAT component
+- ✅ **Apple Silicon MPS Support**: Fixed memory management issues on Mac M-series chips, preventing "invalid low watermark ratio" errors
+- ✅ **Unified Training Pipeline**: Consolidated training scripts with platform-specific optimizations
+- ✅ **Configuration Management**: Implemented schema-based configuration with validation and platform-specific adaptations
+- ✅ **Interactive CLI**: Enhanced CLI with real-time progress tracking and error categorization
+- ✅ **Comprehensive Testing**: End-to-end tests for Mac-specific training capabilities
+
+**Previously Completed:**
+- ✅ **Synthetic Data Generation (3.1.1)**: Implemented advanced math problems and component-specific test cases
 - ✅ **Mock Models**: Developed mock BLT and MVoT models for testing without full training
-- ✅ **Training Pipeline**: Connected data generation to main training infrastructure
-- ✅ **Full Test Run**: Successfully ran Mac test training as proof of concept
 
 **Currently in Progress:**
-- 🔄 **Baseline Testing (3.1.2)**: Training BLT and Cookbook as tests to validate training and pipeline fucntion. Using a subset of the pile with foucus on math, literacy, and science for the BLT component pre-training currently...
+- 🔄 **Baseline Testing (3.1.2)**: Training BLT on a subset of the Pile with focus on math, literacy, and science 
 - 📅 **Component Ablation (3.1.3)**: Testing each component's individual contribution
 - 📅 **Memory & Learning (3.2.x)**: Evaluating test-time learning effectiveness
 
@@ -540,10 +547,13 @@ project-neat/
 │   │   │   ├── visual_codebook.py    # VQ-VAE integration
 │   │   │   ├── token_processor.py    # Multimodal token processing
 │   │   │   ├── decision/             # Decision mechanisms
+│   │   │   │   └── decision_mechanism.py # Visualization decision logic
 │   │   │   └── mapping/              # Byte-token mapping
+│   │   │       └── byte_token_mapper.py # Mapping between BLT and token space
 │   │   ├── blt/                      # BLT byte processor
 │   │   │   ├── byte_processor.py     # Entropy-based patching
-│   │   │   └── entropy_estimator_trainer.py # Byte-level entropy estimation
+│   │   │   ├── entropy_estimator_trainer.py # Byte-level entropy estimation
+│   │   │   └── profiling.py          # BLT performance profiling
 │   │   ├── feedback/                 # Component feedback mechanisms
 │   │   │   ├── task_memory_feedback.py # Task-memory correlation
 │   │   │   ├── adaptation_feedback.py  # Surprise-driven adaptation
@@ -560,13 +570,17 @@ project-neat/
 │   │   ├── unified_architecture_resource_adapter.py # Resource-aware architecture
 │   │   └── transformer.py            # Base transformer implementation
 │   ├── trainers/                     # Training infrastructure
-│   │   └── hardware_aware_trainer.py # Platform-specific training
+│   │   ├── main_trainer.py           # Unified training pipeline
+│   │   ├── main_eval.py              # Model evaluation and analysis
+│   │   └── main_env_prep.py          # Environment preparation
 │   ├── data/                         # Data handling
 │   │   ├── synthetic/                # Synthetic data generation
 │   │   │   └── math_generator.py     # Mathematical problem generator
 │   │   └── loaders/                  # Data loading utilities
+│   │       └── math_data_loader.py   # Math data loading utilities
 │   └── utils/                        # Utility functions
 │       ├── config.py                 # Configuration handling
+│       ├── cli_interface.py          # Interactive CLI interface
 │       ├── memory_optimization.py    # Memory usage optimization
 │       ├── component_resource_management.py # Component-specific resource allocation
 │       ├── hardware_detection.py     # Hardware capability detection
@@ -579,25 +593,47 @@ project-neat/
 │       │   └── benchmark.py          # Performance benchmarking utilities
 │       └── execution_integration.py  # Integration with resource management
 ├── tests/                            # Test cases
+│   ├── mock_vqvae/                   # Mock VQ-VAE for testing
+│   │   └── mock_codebook.py          # Mock visual codebook
+│   ├── test_adaptive_learning.py     # Adaptive learning tests
+│   ├── test_advanced_problems.py     # Advanced problem solving tests
+│   ├── test_blt_end_to_end.py        # BLT end-to-end integration tests
+│   ├── test_cli_e2e.py               # CLI end-to-end tests
+│   ├── test_component_resource_management.py # Resource management tests
 │   ├── test_components.py            # Component-level tests
+│   ├── test_execution_integration.py # Execution integration tests
+│   ├── test_execution_scheduling.py  # Execution scheduling tests
+│   ├── test_feedback.py              # Feedback mechanism tests
+│   ├── test_hardware_capability_adaptation.py # Hardware adaptation tests
 │   ├── test_integration.py           # Integration tests
 │   ├── test_learning.py              # Learning system tests
-│   ├── test_feedback.py              # Feedback mechanism tests
+│   ├── test_learning_integration.py  # Learning integration tests
 │   ├── test_messaging.py             # Messaging system tests
-│   ├── test_component_resource_management.py # Resource management tests
-│   ├── test_resource_aware_architecture.py  # Resource-aware architecture tests
-│   ├── test_hardware_capability_adaptation.py # Hardware detection and adaptation tests
-│   ├── test_execution_scheduling.py        # Execution scheduling tests
-│   ├── test_execution_integration.py       # Execution integration tests
-│   └── test_synthetic_data.py              # Synthetic data generator tests
+│   ├── test_mvot_codebook.py         # MVoT codebook tests
+│   ├── test_mvot_decision.py         # MVoT decision mechanism tests
+│   ├── test_mvot_mapping.py          # MVoT mapping tests
+│   ├── test_resource_aware_architecture.py # Resource-aware architecture tests
+│   ├── test_synthetic_data.py        # Synthetic data generator tests
+│   └── test_train_neat_model_mac.py  # Mac-specific training tests
 ├── docs/                             # Documentation
 │   ├── PLAN_MAIN.MD                  # Project planning document
 │   ├── TECHNICAL.md                  # Technical details and theory
-│   ├── phase2.2.2-3_plan.md          # Hardware-aware integration plan
+│   ├── BLT_REFACTORING_PLAN.md       # BLT refactoring plan & progress
+│   ├── pc_training_plan.md           # PC-specific training plan
 │   └── metal_docs.md                 # Apple Metal framework integration
 ├── scripts/                          # Helper scripts
-│   ├── blt_interactive.py            # Interactive BLT model testing
-└── main.py                           # Main script
+│   ├── generate_simple_math_data.py  # Simple math data generator
+│   ├── generate_synthetic_data.py    # Advanced synthetic data generator
+│   ├── run_cli.py                    # CLI launcher script
+│   ├── main_cli_configs/             # CLI configuration files
+│   │   ├── blt_entropy_final.json    # Final BLT entropy config
+│   │   ├── blt_entropy_mps.json      # MPS-optimized BLT config
+│   │   ├── blt_entropy_test.json     # BLT testing config
+│   │   └── blt_entropy_train.json    # BLT training config
+│   └── patch/                        # Analysis scripts
+│       ├── analyze_blt_model.py      # BLT model analysis
+│       └── eval_pretrained_blt.py    # Pretrained BLT evaluation
+└── main.py                           # Main entry point script
 ```
 
 ## Contributing
