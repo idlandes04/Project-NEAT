@@ -18,7 +18,7 @@ from src.components.titans.memory_system import TitansMemorySystem, WindowAttent
 from src.components.transformer2.adaptation import Transformer2Adaptation, TaskDispatcher, SVDAdaptation
 from src.components.mvot.token_processor import MVoTTokenProcessor, TokenDiscrepancyLoss
 from src.components.blt.byte_processor import BLTByteProcessor, EntropyCalculator, SmallByteLM
-from src.components.blt.entropy_estimator_trainer import ByteDataset, EntropyEstimatorTrainer
+from src.trainers.main_trainer import ByteDataset, EntropyEstimatorTrainer
 from src.models.transformer import MemoryEfficientTransformer, TransformerLayer, FlashAttention
 from src.models.unified_architecture import UnifiedArchitecture, DynamicComponentController
 

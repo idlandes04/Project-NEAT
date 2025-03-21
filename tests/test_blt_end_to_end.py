@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.components.blt.byte_processor import SmallByteLMConfig, SmallByteLM
-from src.components.blt.entropy_estimator_trainer import ByteDataset, EntropyEstimatorTrainer
+from src.trainers.main_trainer import ByteDataset, EntropyEstimatorTrainer
 from src.utils.config import ByteLMConfig
 from src.trainers import train_blt_model, create_blt_model
 

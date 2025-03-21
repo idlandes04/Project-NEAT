@@ -11,6 +11,7 @@ import json
 import time
 import glob
 import platform
+import fnmatch
 from typing import Dict, List, Optional, Union, Any, Tuple
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
@@ -172,6 +173,9 @@ class NEATCLIInterface:
         self._clear_screen()
         self._print_header()
         
+        # Create necessary directories
+        self._ensure_directories()
+        
         while True:
             choice = self._show_main_menu()
             
@@ -202,6 +206,646 @@ class NEATCLIInterface:
                 break
             else:
                 self.console.print("[red]Invalid choice. Try again.[/red]")
+                
+    def _ensure_directories(self):
+        """Ensure all necessary directories exist for data and outputs."""
+        # Base directories
+        os.makedirs("./data", exist_ok=True)
+        os.makedirs("./outputs", exist_ok=True)
+        
+        # Data subdirectories based on standardized structure
+        data_dirs = [
+            # Raw data
+            "./data/raw",
+            "./data/raw/pile_subset/train",
+            "./data/raw/pile_subset/eval",
+            "./data/raw/binary_samples",
+            "./data/raw/synthetic",
+            
+            # Processed data
+            "./data/processed",
+            "./data/processed/blt/train",
+            "./data/processed/blt/eval",
+            "./data/processed/mvot",
+            "./data/processed/full",
+            
+            # Cache directories
+            "./data/cache",
+            "./data/cache/blt",
+            "./data/cache/mvot",
+            "./data/cache/temp",
+            
+            # Metadata
+            "./data/metadata",
+            "./data/metadata/blt",
+            "./data/metadata/mvot",
+            "./data/metadata/full",
+            
+            # Legacy paths for backward compatibility
+            "./data/byte_training",
+            "./data/byte_eval",
+            "./data/visual_training",
+            "./data/neat_training",
+            "./data/pile_subset/train",
+            "./data/pile_subset/eval",
+            
+            # Output directories
+            "./outputs/byte_lm",
+            "./outputs/mvot_codebook",
+            "./outputs/neat_model",
+            "./outputs/baseline"
+        ]
+        
+        # Create all directories
+        for directory in data_dirs:
+            os.makedirs(directory, exist_ok=True)
+            
+    def _generate_synthetic_math_data(self):
+        """Generate synthetic math data for training and evaluation."""
+        self._clear_screen()
+        self.console.print(Panel("Generate Synthetic Math Data", style=self.main_color))
+        
+        # Ask for generation parameters
+        train_size = int(Prompt.ask("Number of training examples", default="50000"))
+        eval_size = int(Prompt.ask("Number of evaluation examples", default="10000"))
+        component_size = int(Prompt.ask("Number of component-specific examples", default="10000"))
+        
+        difficulty_levels = {"1": "basic", "2": "medium", "3": "advanced", "4": "complex"}
+        difficulty_choice = Prompt.ask(
+            "Maximum difficulty level",
+            choices=["1", "2", "3", "4"],
+            default="3"
+        )
+        max_difficulty = difficulty_levels[difficulty_choice]
+        
+        visualize = Confirm.ask("Show example problems during generation?", default=False)
+        
+        # Prepare command
+        cmd = [
+            self.python_cmd, "main.py", "prepare_data",
+            "--data_type", "synthetic_math",
+            "--math_train_size", str(train_size),
+            "--math_eval_size", str(eval_size),
+            "--math_component_size", str(component_size),
+            "--math_max_difficulty", max_difficulty
+        ]
+        
+        if visualize:
+            cmd.append("--math_visualize")
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Generating Synthetic Math Data")
+        
+    def _download_byte_level_data(self):
+        """Download byte-level training data for BLT model."""
+        self._clear_screen()
+        self.console.print(Panel("Download Byte-Level Training Data", style=self.main_color))
+        
+        # Ask for download parameters
+        byte_data_dir = Prompt.ask("Output directory for byte-level data", default="./data")
+        download_gutenberg = Confirm.ask("Download Project Gutenberg texts?", default=True)
+        download_c4 = Confirm.ask("Download C4 dataset sample? (larger download)", default=False)
+        
+        # Prepare command
+        cmd = [
+            self.python_cmd, "main.py", "prepare_data",
+            "--data_type", "byte_level",
+            "--byte_data_dir", byte_data_dir
+        ]
+        
+        if download_gutenberg:
+            cmd.append("--byte_download_gutenberg")
+        
+        if download_c4:
+            cmd.append("--byte_download_c4")
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Downloading Byte-Level Data")
+    
+    def _download_pile_subset(self):
+        """Download a subset of the Pile dataset."""
+        self._clear_screen()
+        self.console.print(Panel("Download Pile Subset", style=self.main_color))
+        
+        # Ask for download parameters
+        pile_output_dir = Prompt.ask("Output directory for Pile subset", default="./data/pile_subset")
+        pile_warc_count = int(Prompt.ask("Number of Common Crawl WARC files to download", default="5"))
+        
+        # Prepare command
+        cmd = [
+            self.python_cmd, "main.py", "prepare_data",
+            "--data_type", "pile_subset",
+            "--pile_output_dir", pile_output_dir,
+            "--pile_warc_count", str(pile_warc_count)
+        ]
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Downloading Pile Subset")
+    
+    def _create_component_test_data(self):
+        """Create test data for component-specific evaluations."""
+        self._clear_screen()
+        self.console.print(Panel("Create Component Test Data", style=self.main_color))
+        
+        create_mock_models = Confirm.ask("Create mock BLT and MVoT models for testing?", default=True)
+        
+        # Prepare command
+        cmd = [
+            self.python_cmd, "main.py", "prepare_data",
+            "--data_type", "component_test"
+        ]
+        
+        if create_mock_models:
+            cmd.append("--create_mock_models")
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Creating Component Test Data")
+        
+    def _verify_directory_structure(self):
+        """Verify that the standardized directory structure exists and is correctly set up."""
+        self._clear_screen()
+        self.console.print(Panel("Verify Directory Structure", style=self.main_color))
+        
+        # List of directories that should exist based on standardized structure
+        required_dirs = [
+            # Raw data
+            "./data/raw",
+            "./data/raw/pile_subset/train",
+            "./data/raw/pile_subset/eval",
+            "./data/raw/binary_samples",
+            "./data/raw/synthetic",
+            
+            # Processed data
+            "./data/processed",
+            "./data/processed/blt/train",
+            "./data/processed/blt/eval",
+            "./data/processed/mvot",
+            "./data/processed/full",
+            
+            # Cache directories
+            "./data/cache",
+            "./data/cache/blt",
+            "./data/cache/mvot",
+            "./data/cache/temp",
+            
+            # Metadata
+            "./data/metadata",
+            "./data/metadata/blt",
+            "./data/metadata/mvot",
+            "./data/metadata/full",
+            
+            # Legacy paths for backward compatibility
+            "./data/byte_training",
+            "./data/byte_eval",
+            "./data/visual_training",
+            "./data/neat_training",
+            "./data/pile_subset/train",
+            "./data/pile_subset/eval",
+            
+            # Output directories
+            "./outputs/byte_lm",
+            "./outputs/mvot_codebook",
+            "./outputs/neat_model",
+            "./outputs/baseline"
+        ]
+        
+        # Check if directories exist
+        results_table = Table(box=box.ROUNDED, style=self.main_color)
+        results_table.add_column("Directory", style=self.text_color)
+        results_table.add_column("Status", style=self.text_color)
+        
+        # For directories that don't exist, create them if user confirms
+        missing_dirs = []
+        
+        for directory in required_dirs:
+            if os.path.exists(directory):
+                results_table.add_row(directory, "[green]✓ Exists[/green]")
+            else:
+                results_table.add_row(directory, "[red]✗ Missing[/red]")
+                missing_dirs.append(directory)
+        
+        self.console.print(results_table)
+        
+        if missing_dirs:
+            self.console.print(f"\n[yellow]Found {len(missing_dirs)} missing directories.[/yellow]")
+            if Confirm.ask("Create missing directories?", default=True):
+                for directory in missing_dirs:
+                    os.makedirs(directory, exist_ok=True)
+                self.console.print("[green]Created all missing directories successfully.[/green]")
+        else:
+            self.console.print("\n[green]All required directories exist. Directory structure is valid.[/green]")
+        
+        # Check for required files
+        self.console.print("\nChecking for essential data files...")
+        
+        # List of important data files that should exist
+        required_files = [
+            {"path": "./data/pile_subset/train", "pattern": "*.txt", "description": "Pile training data"},
+            {"path": "./data/pile_subset/eval", "pattern": "*.txt", "description": "Pile evaluation data"},
+            {"path": "./data/byte_training", "pattern": "*.bin", "description": "Byte training data"},
+            {"path": "./data/byte_eval", "pattern": "*.bin", "description": "Byte evaluation data"},
+            {"path": "./data/raw/synthetic", "pattern": "*.json", "description": "Synthetic data"}
+        ]
+        
+        file_status_table = Table(box=box.ROUNDED, style=self.main_color)
+        file_status_table.add_column("Data Type", style=self.text_color)
+        file_status_table.add_column("Status", style=self.text_color)
+        file_status_table.add_column("Count", style=self.text_color)
+        
+        for file_info in required_files:
+            path = file_info["path"]
+            pattern = file_info["pattern"]
+            description = file_info["description"]
+            
+            # Check if directory exists
+            if not os.path.exists(path):
+                file_status_table.add_row(description, "[red]✗ Directory missing[/red]", "0")
+                continue
+            
+            # Count files matching pattern
+            matching_files = list(glob.glob(os.path.join(path, pattern)))
+            count = len(matching_files)
+            
+            if count > 0:
+                file_status_table.add_row(description, "[green]✓ Files found[/green]", str(count))
+            else:
+                file_status_table.add_row(description, "[yellow]⚠ No files found[/yellow]", "0")
+        
+        self.console.print(file_status_table)
+        
+        input("\nPress Enter to continue...")
+        
+    def _view_dataset_metadata(self):
+        """View metadata about available datasets."""
+        self._clear_screen()
+        self.console.print(Panel("Dataset Metadata", style=self.main_color))
+        
+        # List metadata directories
+        metadata_dirs = [
+            {"path": "./data/metadata/blt", "description": "BLT metadata"},
+            {"path": "./data/metadata/mvot", "description": "MVoT metadata"},
+            {"path": "./data/metadata/full", "description": "Full model metadata"}
+        ]
+        
+        # Generate stats about available data
+        data_stats = [
+            {"name": "Pile Subset", "train_path": "./data/pile_subset/train", "eval_path": "./data/pile_subset/eval", "pattern": "*.txt"},
+            {"name": "Byte Training", "train_path": "./data/byte_training", "eval_path": "./data/byte_eval", "pattern": "*.bin"},
+            {"name": "Visual Training", "train_path": "./data/visual_training", "eval_path": None, "pattern": "*.jpg"},
+            {"name": "Synthetic Data", "train_path": "./data/raw/synthetic", "eval_path": None, "pattern": "*.json"}
+        ]
+        
+        stats_table = Table(box=box.ROUNDED, style=self.main_color)
+        stats_table.add_column("Dataset", style=self.text_color)
+        stats_table.add_column("Training Files", style=self.text_color)
+        stats_table.add_column("Evaluation Files", style=self.text_color)
+        stats_table.add_column("Total Size", style=self.text_color)
+        
+        for dataset in data_stats:
+            name = dataset["name"]
+            train_path = dataset["train_path"]
+            eval_path = dataset["eval_path"]
+            pattern = dataset["pattern"]
+            
+            # Count training files
+            train_count = 0
+            if train_path and os.path.exists(train_path):
+                train_files = list(glob.glob(os.path.join(train_path, pattern)))
+                train_count = len(train_files)
+            
+            # Count evaluation files
+            eval_count = 0
+            if eval_path and os.path.exists(eval_path):
+                eval_files = list(glob.glob(os.path.join(eval_path, pattern)))
+                eval_count = len(eval_files)
+            
+            # Calculate total size
+            total_size = 0
+            if train_path and os.path.exists(train_path):
+                for dirpath, _, filenames in os.walk(train_path):
+                    for filename in filenames:
+                        if not fnmatch.fnmatch(filename, pattern.replace("*", "*")):
+                            continue
+                        file_path = os.path.join(dirpath, filename)
+                        try:
+                            total_size += os.path.getsize(file_path)
+                        except (OSError, FileNotFoundError):
+                            continue
+            
+            if eval_path and os.path.exists(eval_path):
+                for dirpath, _, filenames in os.walk(eval_path):
+                    for filename in filenames:
+                        if not fnmatch.fnmatch(filename, pattern.replace("*", "*")):
+                            continue
+                        file_path = os.path.join(dirpath, filename)
+                        try:
+                            total_size += os.path.getsize(file_path)
+                        except (OSError, FileNotFoundError):
+                            continue
+            
+            # Format size
+            if total_size < 1024:
+                size_str = f"{total_size} B"
+            elif total_size < 1024 * 1024:
+                size_str = f"{total_size / 1024:.2f} KB"
+            elif total_size < 1024 * 1024 * 1024:
+                size_str = f"{total_size / (1024 * 1024):.2f} MB"
+            else:
+                size_str = f"{total_size / (1024 * 1024 * 1024):.2f} GB"
+            
+            stats_table.add_row(name, str(train_count), str(eval_count), size_str)
+        
+        self.console.print(stats_table)
+        
+        # Check for metadata JSON files
+        self.console.print("\nAvailable Metadata Files:")
+        found_metadata = False
+        
+        for metadata_dir in metadata_dirs:
+            path = metadata_dir["path"]
+            description = metadata_dir["description"]
+            
+            if os.path.exists(path):
+                metadata_files = list(glob.glob(os.path.join(path, "*.json")))
+                if metadata_files:
+                    found_metadata = True
+                    self.console.print(f"\n[bold]{description}:[/bold]")
+                    
+                    for metadata_file in metadata_files:
+                        try:
+                            with open(metadata_file, 'r') as f:
+                                metadata = json.load(f)
+                                
+                                # Create a table for the metadata
+                                metadata_table = Table(box=box.ROUNDED, style=self.main_color)
+                                metadata_table.add_column("Property", style=self.text_color)
+                                metadata_table.add_column("Value", style=self.text_color)
+                                
+                                # Add metadata fields
+                                for key, value in metadata.items():
+                                    if isinstance(value, dict):
+                                        metadata_table.add_row(key, str({k: v for k, v in value.items() if not isinstance(v, dict)}))
+                                    elif isinstance(value, list) and len(value) > 5:
+                                        metadata_table.add_row(key, f"List with {len(value)} items")
+                                    else:
+                                        metadata_table.add_row(key, str(value))
+                                
+                                self.console.print(f"File: {os.path.basename(metadata_file)}")
+                                self.console.print(metadata_table)
+                                
+                        except Exception as e:
+                            self.console.print(f"[yellow]Error loading metadata file {metadata_file}: {e}[/yellow]")
+        
+        if not found_metadata:
+            self.console.print("[yellow]No metadata files found. Run training or evaluation to generate metadata.[/yellow]")
+        
+        input("\nPress Enter to continue...")
+        
+    def _configure_data_processing(self):
+        """Configure data processing parameters."""
+        self._clear_screen()
+        self.console.print(Panel("Configure Data Processing", style=self.main_color))
+        
+        # Create options for different data types
+        data_types = [
+            "Text Processing",
+            "Binary Processing",
+            "Synthetic Data Generation",
+            "Data Mixing"
+        ]
+        
+        self.console.print("Select data type to configure:")
+        for i, data_type in enumerate(data_types, 1):
+            self.console.print(f"{i}. {data_type}")
+        
+        choice = Prompt.ask("Enter your choice (0 to cancel)", 
+                          choices=["0"] + [str(i) for i in range(1, len(data_types) + 1)])
+        
+        if choice == "0":
+            return
+        
+        selected_type = data_types[int(choice) - 1]
+        
+        if selected_type == "Text Processing":
+            self._configure_text_processing()
+        elif selected_type == "Binary Processing":
+            self._configure_binary_processing()
+        elif selected_type == "Synthetic Data Generation":
+            self._configure_synthetic_data()
+        elif selected_type == "Data Mixing":
+            self._configure_data_mixing()
+            
+    def _configure_text_processing(self):
+        """Configure text processing parameters."""
+        self._clear_screen()
+        self.console.print(Panel("Configure Text Processing", style=self.main_color))
+        
+        # Get current configuration or use defaults
+        text_config = {
+            "chunk_size": 1024,
+            "chunk_overlap": 128,
+            "min_chunk_size": 256,
+            "preserve_whitespace": True,
+            "lowercase": False,
+            "filter_non_printable": True,
+            "max_line_length": 1000
+        }
+        
+        # Update configuration parameters
+        text_config["chunk_size"] = int(Prompt.ask("Chunk size (in characters)", default=str(text_config["chunk_size"])))
+        text_config["chunk_overlap"] = int(Prompt.ask("Chunk overlap (in characters)", default=str(text_config["chunk_overlap"])))
+        text_config["min_chunk_size"] = int(Prompt.ask("Minimum chunk size (in characters)", default=str(text_config["min_chunk_size"])))
+        text_config["preserve_whitespace"] = Confirm.ask("Preserve whitespace?", default=text_config["preserve_whitespace"])
+        text_config["lowercase"] = Confirm.ask("Convert to lowercase?", default=text_config["lowercase"])
+        text_config["filter_non_printable"] = Confirm.ask("Filter non-printable characters?", default=text_config["filter_non_printable"])
+        text_config["max_line_length"] = int(Prompt.ask("Maximum line length (0 for unlimited)", default=str(text_config["max_line_length"])))
+        
+        # Save configuration to file
+        config_path = os.path.join(self._config_dir, "text_processing.json")
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(text_config, f, indent=2)
+            self.console.print(f"[green]Configuration saved to {config_path}[/green]")
+        except Exception as e:
+            self.console.print(f"[red]Error saving configuration: {e}[/red]")
+        
+        input("\nPress Enter to continue...")
+    
+    def _configure_binary_processing(self):
+        """Configure binary processing parameters."""
+        self._clear_screen()
+        self.console.print(Panel("Configure Binary Processing", style=self.main_color))
+        
+        # Get current configuration or use defaults
+        binary_config = {
+            "chunk_size": 1024,
+            "chunk_overlap": 128,
+            "byte_token_map": None,
+            "detect_file_type": True,
+            "filter_formats": ["exe", "elf", "pdf", "png", "jpg", "jpeg", "mp3", "mp4", "wav"]
+        }
+        
+        # Update configuration parameters
+        binary_config["chunk_size"] = int(Prompt.ask("Chunk size (in bytes)", default=str(binary_config["chunk_size"])))
+        binary_config["chunk_overlap"] = int(Prompt.ask("Chunk overlap (in bytes)", default=str(binary_config["chunk_overlap"])))
+        binary_config["detect_file_type"] = Confirm.ask("Detect file type and use format-specific processing?", default=binary_config["detect_file_type"])
+        
+        # Ask about formats to include
+        self.console.print("\nFile formats to include in processing:")
+        formats = binary_config["filter_formats"]
+        for i, fmt in enumerate(formats):
+            include = Confirm.ask(f"Include {fmt} files?", default=True)
+            if not include and fmt in formats:
+                formats.remove(fmt)
+        
+        # Ask about additional formats
+        add_format = Confirm.ask("Add additional file format?", default=False)
+        while add_format:
+            new_format = Prompt.ask("Enter file extension (without dot)")
+            if new_format and new_format not in formats:
+                formats.append(new_format)
+            add_format = Confirm.ask("Add another file format?", default=False)
+        
+        binary_config["filter_formats"] = formats
+        
+        # Save configuration to file
+        config_path = os.path.join(self._config_dir, "binary_processing.json")
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(binary_config, f, indent=2)
+            self.console.print(f"[green]Configuration saved to {config_path}[/green]")
+        except Exception as e:
+            self.console.print(f"[red]Error saving configuration: {e}[/red]")
+        
+        input("\nPress Enter to continue...")
+    
+    def _configure_synthetic_data(self):
+        """Configure synthetic data generation parameters."""
+        self._clear_screen()
+        self.console.print(Panel("Configure Synthetic Data Generation", style=self.main_color))
+        
+        # Get current configuration or use defaults
+        synthetic_config = {
+            "problem_types": ["arithmetic", "algebra", "sequence", "word", "logic"],
+            "difficulty_distribution": {"basic": 0.3, "medium": 0.3, "advanced": 0.3, "complex": 0.1},
+            "include_component_specific": True,
+            "force_entropy_variation": True,
+            "include_multimodal_problems": True
+        }
+        
+        # Update problem types to include
+        self.console.print("\nProblem types to include:")
+        problem_types = synthetic_config["problem_types"]
+        
+        include_arithmetic = Confirm.ask("Include arithmetic problems?", default="arithmetic" in problem_types)
+        include_algebra = Confirm.ask("Include algebra problems?", default="algebra" in problem_types)
+        include_sequence = Confirm.ask("Include sequence problems?", default="sequence" in problem_types)
+        include_word = Confirm.ask("Include word problems?", default="word" in problem_types)
+        include_logic = Confirm.ask("Include logic problems?", default="logic" in problem_types)
+        
+        # Update problem types
+        synthetic_config["problem_types"] = []
+        if include_arithmetic:
+            synthetic_config["problem_types"].append("arithmetic")
+        if include_algebra:
+            synthetic_config["problem_types"].append("algebra")
+        if include_sequence:
+            synthetic_config["problem_types"].append("sequence")
+        if include_word:
+            synthetic_config["problem_types"].append("word")
+        if include_logic:
+            synthetic_config["problem_types"].append("logic")
+        
+        # Update difficulty distribution
+        self.console.print("\nDifficulty distribution (percentages, must sum to 100):")
+        
+        valid_distribution = False
+        while not valid_distribution:
+            basic_pct = float(Prompt.ask("Basic difficulty percentage", default=str(synthetic_config["difficulty_distribution"]["basic"] * 100)))
+            medium_pct = float(Prompt.ask("Medium difficulty percentage", default=str(synthetic_config["difficulty_distribution"]["medium"] * 100)))
+            advanced_pct = float(Prompt.ask("Advanced difficulty percentage", default=str(synthetic_config["difficulty_distribution"]["advanced"] * 100)))
+            complex_pct = float(Prompt.ask("Complex difficulty percentage", default=str(synthetic_config["difficulty_distribution"]["complex"] * 100)))
+            
+            total = basic_pct + medium_pct + advanced_pct + complex_pct
+            if abs(total - 100.0) < 0.001:
+                valid_distribution = True
+            else:
+                self.console.print(f"[red]Percentages must sum to 100, got {total}. Please try again.[/red]")
+        
+        synthetic_config["difficulty_distribution"] = {
+            "basic": basic_pct / 100.0,
+            "medium": medium_pct / 100.0,
+            "advanced": advanced_pct / 100.0,
+            "complex": complex_pct / 100.0
+        }
+        
+        # Other options
+        synthetic_config["include_component_specific"] = Confirm.ask("Include component-specific test problems?", default=synthetic_config["include_component_specific"])
+        synthetic_config["force_entropy_variation"] = Confirm.ask("Force entropy variation across problems?", default=synthetic_config["force_entropy_variation"])
+        synthetic_config["include_multimodal_problems"] = Confirm.ask("Include multi-modal problems?", default=synthetic_config["include_multimodal_problems"])
+        
+        # Save configuration to file
+        config_path = os.path.join(self._config_dir, "synthetic_data.json")
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(synthetic_config, f, indent=2)
+            self.console.print(f"[green]Configuration saved to {config_path}[/green]")
+        except Exception as e:
+            self.console.print(f"[red]Error saving configuration: {e}[/red]")
+        
+        input("\nPress Enter to continue...")
+    
+    def _configure_data_mixing(self):
+        """Configure data mixing parameters."""
+        self._clear_screen()
+        self.console.print(Panel("Configure Data Mixing", style=self.main_color))
+        
+        # Get current configuration or use defaults
+        mixing_config = {
+            "source_weights": {"text": 0.4, "binary": 0.2, "synthetic": 0.4},
+            "balanced_sampling": True,
+            "prevent_source_starvation": True,
+            "randomize_weights_per_epoch": False,
+            "use_component_specific_batches": True
+        }
+        
+        # Update source weights
+        self.console.print("\nSource weights (percentages, must sum to 100):")
+        
+        valid_weights = False
+        while not valid_weights:
+            text_pct = float(Prompt.ask("Text data percentage", default=str(mixing_config["source_weights"]["text"] * 100)))
+            binary_pct = float(Prompt.ask("Binary data percentage", default=str(mixing_config["source_weights"]["binary"] * 100)))
+            synthetic_pct = float(Prompt.ask("Synthetic data percentage", default=str(mixing_config["source_weights"]["synthetic"] * 100)))
+            
+            total = text_pct + binary_pct + synthetic_pct
+            if abs(total - 100.0) < 0.001:
+                valid_weights = True
+            else:
+                self.console.print(f"[red]Percentages must sum to 100, got {total}. Please try again.[/red]")
+        
+        mixing_config["source_weights"] = {
+            "text": text_pct / 100.0,
+            "binary": binary_pct / 100.0,
+            "synthetic": synthetic_pct / 100.0
+        }
+        
+        # Other options
+        mixing_config["balanced_sampling"] = Confirm.ask("Use balanced sampling?", default=mixing_config["balanced_sampling"])
+        mixing_config["prevent_source_starvation"] = Confirm.ask("Prevent source starvation?", default=mixing_config["prevent_source_starvation"])
+        mixing_config["randomize_weights_per_epoch"] = Confirm.ask("Randomize weights per epoch?", default=mixing_config["randomize_weights_per_epoch"])
+        mixing_config["use_component_specific_batches"] = Confirm.ask("Use component-specific batches?", default=mixing_config["use_component_specific_batches"])
+        
+        # Save configuration to file
+        config_path = os.path.join(self._config_dir, "data_mixing.json")
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(mixing_config, f, indent=2)
+            self.console.print(f"[green]Configuration saved to {config_path}[/green]")
+        except Exception as e:
+            self.console.print(f"[red]Error saving configuration: {e}[/red]")
+        
+        input("\nPress Enter to continue...")
     
     def _clear_screen(self):
         """Clear the terminal screen."""
@@ -308,18 +952,369 @@ class NEATCLIInterface:
         menu_table.add_row("3", "Ablation Study")
         menu_table.add_row("4", "Interactive Evaluation")
         menu_table.add_row("5", "BLT Model Analysis")
-        menu_table.add_row("6", "Configure Evaluation Parameters")
+        menu_table.add_row("6", "Discover Models")
+        menu_table.add_row("7", "Configure Evaluation Parameters")
         menu_table.add_row("0", "Return to Main Menu")
         
         self.console.print(menu_table)
         
-        choice = Prompt.ask("Enter your choice", choices=["0", "1", "2", "3", "4", "5", "6"])
+        choice = Prompt.ask("Enter your choice", choices=["0", "1", "2", "3", "4", "5", "6", "7"])
         
         if choice == "0":
             return
+        elif choice == "1":
+            self._evaluate_full_model()
+        elif choice == "2":
+            self._component_wise_evaluation()
+        elif choice == "3":
+            self._ablation_study()
+        elif choice == "4":
+            self._interactive_evaluation()
         elif choice == "5":
             self._blt_model_analysis()
-        # Add specific evaluation methods based on choice
+        elif choice == "6":
+            self._discover_models()
+        elif choice == "7":
+            self._configure_evaluation_parameters()
+            
+    def _evaluate_full_model(self):
+        """Evaluate a full NEAT model."""
+        self._clear_screen()
+        self.console.print(Panel("Evaluate Full Model", style=self.main_color))
+        
+        # Discover model checkpoints
+        found_models = self._find_model_checkpoints("./outputs/neat_model")
+        
+        if not found_models:
+            self.console.print("[yellow]No full model checkpoints found. Please train a model first.[/yellow]")
+            input("Press Enter to continue...")
+            return
+        
+        # Let user select a model
+        self.console.print("\nAvailable full model checkpoints:")
+        for i, model_info in enumerate(found_models, 1):
+            self.console.print(f"  {i}. {model_info['name']} ({model_info['date']}, {model_info['size']})")
+        
+        choice = Prompt.ask("Select a model to evaluate (0 to cancel)", 
+                          choices=["0"] + [str(i) for i in range(1, len(found_models) + 1)])
+        
+        if choice == "0":
+            return
+        
+        # Get selected model
+        selected_model = found_models[int(choice) - 1]
+        
+        # Ask for evaluation data
+        eval_data_dir = Prompt.ask("Evaluation data directory", default="./data/raw/pile_subset/eval")
+        batch_size = Prompt.ask("Batch size", default="8")
+        
+        # Build command
+        cmd = [
+            self.python_path, "main.py",
+            "eval",
+            "--model_path", selected_model["path"],
+            "--eval_type", "full",
+            "--eval_data_path", eval_data_dir,
+            "--batch_size", batch_size
+        ]
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Evaluating Full Model")
+    
+    def _component_wise_evaluation(self):
+        """Run component-wise evaluation."""
+        self._clear_screen()
+        self.console.print(Panel("Component-Wise Evaluation", style=self.main_color))
+        
+        # Discover model checkpoints
+        found_models = self._find_model_checkpoints("./outputs/neat_model")
+        
+        if not found_models:
+            self.console.print("[yellow]No model checkpoints found. Please train a model first.[/yellow]")
+            input("Press Enter to continue...")
+            return
+        
+        # Let user select a model
+        self.console.print("\nAvailable model checkpoints:")
+        for i, model_info in enumerate(found_models, 1):
+            self.console.print(f"  {i}. {model_info['name']} ({model_info['date']}, {model_info['size']})")
+        
+        choice = Prompt.ask("Select a model to evaluate (0 to cancel)", 
+                          choices=["0"] + [str(i) for i in range(1, len(found_models) + 1)])
+        
+        if choice == "0":
+            return
+        
+        # Get selected model
+        selected_model = found_models[int(choice) - 1]
+        
+        # Select components
+        self.console.print("\nSelect components to evaluate:")
+        titans_memory = Confirm.ask("Evaluate Titans memory system?", default=True)
+        transformer2 = Confirm.ask("Evaluate Transformer² adaptation?", default=True)
+        mvot = Confirm.ask("Evaluate MVoT token processor?", default=True)
+        blt = Confirm.ask("Evaluate BLT byte processor?", default=True)
+        
+        # Build command
+        cmd = [
+            self.python_path, "main.py",
+            "eval",
+            "--model_path", selected_model["path"],
+            "--eval_type", "component_wise"
+        ]
+        
+        # Add component flags
+        if titans_memory:
+            cmd.append("--eval_titans_memory")
+        if transformer2:
+            cmd.append("--eval_transformer2")
+        if mvot:
+            cmd.append("--eval_mvot")
+        if blt:
+            cmd.append("--eval_blt")
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Component-Wise Evaluation")
+    
+    def _ablation_study(self):
+        """Run ablation study."""
+        self._clear_screen()
+        self.console.print(Panel("Ablation Study", style=self.main_color))
+        
+        # Discover model checkpoints
+        found_models = self._find_model_checkpoints("./outputs/neat_model")
+        
+        if not found_models:
+            self.console.print("[yellow]No model checkpoints found. Please train a model first.[/yellow]")
+            input("Press Enter to continue...")
+            return
+        
+        # Let user select a model
+        self.console.print("\nAvailable model checkpoints:")
+        for i, model_info in enumerate(found_models, 1):
+            self.console.print(f"  {i}. {model_info['name']} ({model_info['date']}, {model_info['size']})")
+        
+        choice = Prompt.ask("Select a model to ablate (0 to cancel)", 
+                          choices=["0"] + [str(i) for i in range(1, len(found_models) + 1)])
+        
+        if choice == "0":
+            return
+        
+        # Get selected model
+        selected_model = found_models[int(choice) - 1]
+        
+        # Build command
+        cmd = [
+            self.python_path, "main.py",
+            "eval",
+            "--model_path", selected_model["path"],
+            "--eval_type", "ablation"
+        ]
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Running Ablation Study")
+    
+    def _interactive_evaluation(self):
+        """Run interactive evaluation."""
+        self._clear_screen()
+        self.console.print(Panel("Interactive Evaluation", style=self.main_color))
+        
+        # Ask which model type to evaluate
+        model_type = Prompt.ask(
+            "Select model type to evaluate", 
+            choices=["full", "blt", "mvot", "baseline"],
+            default="full"
+        )
+        
+        # Find checkpoints for the specified model type
+        model_dir = "./outputs/neat_model"
+        if model_type == "blt":
+            model_dir = "./outputs/byte_lm"
+        elif model_type == "mvot":
+            model_dir = "./outputs/mvot_codebook"
+        elif model_type == "baseline":
+            model_dir = "./outputs/baseline"
+        
+        found_models = self._find_model_checkpoints(model_dir)
+        
+        if not found_models:
+            self.console.print(f"[yellow]No {model_type} model checkpoints found. Please train a model first.[/yellow]")
+            input("Press Enter to continue...")
+            return
+        
+        # Let user select a model
+        self.console.print(f"\nAvailable {model_type} model checkpoints:")
+        for i, model_info in enumerate(found_models, 1):
+            self.console.print(f"  {i}. {model_info['name']} ({model_info['date']}, {model_info['size']})")
+        
+        choice = Prompt.ask("Select a model to evaluate interactively (0 to cancel)", 
+                          choices=["0"] + [str(i) for i in range(1, len(found_models) + 1)])
+        
+        if choice == "0":
+            return
+        
+        # Get selected model
+        selected_model = found_models[int(choice) - 1]
+        
+        # Build command
+        cmd = [
+            self.python_path, "main.py",
+            "eval",
+            "--model_path", selected_model["path"],
+            "--eval_type", "interactive",
+            "--model_type", model_type
+        ]
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Interactive Evaluation", auto_continue=False)
+    
+    def _discover_models(self):
+        """Discover and list all available models."""
+        self._clear_screen()
+        self.console.print(Panel("Discover Models", style=self.main_color))
+        
+        # Create table for model discovery results
+        discovery_table = Table(box=box.ROUNDED, style=self.main_color)
+        discovery_table.add_column("Model Type", style=f"{self.accent_color}")
+        discovery_table.add_column("Count", style=self.text_color)
+        discovery_table.add_column("Latest", style=self.text_color)
+        discovery_table.add_column("Best", style=self.text_color)
+        
+        # Check different model types
+        model_types = [
+            ("Full NEAT", "./outputs/neat_model"),
+            ("BLT Entropy", "./outputs/byte_lm"),
+            ("MVoT Codebook", "./outputs/mvot_codebook"),
+            ("Baseline", "./outputs/baseline")
+        ]
+        
+        total_models = 0
+        
+        for name, path in model_types:
+            models = self._find_model_checkpoints(path)
+            count = len(models)
+            total_models += count
+            
+            latest = "None" if not models else models[0]["name"]
+            best = "None" if not models else next((m["name"] for m in models if "best" in m["name"].lower()), latest)
+            
+            discovery_table.add_row(name, str(count), latest, best)
+        
+        self.console.print(discovery_table)
+        self.console.print(f"\nTotal models discovered: {total_models}")
+        
+        # Ask if user wants to explore a specific type
+        explore = Confirm.ask("Explore a specific model type?", default=False)
+        
+        if explore:
+            type_choice = Prompt.ask(
+                "Select model type to explore", 
+                choices=["1", "2", "3", "4"],
+                default="1"
+            )
+            
+            model_path = model_types[int(type_choice) - 1][1]
+            self._explore_models(model_path)
+        else:
+            input("Press Enter to continue...")
+    
+    def _explore_models(self, model_path):
+        """Explore models in a specific directory."""
+        self._clear_screen()
+        self.console.print(Panel(f"Exploring Models in {model_path}", style=self.main_color))
+        
+        models = self._find_model_checkpoints(model_path)
+        
+        if not models:
+            self.console.print("[yellow]No models found in this directory.[/yellow]")
+            input("Press Enter to continue...")
+            return
+        
+        # Display detailed model information
+        model_table = Table(box=box.ROUNDED, style=self.main_color)
+        model_table.add_column("Name", style=f"{self.accent_color}")
+        model_table.add_column("Date", style=self.text_color)
+        model_table.add_column("Size", style=self.text_color)
+        model_table.add_column("Path", style=self.text_color)
+        
+        for model in models:
+            model_table.add_row(
+                model["name"],
+                model["date"],
+                model["size"],
+                model["path"]
+            )
+        
+        self.console.print(model_table)
+        
+        input("Press Enter to continue...")
+    
+    def _configure_evaluation_parameters(self):
+        """Configure evaluation parameters."""
+        self._clear_screen()
+        self.console.print(Panel("Configure Evaluation Parameters", style=self.main_color))
+        
+        # Not yet implemented
+        self.console.print("[yellow]Evaluation parameter configuration not yet implemented.[/yellow]")
+        input("Press Enter to continue...")
+    
+    def _find_model_checkpoints(self, base_path):
+        """Find model checkpoints in the specified directory.
+        
+        Args:
+            base_path: Base directory to search
+            
+        Returns:
+            List of dictionaries with model information: name, path, date, size
+        """
+        import glob
+        import os
+        import time
+        import datetime
+        
+        # Make sure directory exists
+        if not os.path.exists(base_path):
+            return []
+        
+        # Find all .pt files in the directory and subdirectories
+        model_files = []
+        for ext in [".pt", ".pth"]:
+            # Check directly in base path
+            model_files.extend(glob.glob(os.path.join(base_path, f"*{ext}")))
+            # Check in checkpoints subdirectory
+            model_files.extend(glob.glob(os.path.join(base_path, "checkpoints", f"*{ext}")))
+        
+        # Sort by modification time (newest first)
+        model_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        
+        # Create info dictionaries
+        model_info = []
+        for file_path in model_files:
+            # Get file stats
+            file_stats = os.stat(file_path)
+            
+            # Format modification time
+            mod_time = datetime.datetime.fromtimestamp(file_stats.st_mtime)
+            date_str = mod_time.strftime("%Y-%m-%d %H:%M")
+            
+            # Format file size
+            size_bytes = file_stats.st_size
+            if size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes / 1024:.1f} KB"
+            else:
+                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+            
+            # Get file name without path
+            file_name = os.path.basename(file_path)
+            
+            model_info.append({
+                "name": file_name,
+                "path": file_path,
+                "date": date_str,
+                "size": size_str
+            })
+        
+        return model_info
         
     def _blt_model_analysis(self):
         """Run comprehensive BLT model analysis."""
@@ -348,43 +1343,335 @@ class NEATCLIInterface:
         self._execute_command_with_progress(" ".join(cmd), "BLT Model Analysis")
     
     def _data_preparation_menu(self):
-        """Show the data preparation menu."""
+        """Show the data preparation menu with comprehensive data management capabilities."""
         self._clear_screen()
-        self.console.print(Panel("Data Preparation", style=self.main_color))
+        self.console.print(Panel("Data Preparation and Management", style=self.main_color))
         
         menu_table = Table(box=box.ROUNDED, style=self.main_color)
         menu_table.add_column("Option", style=f"{self.accent_color}")
         menu_table.add_column("Description", style=self.text_color)
         
-        menu_table.add_row("1", "Prepare Synthetic Math Data")
-        menu_table.add_row("2", "Prepare Byte-Level Data")
-        menu_table.add_row("3", "Prepare Pile Subset")
-        menu_table.add_row("4", "Prepare Component Test Data")
-        menu_table.add_row("5", "Configure Data Parameters")
+        menu_table.add_row("1", "Generate Synthetic Math Data")
+        menu_table.add_row("2", "Download Byte-Level Training Data")
+        menu_table.add_row("3", "Download Pile Subset")
+        menu_table.add_row("4", "Create Component Test Data")
+        menu_table.add_row("5", "Verify Directory Structure")
+        menu_table.add_row("6", "Clean Cache")
+        menu_table.add_row("7", "View Dataset Metadata")
+        menu_table.add_row("8", "Configure Data Processing")
         menu_table.add_row("0", "Return to Main Menu")
         
         self.console.print(menu_table)
         
-        choice = Prompt.ask("Enter your choice", choices=["0", "1", "2", "3", "4", "5"])
+        choice = Prompt.ask("Enter your choice", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8"])
         
         if choice == "0":
             return
         elif choice == "1":
-            # Implement synthetic math data preparation
-            self._execute_command_with_progress("python3 main.py prepare_data --data_type synthetic_math", "Preparing Synthetic Math Data")
+            self._generate_synthetic_math_data()
         elif choice == "2":
-            # Implement byte-level data preparation
-            self._execute_command_with_progress("python3 main.py prepare_data --data_type byte_level", "Preparing Byte-Level Data")
+            self._download_byte_level_data()
         elif choice == "3":
-            # Implement pile subset preparation
-            self._execute_command_with_progress("python3 main.py prepare_data --data_type pile_subset", "Preparing Pile Subset")
+            self._download_pile_subset()
         elif choice == "4":
-            # Implement component test data preparation
-            self._execute_command_with_progress("python3 main.py prepare_data --data_type component_test", "Preparing Component Test Data")
+            self._create_component_test_data()
         elif choice == "5":
-            # Configure data parameters
-            self.console.print("[yellow]Data parameter configuration is not yet implemented.[/yellow]")
+            self._verify_directory_structure()
+        elif choice == "6":
+            self._clean_cache()
+        elif choice == "7":
+            self._view_dataset_metadata()
+        elif choice == "8":
+            self._configure_data_processing()
+    
+    def _prepare_synthetic_math_data(self):
+        """Prepare synthetic math data."""
+        self._clear_screen()
+        self.console.print(Panel("Prepare Synthetic Math Data", style=self.main_color))
+        
+        # Get parameters from user
+        train_size = Prompt.ask("Number of training examples", default="50000")
+        eval_size = Prompt.ask("Number of evaluation examples", default="10000")
+        component_size = Prompt.ask("Number of component-specific examples per component", default="10000")
+        max_difficulty = Prompt.ask(
+            "Maximum difficulty level", 
+            choices=["basic", "medium", "advanced", "complex"],
+            default="advanced"
+        )
+        
+        output_dir = Prompt.ask("Output directory", default="./data/raw/synthetic")
+        
+        # Build command
+        cmd = [
+            self.python_path, "main.py", 
+            "prepare_data", 
+            "--data_type", "synthetic_math",
+            "--math_train_size", train_size,
+            "--math_eval_size", eval_size,
+            "--math_component_size", component_size,
+            "--math_max_difficulty", max_difficulty,
+            "--output_dir", output_dir
+        ]
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Preparing Synthetic Math Data")
+    
+    def _prepare_byte_level_data(self):
+        """Prepare byte-level data."""
+        self._clear_screen()
+        self.console.print(Panel("Prepare Byte-Level Data", style=self.main_color))
+        
+        # Get parameters from user
+        byte_data_dir = Prompt.ask("Directory to save byte-level data", default="./data/processed/blt")
+        download_gutenberg = Confirm.ask("Download Project Gutenberg texts?", default=True)
+        download_c4 = Confirm.ask("Download C4 dataset sample?", default=False)
+        
+        # Build command
+        cmd = [
+            self.python_path, "main.py", 
+            "prepare_data", 
+            "--data_type", "byte_level",
+            "--byte_data_dir", byte_data_dir
+        ]
+        
+        if download_gutenberg:
+            cmd.append("--byte_download_gutenberg")
+        
+        if download_c4:
+            cmd.append("--byte_download_c4")
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Preparing Byte-Level Data")
+    
+    def _prepare_pile_subset(self):
+        """Prepare Pile subset."""
+        self._clear_screen()
+        self.console.print(Panel("Prepare Pile Subset", style=self.main_color))
+        
+        # Get parameters from user
+        pile_output_dir = Prompt.ask("Directory to save Pile subset", default="./data/raw/pile_subset")
+        warc_count = Prompt.ask("Number of Common Crawl WARC files to download", default="5")
+        
+        # Build command
+        cmd = [
+            self.python_path, "main.py", 
+            "prepare_data", 
+            "--data_type", "pile_subset",
+            "--pile_output_dir", pile_output_dir,
+            "--pile_warc_count", warc_count
+        ]
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Preparing Pile Subset")
+    
+    def _prepare_component_test_data(self):
+        """Prepare component test data."""
+        self._clear_screen()
+        self.console.print(Panel("Prepare Component Test Data", style=self.main_color))
+        
+        # Get parameters from user
+        create_mock_models = Confirm.ask("Create mock BLT and MVoT models for testing?", default=True)
+        output_dir = Prompt.ask("Output directory for mock models", default="./outputs")
+        
+        # Build command
+        cmd = [
+            self.python_path, "main.py", 
+            "prepare_data", 
+            "--data_type", "component_test",
+            "--output_dir", output_dir
+        ]
+        
+        if create_mock_models:
+            cmd.append("--create_mock_models")
+        
+        # Execute command
+        self._execute_command_with_progress(" ".join(cmd), "Preparing Component Test Data")
+    
+    def _configure_data_parameters(self):
+        """Configure data parameters."""
+        self._clear_screen()
+        self.console.print(Panel("Configure Data Parameters", style=self.main_color))
+        
+        # Create submenu for different data parameter types
+        menu_table = Table(box=box.ROUNDED, style=self.main_color)
+        menu_table.add_column("Option", style=f"{self.accent_color}")
+        menu_table.add_column("Description", style=self.text_color)
+        
+        menu_table.add_row("1", "BLT Data Parameters")
+        menu_table.add_row("2", "MVoT Data Parameters")
+        menu_table.add_row("3", "Full Model Data Parameters")
+        menu_table.add_row("4", "Synthetic Math Data Parameters")
+        menu_table.add_row("0", "Return to Data Preparation Menu")
+        
+        self.console.print(menu_table)
+        
+        choice = Prompt.ask("Enter your choice", choices=["0", "1", "2", "3", "4"])
+        
+        if choice == "0":
+            return
+        elif choice == "1":
+            self._configure_blt_data_parameters()
+        elif choice == "2":
+            self._configure_mvot_data_parameters()
+        elif choice == "3":
+            self._configure_full_model_data_parameters()
+        elif choice == "4":
+            self._configure_math_data_parameters()
+    
+    def _configure_blt_data_parameters(self):
+        """Configure BLT data parameters."""
+        self._clear_screen()
+        self.console.print(Panel("BLT Data Parameters", style=self.main_color))
+        
+        # Get BLT-specific parameters
+        block_size = Prompt.ask("Block size for byte LM training", default="256")
+        entropy_threshold = Prompt.ask("Entropy threshold for patching", default="0.5")
+        cache_dir = Prompt.ask("Directory to cache processed data", default="./data/cache/blt")
+        
+        # Update configuration
+        self.current_config.block_size = int(block_size)
+        self.current_config.entropy_threshold = float(entropy_threshold)
+        self.current_config.cache_dir = cache_dir
+        
+        # Show updated configuration
+        self._display_config_summary()
+        
+        # Prompt to save configuration
+        if Confirm.ask("Save this configuration?", default=True):
+            self._save_configuration_menu()
+        else:
             input("Press Enter to continue...")
+    
+    def _configure_mvot_data_parameters(self):
+        """Configure MVoT data parameters."""
+        self._clear_screen()
+        self.console.print(Panel("MVoT Data Parameters", style=self.main_color))
+        
+        # Not yet implemented
+        self.console.print("[yellow]MVoT data parameter configuration not yet implemented.[/yellow]")
+        input("Press Enter to continue...")
+    
+    def _configure_full_model_data_parameters(self):
+        """Configure full model data parameters."""
+        self._clear_screen()
+        self.console.print(Panel("Full Model Data Parameters", style=self.main_color))
+        
+        # Not yet implemented
+        self.console.print("[yellow]Full model data parameter configuration not yet implemented.[/yellow]")
+        input("Press Enter to continue...")
+    
+    def _configure_math_data_parameters(self):
+        """Configure synthetic math data parameters."""
+        self._clear_screen()
+        self.console.print(Panel("Synthetic Math Data Parameters", style=self.main_color))
+        
+        # Not yet implemented
+        self.console.print("[yellow]Synthetic math data parameter configuration not yet implemented.[/yellow]")
+        input("Press Enter to continue...")
+    
+    def _validate_data_directories(self):
+        """Validate data directories."""
+        self._clear_screen()
+        self.console.print(Panel("Validate Data Directories", style=self.main_color))
+        
+        # Count files in each directory
+        validation_table = Table(box=box.ROUNDED, style=self.main_color)
+        validation_table.add_column("Directory", style=f"{self.accent_color}")
+        validation_table.add_column("Status", style=self.text_color)
+        validation_table.add_column("Files", style=self.text_color)
+        
+        # Check each important directory
+        directories = [
+            ("./data/raw/pile_subset/train", "Pile Train"),
+            ("./data/raw/pile_subset/eval", "Pile Eval"),
+            ("./data/raw/synthetic", "Synthetic Data"),
+            ("./data/processed/blt/train", "BLT Train Processed"),
+            ("./data/processed/blt/eval", "BLT Eval Processed"),
+            ("./data/cache/blt", "BLT Cache"),
+            ("./outputs/byte_lm", "BLT Model Outputs"),
+            ("./outputs/mvot_codebook", "MVoT Model Outputs"),
+            ("./outputs/neat_model", "NEAT Model Outputs")
+        ]
+        
+        for path, name in directories:
+            if os.path.exists(path):
+                try:
+                    files = []
+                    if os.path.isdir(path):
+                        files = os.listdir(path)
+                    
+                    status = "[green]✓[/green]" if files else "[yellow]Empty[/yellow]"
+                    validation_table.add_row(name, status, str(len(files)))
+                except Exception as e:
+                    validation_table.add_row(name, f"[red]Error: {e}[/red]", "0")
+            else:
+                validation_table.add_row(name, "[red]Missing[/red]", "0")
+        
+        self.console.print(validation_table)
+        
+        # Ask to create missing directories
+        if Confirm.ask("Create missing directories?", default=True):
+            self._ensure_directories()
+            self.console.print("[green]All directories created successfully![/green]")
+        
+        input("Press Enter to continue...")
+    
+    def _clean_cache(self):
+        """Clean cache directories."""
+        self._clear_screen()
+        self.console.print(Panel("Clean Cache", style=self.main_color))
+        
+        # Ask which caches to clean
+        clean_blt = Confirm.ask("Clean BLT cache?", default=True)
+        clean_mvot = Confirm.ask("Clean MVoT cache?", default=True)
+        clean_temp = Confirm.ask("Clean temporary cache?", default=True)
+        
+        # Count files before cleaning
+        cache_dirs = []
+        if clean_blt:
+            cache_dirs.append("./data/cache/blt")
+        if clean_mvot:
+            cache_dirs.append("./data/cache/mvot")
+        if clean_temp:
+            cache_dirs.append("./data/cache/temp")
+        
+        # Show files to be deleted
+        files_to_delete = 0
+        for cache_dir in cache_dirs:
+            if os.path.exists(cache_dir):
+                try:
+                    files = os.listdir(cache_dir)
+                    files_to_delete += len(files)
+                    self.console.print(f"Directory {cache_dir}: {len(files)} files")
+                except Exception as e:
+                    self.console.print(f"[red]Error reading {cache_dir}: {e}[/red]")
+        
+        if files_to_delete == 0:
+            self.console.print("[yellow]No cache files found to clean.[/yellow]")
+            input("Press Enter to continue...")
+            return
+        
+        # Confirm deletion
+        if Confirm.ask(f"Delete {files_to_delete} cache files?", default=True):
+            for cache_dir in cache_dirs:
+                if os.path.exists(cache_dir):
+                    try:
+                        files = os.listdir(cache_dir)
+                        for file in files:
+                            file_path = os.path.join(cache_dir, file)
+                            if os.path.isfile(file_path):
+                                os.remove(file_path)
+                            elif os.path.isdir(file_path):
+                                import shutil
+                                shutil.rmtree(file_path)
+                        
+                        self.console.print(f"[green]Cleaned {cache_dir}[/green]")
+                    except Exception as e:
+                        self.console.print(f"[red]Error cleaning {cache_dir}: {e}[/red]")
+            
+            self.console.print("[green]Cache cleaning complete![/green]")
+        
+        input("Press Enter to continue...")
     
     def _testing_menu(self):
         """Show the testing menu."""

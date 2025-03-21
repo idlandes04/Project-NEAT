@@ -18,24 +18,32 @@
   "mixed_precision": true,
   "gradient_clipping": 1.0,
   "output_dir": "./outputs/byte_lm_final",
-  "train_data_dir": "./data/pile_subset/train",
-  "eval_data_dir": "./data/pile_subset/eval",
+  "train_data_dir": "./data/raw/pile_subset/train",
+  "eval_data_dir": "./data/raw/pile_subset/eval",
+  "processed_dir": "./data/processed/blt",
+  "metadata_dir": "./data/metadata/blt",
   "synthetic_data": {
     "enabled": true,
     "percentage": 33,
     "patterns": ["alternating", "repeating", "random"],
     "min_length": 64,
-    "max_length": 1024
+    "max_length": 1024,
+    "source_dir": "./data/raw/synthetic"
   },
   "binary_data": {
     "enabled": true,
     "percentage": 33,
-    "source_dir": "./data/binary_samples"
+    "source_dir": "./data/raw/binary_samples"
   },
-  "data_processing": {
+  "data_config": {
     "chunk_size": 1024,
     "overlap": 512,
-    "balance_sources": true
+    "balance_sources": true,
+    "use_cache": true,
+    "cache_version": "v2.0",
+    "memory_efficient_loading": true,
+    "prefetch_factor": 4,
+    "format_validation": true
   },
   "validation": {
     "holdout_percentage": 10,
@@ -51,17 +59,30 @@
     "enabled": true,
     "weight": 0.1
   },
-  "cache_dir": "./data/cache/byte_lm_final", 
+  "cache_dir": "./data/cache/blt", 
   "num_workers": 4,
   "log_steps": 100,
   "profiling": {
     "enabled": true,
-    "trace_steps": [100, 1000, 5000, 10000]
+    "trace_steps": [100, 1000, 5000, 10000],
+    "profile_memory_usage": true,
+    "profile_gpu_utilization": true
   },
   "checkpointing": {
     "save_best_perplexity": true,
     "save_best_entropy_quality": true,
-    "keep_last_n": 5
+    "keep_last_n": 5,
+    "checkpoint_validation": true
   },
-  "force_cpu": false
+  "hardware_optimization": {
+    "auto_detect": true,
+    "enable_profile_guided_optimization": true,
+    "memory_pressure_sensitivity": 0.7,
+    "gradient_checkpointing": true,
+    "optimize_memory_use": true
+  },
+  "force_cpu": false,
+  "use_dynamic_patching": true,
+  "min_patch_size": 8,
+  "max_patch_size": 256
 }

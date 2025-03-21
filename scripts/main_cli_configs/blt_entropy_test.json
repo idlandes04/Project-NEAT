@@ -15,11 +15,25 @@
   "weight_decay": 0.01,
   "mixed_precision": false,
   "output_dir": "./outputs/byte_lm_test",
-  "train_data_dir": "./data/pile_subset/train",
-  "eval_data_dir": "./data/pile_subset/eval",
-  "cache_dir": "./data/cache/byte_lm", 
+  "train_data_dir": "./data/raw/pile_subset/train",
+  "eval_data_dir": "./data/raw/pile_subset/eval",
+  "cache_dir": "./data/cache/blt", 
+  "processed_dir": "./data/processed/blt",
+  "metadata_dir": "./data/metadata/blt",
   "num_workers": 2,
   "log_steps": 1,
   "entropy_threshold": 0.5,
-  "force_cpu": false
+  "force_cpu": true,
+  "use_dynamic_patching": false,
+  "min_patch_size": 8,
+  "max_patch_size": 64,
+  "data_config": {
+    "chunk_size": 128,
+    "overlap": 0,
+    "use_cache": true,
+    "cache_version": "v1.0",
+    "synthetic_fallback": true,
+    "synthetic_examples": 100
+  },
+  "testing_mode": true
 }
