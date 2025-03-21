@@ -1054,7 +1054,7 @@ def setup_output_dirs(config):
 
 def find_data_files(config):
     """
-    Find training and evaluation data files.
+    Find training and evaluation data files using PathManager for robust path handling.
     
     Args:
         config: Training configuration
@@ -1062,41 +1062,120 @@ def find_data_files(config):
     Returns:
         Tuple of (train_files, eval_files)
     """
+    from src.data.core.path_manager import PathManager
+    
+    # Initialize PathManager for robust path handling
+    path_manager = PathManager()
+    
     train_files = []
     eval_files = []
+    
+    # Define text file extensions for filtering
+    text_extensions = ['.txt', '.md', '.log', '.json', '.xml', '.csv']
+    binary_extensions = ['.bin', '.dat', '.exe', '.dll', '.so', '.dylib']
     
     # Priority 1: Use explicitly provided files list
     if hasattr(config, 'train_files') and config.train_files:
         train_files = config.train_files if isinstance(config.train_files, list) else [config.train_files]
+        # Resolve paths
+        train_files = [path_manager.resolve_path(path) for path in train_files]
         
     if hasattr(config, 'eval_files') and config.eval_files:
         eval_files = config.eval_files if isinstance(config.eval_files, list) else [config.eval_files]
+        # Resolve paths
+        eval_files = [path_manager.resolve_path(path) for path in eval_files]
     
     # Priority 2: Use glob pattern
     if (not train_files) and hasattr(config, 'train_glob') and config.train_glob:
-        train_files = glob.glob(config.train_glob, recursive=True)
+        pattern = path_manager.resolve_path(config.train_glob)
+        train_files = glob.glob(pattern, recursive=True)
         
     if (not eval_files) and hasattr(config, 'eval_glob') and config.eval_glob:
-        eval_files = glob.glob(config.eval_glob, recursive=True)
+        pattern = path_manager.resolve_path(config.eval_glob)
+        eval_files = glob.glob(pattern, recursive=True)
     
-    # Priority 3: Use directory
+    # Priority 3: Use directory with enhanced discovery
     if (not train_files) and hasattr(config, 'train_data_dir') and config.train_data_dir:
-        if os.path.exists(config.train_data_dir):
-            for root, _, files in os.walk(config.train_data_dir):
-                for file in files:
-                    # Skip hidden files
-                    if not file.startswith('.'):
-                        train_files.append(os.path.join(root, file))
+        train_dir = path_manager.resolve_path(config.train_data_dir)
+        if os.path.exists(train_dir):
+            logger.info(f"Scanning training directory: {train_dir}")
+            # First look for text files
+            for ext in text_extensions:
+                pattern = os.path.join(train_dir, f"**/*{ext}")
+                files = glob.glob(pattern, recursive=True)
+                train_files.extend(files)
+                
+            # Then add binary files
+            for ext in binary_extensions:
+                pattern = os.path.join(train_dir, f"**/*{ext}")
+                files = glob.glob(pattern, recursive=True)
+                train_files.extend(files)
+                
+            # If still no files found, try generic discovery
+            if not train_files:
+                logger.info("No files found with standard extensions, using generic discovery")
+                for root, _, files in os.walk(train_dir):
+                    for file in files:
+                        # Skip hidden files and system files
+                        if not file.startswith('.') and not file.startswith('_'):
+                            train_files.append(os.path.join(root, file))
+        else:
+            logger.warning(f"Training data directory not found: {train_dir}")
         
     if (not eval_files) and hasattr(config, 'eval_data_dir') and config.eval_data_dir:
-        if os.path.exists(config.eval_data_dir):
-            for root, _, files in os.walk(config.eval_data_dir):
-                for file in files:
-                    # Skip hidden files
-                    if not file.startswith('.'):
-                        eval_files.append(os.path.join(root, file))
+        eval_dir = path_manager.resolve_path(config.eval_data_dir)
+        if os.path.exists(eval_dir):
+            logger.info(f"Scanning evaluation directory: {eval_dir}")
+            # First look for text files
+            for ext in text_extensions:
+                pattern = os.path.join(eval_dir, f"**/*{ext}")
+                files = glob.glob(pattern, recursive=True)
+                eval_files.extend(files)
+                
+            # Then add binary files
+            for ext in binary_extensions:
+                pattern = os.path.join(eval_dir, f"**/*{ext}")
+                files = glob.glob(pattern, recursive=True)
+                eval_files.extend(files)
+                
+            # If still no files found, try generic discovery
+            if not eval_files:
+                logger.info("No files found with standard extensions, using generic discovery")
+                for root, _, files in os.walk(eval_dir):
+                    for file in files:
+                        # Skip hidden files and system files
+                        if not file.startswith('.') and not file.startswith('_'):
+                            eval_files.append(os.path.join(root, file))
+        else:
+            logger.warning(f"Evaluation data directory not found: {eval_dir}")
+    
+    # Deduplicate files
+    train_files = list(set(train_files))
+    eval_files = list(set(eval_files))
+    
+    # Create data directories if they don't exist
+    if hasattr(config, 'data') and hasattr(config.data, 'processed_data_dir'):
+        processed_dir = path_manager.resolve_path(config.data.processed_data_dir)
+        path_manager.ensure_dir(processed_dir)
+        
+        # Also ensure model-specific directories exist
+        if hasattr(config, 'model_type'):
+            model_dir = os.path.join(processed_dir, config.model_type)
+            path_manager.ensure_dir(model_dir)
     
     logger.info(f"Found {len(train_files)} training files and {len(eval_files)} evaluation files")
+    
+    # Log file types found
+    if train_files:
+        extensions = {}
+        for f in train_files:
+            ext = os.path.splitext(f)[1].lower()
+            if ext in extensions:
+                extensions[ext] += 1
+            else:
+                extensions[ext] = 1
+        logger.info(f"Training file types: {extensions}")
+    
     return train_files, eval_files
 
 def save_config(config, output_dir):
@@ -1135,12 +1214,23 @@ def save_config(config, output_dir):
 
 def train_blt_entropy(config):
     """
-    Train the BLT entropy estimator.
+    Train the BLT entropy estimator using the enhanced data pipeline.
     
     Args:
         config: Training configuration
     """
     logger.info("Setting up BLT entropy estimator training...")
+    
+    # Import required configuration classes
+    from src.utils.config import (
+        ByteLMConfig, ModelConfig, DataConfig, 
+        TextProcessorConfig, BinaryProcessorConfig, 
+        DataMixerConfig, CacheConfig
+    )
+    from src.data.core.path_manager import PathManager
+    
+    # Initialize path manager
+    path_manager = PathManager()
     
     # Set model type if not already set
     if not hasattr(config, 'model_type'):
@@ -1176,8 +1266,62 @@ def train_blt_entropy(config):
     # Find data files
     train_files, eval_files = find_data_files(config)
     
-    # Set up configuration
-    from src.utils.config import ByteLMConfig
+    # Create DataConfig for the enhanced data pipeline
+    data_config = DataConfig(
+        # Directory paths - use standardized paths
+        raw_data_dir="./data/raw",
+        processed_data_dir="./data/processed/blt",
+        metadata_dir="./data/metadata/blt",
+        
+        # Data sources - enable all by default
+        use_text_data=True,
+        use_binary_data=True,
+        use_synthetic_data=getattr(config, 'use_synthetic_data', True),
+        
+        # File extensions - use standard extensions
+        text_file_extensions=[".txt", ".md", ".log", ".json", ".xml", ".csv"],
+        binary_file_extensions=[".bin", ".dat", ".exe", ".dll", ".so", ".dylib"],
+        
+        # Scanning parameters
+        recursive_scan=True,
+        max_files_per_source=getattr(config, 'max_files_per_source', 1000),
+        
+        # Text processor configuration - adapted for BLT
+        text_processor=TextProcessorConfig(
+            chunk_size=getattr(config, 'block_size', 128),
+            chunk_overlap=0,  # No overlap for byte-level training
+            min_chunk_size=getattr(config, 'block_size', 128) // 2,
+            encoding="utf-8",
+            min_entropy=0.0,
+            max_entropy=9.0,
+        ),
+        
+        # Binary processor configuration - adapted for BLT
+        binary_processor=BinaryProcessorConfig(
+            chunk_size=getattr(config, 'block_size', 128),
+            chunk_overlap=0,  # No overlap for byte-level training
+            min_chunk_size=getattr(config, 'block_size', 128) // 2,
+            enable_format_detection=True,
+            format_specific_chunking=True,
+        ),
+        
+        # Data mixer configuration
+        data_mixer=DataMixerConfig(
+            strategy="balanced",
+            text_weight=0.4,
+            binary_weight=0.3,
+            synthetic_weight=0.3,
+            ensure_source_diversity=True,
+        ),
+        
+        # Cache configuration
+        cache=CacheConfig(
+            use_cache=True,
+            cache_dir=getattr(config, 'cache_dir', os.path.join("data", "cache", "byte_lm")),
+            auto_clean=True,
+            max_cache_size_gb=getattr(config, 'max_cache_size_gb', 10.0),
+        )
+    )
     
     # Create ByteLMConfig
     blt_config = ByteLMConfig(
@@ -1226,6 +1370,9 @@ def train_blt_entropy(config):
     blt_config.entropy_threshold = getattr(config, 'entropy_threshold', 0.5)
     blt_config.force_cpu = getattr(config, 'force_cpu', False)
     blt_config.memory_reserve_pct = getattr(config, 'memory_reserve_pct', 20)
+    
+    # Add data config to blt_config for use in training
+    blt_config.data = data_config
     
     # Save configuration
     save_config(blt_config, output_dir)
@@ -1527,7 +1674,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import time
 
 class ByteDataset(Dataset):
-    """Dataset for byte-level transformer training."""
+    """Dataset for byte-level transformer training using the enhanced data pipeline."""
     
     def __init__(self, file_paths, block_size=128, cache_dir=None):
         """
@@ -1540,63 +1687,111 @@ class ByteDataset(Dataset):
         """
         self.file_paths = file_paths
         self.block_size = block_size
-        self.cache_dir = cache_dir
+        self.cache_dir = cache_dir or os.path.join("data", "cache", "byte_lm")
+        
+        # Import processors here to avoid circular imports
+        from src.data.core.path_manager import PathManager
+        from src.data.core.cache_manager import CacheManager
+        from src.data.processors.text_processor import TextDataProcessor
+        from src.data.processors.binary_processor import BinaryDataProcessor
+        
+        # Initialize path and cache managers
+        self.path_manager = PathManager()
+        self.cache_manager = CacheManager(
+            cache_dir=self.cache_dir,
+            auto_clean=True
+        )
+        
+        # Initialize processors with appropriate block sizes
+        self.text_processor = TextDataProcessor(
+            chunk_size=block_size,
+            chunk_overlap=0,  # No overlap for ByteDataset
+            min_chunk_size=block_size // 2,
+            cache_manager=self.cache_manager,
+            path_manager=self.path_manager
+        )
+        
+        self.binary_processor = BinaryDataProcessor(
+            chunk_size=block_size,
+            chunk_overlap=0,  # No overlap for ByteDataset
+            min_chunk_size=block_size // 2,
+            cache_manager=self.cache_manager,
+            path_manager=self.path_manager
+        )
         
         # Initialize data
         self.data = self.load_data()
         
     def load_data(self):
-        """Load data from files or cache."""
-        # Check if cache directory exists
-        if self.cache_dir and os.path.exists(self.cache_dir):
-            # Try to load from cache
-            cache_path = os.path.join(self.cache_dir, f"byte_data_cache_{self.block_size}.pt")
-            if os.path.exists(cache_path):
-                logger.info(f"Loading data from cache: {cache_path}")
-                return torch.load(cache_path)
+        """Load data from files using the enhanced processors."""
+        # Check if concatenated cache exists
+        cache_key = f"byte_dataset_all_files_{self.block_size}_{len(self.file_paths)}"
+        cached_data = self.cache_manager.get(cache_key)
         
-        # Load data from files
-        logger.info(f"Loading data from {len(self.file_paths)} files")
-        data = []
+        if cached_data is not None:
+            logger.info(f"Loading concatenated data from cache")
+            return cached_data
         
-        # Process each file
-        for file_path in tqdm(self.file_paths, desc="Loading files", unit="file"):
+        # Process files
+        logger.info(f"Processing {len(self.file_paths)} files with block size {self.block_size}")
+        all_chunks = []
+        
+        for file_path in tqdm(self.file_paths, desc="Processing files", unit="file"):
             try:
-                with open(file_path, 'rb') as f:
-                    # Read file as bytes
-                    file_data = f.read()
-                    
-                    # Convert to tensor
-                    file_tensor = torch.tensor(list(file_data), dtype=torch.long)
-                    
-                    # Add to data
-                    data.append(file_tensor)
-            except Exception as e:
-                logger.error(f"Error loading file {file_path}: {e}")
+                # Resolve path
+                file_path = self.path_manager.resolve_path(file_path)
                 
-        # Concatenate data
-        if not data:
-            raise ValueError("No data loaded")
-            
-        data = torch.cat(data)
+                # Check if file exists
+                if not os.path.exists(file_path):
+                    logger.warning(f"File not found: {file_path}")
+                    continue
+                
+                # Choose appropriate processor based on file extension
+                ext = os.path.splitext(file_path)[1].lower()
+                if ext in ['.txt', '.md', '.log', '.json', '.xml', '.csv']:
+                    chunks = self.text_processor.process_file(file_path)
+                else:
+                    chunks = self.binary_processor.process_file(file_path)
+                
+                # Extract byte data from chunks
+                for chunk in chunks:
+                    bytes_data = chunk.get('bytes', chunk.get('data', None))
+                    if bytes_data:
+                        # Convert to list of integers if needed
+                        if isinstance(bytes_data, bytes):
+                            all_chunks.append(torch.tensor([b for b in bytes_data], dtype=torch.long))
+                        elif isinstance(bytes_data, list):
+                            all_chunks.append(torch.tensor(bytes_data, dtype=torch.long))
+                
+            except Exception as e:
+                logger.error(f"Error processing file {file_path}: {e}")
         
-        # Save to cache
-        if self.cache_dir:
-            os.makedirs(self.cache_dir, exist_ok=True)
-            cache_path = os.path.join(self.cache_dir, f"byte_data_cache_{self.block_size}.pt")
-            logger.info(f"Saving data to cache: {cache_path}")
-            torch.save(data, cache_path)
+        # Check if we have data
+        if not all_chunks:
+            raise ValueError("No data loaded from any files")
+        
+        # Concatenate all chunks
+        data = torch.cat(all_chunks)
+        
+        # Store in cache
+        self.cache_manager.put(cache_key, data)
         
         return data
     
     def __len__(self):
         """Get length of dataset."""
-        return len(self.data) - self.block_size
+        return max(0, len(self.data) - self.block_size)
     
     def __getitem__(self, idx):
         """Get item from dataset."""
         # Get chunk of data
         chunk = self.data[idx:idx + self.block_size + 1]
+        
+        # Handle edge cases
+        if len(chunk) < self.block_size + 1:
+            # Pad if needed
+            padding = torch.zeros(self.block_size + 1 - len(chunk), dtype=torch.long, device=chunk.device)
+            chunk = torch.cat([chunk, padding])
         
         # Split into input and target
         x = chunk[:-1]

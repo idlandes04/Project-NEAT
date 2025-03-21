@@ -11,7 +11,7 @@ import logging
 from typing import Dict, List, Tuple, Any, Optional, Union, Callable
 from torch.utils.data import DataLoader, Dataset
 
-from src.data.synthetic.math_generator import (
+from src.data.generators.math_generator import (
     MathProblem,
     MathDataGenerator,
     NEATMathDataset,

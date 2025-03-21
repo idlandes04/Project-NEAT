@@ -4,7 +4,7 @@ Data module for the NEAT architecture.
 Contains synthetic data generation and data loading utilities.
 """
 
-from src.data.synthetic.math_generator import (
+from src.data.generators.math_generator import (
     MathDataGenerator, 
     MathProblem,
     DifficultyLevel,

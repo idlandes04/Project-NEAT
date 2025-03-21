@@ -13,7 +13,7 @@ import pytest
 # Add the project root to the Python path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.data.synthetic.math_generator import (
+from src.data.generators.math_generator import (
     MathDataGenerator, 
     DifficultyLevel,
     ProblemType

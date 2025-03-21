@@ -113,6 +113,154 @@ class MVoTConfig:
 
 
 @dataclasses.dataclass
+class TextProcessorConfig:
+    """Configuration for text data processing."""
+    # Chunking parameters
+    chunk_size: int = 512
+    chunk_overlap: int = 32
+    min_chunk_size: int = 64
+    
+    # Encoding parameters
+    encoding: str = "utf-8"
+    errors: str = "replace"
+    
+    # Filtering parameters
+    min_entropy: float = 0.0
+    max_entropy: float = 9.0
+    require_complete_sentences: bool = False
+    
+    # Preprocessing
+    normalize_whitespace: bool = True
+    strip_html: bool = False
+    lowercase: bool = False
+
+
+@dataclasses.dataclass
+class BinaryProcessorConfig:
+    """Configuration for binary data processing."""
+    # Chunking parameters
+    chunk_size: int = 1024
+    chunk_overlap: int = 0
+    min_chunk_size: int = 128
+    
+    # Format detection
+    enable_format_detection: bool = True
+    format_specific_chunking: bool = True
+    
+    # Filtering parameters
+    min_entropy: float = 0.0
+    max_entropy: float = 9.0
+    
+    # Processing parameters
+    compute_byte_frequency: bool = True
+    skip_zero_blocks: bool = True
+
+
+@dataclasses.dataclass
+class SyntheticDataConfig:
+    """Configuration for synthetic data generation."""
+    # General parameters
+    num_samples: int = 2000
+    use_cache: bool = True
+    
+    # Problem parameters
+    problem_types: List[str] = dataclasses.field(
+        default_factory=lambda: ["arithmetic", "algebra", "logic"]
+    )
+    difficulty_levels: List[str] = dataclasses.field(
+        default_factory=lambda: ["easy", "medium", "hard"]
+    )
+    include_metadata: bool = True
+    
+    # Entropy patterns
+    generate_entropy_patterns: bool = True
+    pattern_complexity: str = "medium"  # "simple", "medium", "complex"
+    
+    # Specific problem parameters
+    max_operands: int = 5
+    max_nested_operations: int = 3
+    include_fractions: bool = True
+    include_negative_numbers: bool = True
+
+
+@dataclasses.dataclass
+class DataMixerConfig:
+    """Configuration for data mixing strategies."""
+    # Mixing strategy
+    strategy: str = "balanced"  # "balanced", "weighted", "sequential"
+    
+    # Weights for different sources (when using weighted strategy)
+    text_weight: float = 0.4
+    binary_weight: float = 0.3
+    synthetic_weight: float = 0.3
+    
+    # Batch construction
+    ensure_source_diversity: bool = True
+    min_sources_per_batch: int = 2
+    
+    # Sampling parameters
+    sampling_seed: Optional[int] = None
+    replacement_sampling: bool = False
+
+
+@dataclasses.dataclass
+class CacheConfig:
+    """Configuration for data caching."""
+    # General cache parameters
+    use_cache: bool = True
+    cache_dir: str = "./cache"
+    version_tracking: bool = True
+    
+    # Cache management
+    max_cache_size_gb: float = 10.0
+    auto_clean: bool = True
+    clean_on_start: bool = False
+    
+    # Expiration and invalidation
+    expiration_days: int = 30
+    invalidate_on_config_change: bool = True
+    
+    # Performance options
+    compress_cache: bool = False
+    compression_level: int = 6
+
+
+@dataclasses.dataclass
+class DataConfig:
+    """Configuration for the data pipeline."""
+    # Directory paths
+    raw_data_dir: str = "./data/raw"
+    processed_data_dir: str = "./data/processed"
+    metadata_dir: str = "./data/metadata"
+    
+    # Data sources
+    use_text_data: bool = True
+    use_binary_data: bool = True
+    use_synthetic_data: bool = True
+    
+    # Data scanning parameters
+    text_file_extensions: List[str] = dataclasses.field(
+        default_factory=lambda: [".txt", ".md", ".log", ".json", ".xml", ".csv"]
+    )
+    binary_file_extensions: List[str] = dataclasses.field(
+        default_factory=lambda: [".bin", ".dat", ".exe", ".dll", ".so"]
+    )
+    recursive_scan: bool = True
+    follow_symlinks: bool = False
+    
+    # File limits
+    max_files_per_source: int = 1000
+    max_chunks_per_file: int = 100
+    
+    # Processor configurations
+    text_processor: TextProcessorConfig = dataclasses.field(default_factory=TextProcessorConfig)
+    binary_processor: BinaryProcessorConfig = dataclasses.field(default_factory=BinaryProcessorConfig)
+    synthetic_data: SyntheticDataConfig = dataclasses.field(default_factory=SyntheticDataConfig)
+    data_mixer: DataMixerConfig = dataclasses.field(default_factory=DataMixerConfig)
+    cache: CacheConfig = dataclasses.field(default_factory=CacheConfig)
+
+
+@dataclasses.dataclass
 class ByteLMConfig:
     """Configuration for the byte-level language model (entropy estimator)."""
     # Model parameters
@@ -240,6 +388,9 @@ class ModelConfig:
     mvot: MVoTConfig = dataclasses.field(default_factory=MVoTConfig)
     blt: BLTConfig = dataclasses.field(default_factory=BLTConfig)
     
+    # Data pipeline configuration
+    data: DataConfig = dataclasses.field(default_factory=DataConfig)
+    
     # Hardware and training configurations
     hardware: HardwareConfig = dataclasses.field(default_factory=HardwareConfig)
     training: TrainingConfig = dataclasses.field(default_factory=TrainingConfig)
@@ -256,6 +407,7 @@ class ModelConfig:
         transformer2_dict = config_dict.pop('transformer2', {})
         mvot_dict = config_dict.pop('mvot', {})
         blt_dict = config_dict.pop('blt', {})
+        data_dict = config_dict.pop('data', {})
         hardware_dict = config_dict.pop('hardware', {})
         training_dict = config_dict.pop('training', {})
         
@@ -263,6 +415,13 @@ class ModelConfig:
         byte_lm_dict = {}
         if 'byte_lm' in blt_dict:
             byte_lm_dict = blt_dict.pop('byte_lm', {})
+        
+        # Extract nested data configurations
+        text_processor_dict = data_dict.pop('text_processor', {})
+        binary_processor_dict = data_dict.pop('binary_processor', {})
+        synthetic_data_dict = data_dict.pop('synthetic_data', {})
+        data_mixer_dict = data_dict.pop('data_mixer', {})
+        cache_dict = data_dict.pop('cache', {})
         
         # Create component configurations
         titans_config = TitansConfig(**titans_dict)
@@ -276,6 +435,21 @@ class ModelConfig:
         blt_config = BLTConfig(**blt_dict)
         blt_config.byte_lm = byte_lm_config
         
+        # Create data processor configurations
+        text_processor_config = TextProcessorConfig(**text_processor_dict)
+        binary_processor_config = BinaryProcessorConfig(**binary_processor_dict)
+        synthetic_data_config = SyntheticDataConfig(**synthetic_data_dict)
+        data_mixer_config = DataMixerConfig(**data_mixer_dict)
+        cache_config = CacheConfig(**cache_dict)
+        
+        # Create data configuration with processors
+        data_config = DataConfig(**data_dict)
+        data_config.text_processor = text_processor_config
+        data_config.binary_processor = binary_processor_config
+        data_config.synthetic_data = synthetic_data_config
+        data_config.data_mixer = data_mixer_config
+        data_config.cache = cache_config
+        
         hardware_config = HardwareConfig(**hardware_dict)
         training_config = TrainingConfig(**training_dict)
         
@@ -285,6 +459,7 @@ class ModelConfig:
         config.transformer2 = transformer2_config
         config.mvot = mvot_config
         config.blt = blt_config
+        config.data = data_config
         config.hardware = hardware_config
         config.training = training_config
         
