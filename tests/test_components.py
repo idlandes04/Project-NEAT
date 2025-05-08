@@ -13,14 +13,14 @@ import torch
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.utils.config import ModelConfig, get_default_config, ByteLMConfig
-from src.components.titans.memory_system import TitansMemorySystem, WindowAttentionMemory, SurpriseBasedMemory, PersistentMemory
-from src.components.transformer2.adaptation import Transformer2Adaptation, TaskDispatcher, SVDAdaptation
-from src.components.mvot.token_processor import MVoTTokenProcessor, TokenDiscrepancyLoss
-from src.components.blt.byte_processor import BLTByteProcessor, EntropyCalculator, SmallByteLM
-from src.trainers.main_trainer import ByteDataset, EntropyEstimatorTrainer
-from src.models.transformer import MemoryEfficientTransformer, TransformerLayer, FlashAttention
-from src.models.unified_architecture import UnifiedArchitecture, DynamicComponentController
+from src_OLD.utils.config import ModelConfig, get_default_config, ByteLMConfig
+from src_OLD.components.titans.memory_system import TitansMemorySystem, WindowAttentionMemory, SurpriseBasedMemory, PersistentMemory
+from src_OLD.components.transformer2.adaptation import Transformer2Adaptation, TaskDispatcher, SVDAdaptation
+from src_OLD.components.mvot.token_processor import MVoTTokenProcessor, TokenDiscrepancyLoss
+from src_OLD.components.blt.byte_processor import BLTByteProcessor, EntropyCalculator, SmallByteLM
+from src_OLD.trainers.main_trainer import ByteDataset, EntropyEstimatorTrainer
+from src_OLD.models.transformer import MemoryEfficientTransformer, TransformerLayer, FlashAttention
+from src_OLD.models.unified_architecture import UnifiedArchitecture, DynamicComponentController
 
 
 class TestTitansMemorySystem(unittest.TestCase):

@@ -14,12 +14,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.components.learning.gradient_coordination import (
+from src_OLD.components.learning.gradient_coordination import (
     GradientCoordinator,
     ComponentGradientManager,
     GradientPriority
 )
-from src.components.learning.adaptive_learning_rate import (
+from src_OLD.components.learning.adaptive_learning_rate import (
     LearningStability,
     StabilityMetrics,
     LearningRateScheduler,
@@ -28,7 +28,7 @@ from src.components.learning.adaptive_learning_rate import (
     ComponentLearningManager,
     AdaptiveLearningRateManager
 )
-from src.components.learning.optimization_monitoring import (
+from src_OLD.components.learning.optimization_monitoring import (
     OptimizationStatus,
     OptimizationMetrics,
     OptimizationMonitor,
@@ -36,7 +36,7 @@ from src.components.learning.optimization_monitoring import (
     calculate_update_quality,
     recommend_learning_rate_adjustments
 )
-from src.utils.config import ModelConfig
+from src_OLD.utils.config import ModelConfig
 
 
 class SimpleModel(nn.Module):

@@ -30,7 +30,7 @@ if not TORCH_AVAILABLE or not NUMPY_AVAILABLE:
 else:
     SKIP_TESTS = False
 
-from src.utils.hardware_detection import (
+from src_OLD.utils.hardware_detection import (
     get_hardware_detector,
     get_optimal_device,
     get_environment_fingerprint,
@@ -38,7 +38,7 @@ from src.utils.hardware_detection import (
     get_optimal_config,
     HardwareDetector
 )
-from src.utils.platform_compatibility import (
+from src_OLD.utils.platform_compatibility import (
     get_platform_compatibility,
     svd_compatible,
     attention_compatible,

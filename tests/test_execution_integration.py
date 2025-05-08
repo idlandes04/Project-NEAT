@@ -10,13 +10,13 @@ import threading
 from typing import Dict, Any, List
 from dataclasses import dataclass, field
 
-from src.utils.execution import (
+from src_OLD.utils.execution import (
     ExecutionPriority, ExecutionStatus, BatchSizeStrategy
 )
-from src.utils.component_resource_management import (
+from src_OLD.utils.component_resource_management import (
     ComponentResourceManager, AllocationPriority
 )
-from src.utils.execution_integration import ExecutionResourceCoordinator
+from src_OLD.utils.execution_integration import ExecutionResourceCoordinator
 
 
 # Mock config for testing

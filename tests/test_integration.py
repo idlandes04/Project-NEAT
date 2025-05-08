@@ -15,9 +15,9 @@ from typing import Dict, List, Optional
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.utils.config import get_default_config
-from src.models.unified_architecture import UnifiedArchitecture
-from src.components.messaging import (
+from src_OLD.utils.config import get_default_config
+from src_OLD.models.unified_architecture import UnifiedArchitecture
+from src_OLD.components.messaging import (
     Message,
     MessageType,
     process_messages,
@@ -228,8 +228,8 @@ class TestComponentStateTracking(unittest.TestCase):
     def test_state_registration_and_subscription(self):
         """Test that states can be registered and subscribed to."""
         import logging
-        from src.components.messaging.component_state import StateManager, ComponentState, subscribe
-        import src.components.messaging.component_state as component_state_module
+        from src_OLD.components.messaging.component_state import StateManager, ComponentState, subscribe
+        import src_OLD.components.messaging.component_state as component_state_module
         
         # Set up logging for this test
         logging.basicConfig(level=logging.DEBUG)
@@ -328,7 +328,7 @@ class TestComponentStateTracking(unittest.TestCase):
         )
         
         # Verify that architecture state was registered
-        from src.components.messaging.component_state import get_state
+        from src_OLD.components.messaging.component_state import get_state
         arch_state = get_state(StateType.MEMORY_CONTENT, "unified_architecture")
         
         # Check that state exists
@@ -467,7 +467,7 @@ class TestFullArchitectureEndToEnd(unittest.TestCase):
         7. The full pipeline produces expected outputs
         """
         # 1. Register with resource manager
-        from src.utils.component_resource_management import ComponentResourceManager
+        from src_OLD.utils.component_resource_management import ComponentResourceManager
         resource_manager = ComponentResourceManager(self.config)
         
         # Register components
@@ -523,7 +523,7 @@ class TestFullArchitectureEndToEnd(unittest.TestCase):
         
         # 5. Since the MVoT test is more complex and requires matching dimensions,
         # Let's simplify this test and just check that the mechanism can be initialized
-        from src.components.mvot.decision.decision_mechanism import GenerationDecisionMechanism
+        from src_OLD.components.mvot.decision.decision_mechanism import GenerationDecisionMechanism
         decision_mechanism = GenerationDecisionMechanism(self.config)
         
         # Instead of running a full forward pass, we'll just test that the
@@ -540,7 +540,7 @@ class TestFullArchitectureEndToEnd(unittest.TestCase):
         loss.backward()
         
         # 7. Run resource-aware test-time optimization
-        from src.components.learning.gradient_coordination import GradientCoordinator
+        from src_OLD.components.learning.gradient_coordination import GradientCoordinator
         gradient_coordinator = GradientCoordinator(self.config)
         
         # Register model
@@ -648,7 +648,7 @@ class TestFullArchitectureEndToEnd(unittest.TestCase):
         # Log test environment for debugging
         print(f"Running memory pressure test with CUDA available: {cuda_available}")
         
-        from src.utils.component_resource_management import (
+        from src_OLD.utils.component_resource_management import (
             ComponentResourceManager, 
             ComponentProfile, 
             ResourceType,
@@ -667,7 +667,7 @@ class TestFullArchitectureEndToEnd(unittest.TestCase):
         ]
         
         # Get memory stats first to set realistic values
-        from src.utils.memory_optimization import get_memory_stats
+        from src_OLD.utils.memory_optimization import get_memory_stats
         memory_stats = get_memory_stats()
         
         # Set default values that will work on any system
@@ -715,7 +715,7 @@ class TestFullArchitectureEndToEnd(unittest.TestCase):
         
         # Calculate 90% of available memory for realistic but substantial request
         # Get available memory stats
-        from src.utils.memory_optimization import get_memory_stats
+        from src_OLD.utils.memory_optimization import get_memory_stats
         memory_stats = get_memory_stats()
         
         # Calculate 90% of available GPU memory (if available) or use a moderate default

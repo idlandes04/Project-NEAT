@@ -6,14 +6,14 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.utils.config import ModelConfig
-from src.components.mvot.decision import (
+from src_OLD.utils.config import ModelConfig
+from src_OLD.components.mvot.decision import (
     VisualizationBenefitAssessor,
     ContextAwareDecider,
     GenerationDecisionMechanism,
     create_decision_mechanism
 )
-from src.components.mvot.token_processor import (
+from src_OLD.components.mvot.token_processor import (
     MultimodalGenerator
 )
 

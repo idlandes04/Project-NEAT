@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.components.learning.gradient_coordination import (
+from src_OLD.components.learning.gradient_coordination import (
     GradientCoordinator,
     ComponentGradientManager,
     SharedGradientContext,
@@ -23,7 +23,7 @@ from src.components.learning.gradient_coordination import (
     GradientContextState,
     GradientIsolationLayer
 )
-from src.utils.config import ModelConfig
+from src_OLD.utils.config import ModelConfig
 
 
 class SimpleModel(nn.Module):

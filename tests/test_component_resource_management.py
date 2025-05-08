@@ -9,7 +9,7 @@ import time
 from unittest.mock import MagicMock, patch
 from dataclasses import dataclass, field
 
-from src.utils.component_resource_management import (
+from src_OLD.utils.component_resource_management import (
     MemoryBudgetManager,
     ComputationDistributor,
     PrecisionSelector,

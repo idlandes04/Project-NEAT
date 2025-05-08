@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 # Import this at the top level to use later
 try:
-    from src.models.unified_architecture_resource_adapter import ResourceAwareUnifiedArchitecture
+    from src_OLD.models.unified_architecture_resource_adapter import ResourceAwareUnifiedArchitecture
 except ImportError:
     # For test skipping if the module is not available
     ResourceAwareUnifiedArchitecture = None
@@ -66,8 +66,8 @@ class TestResourceAwareComponent(unittest.TestCase):
 
     def setUp(self):
         # Import here to avoid import errors if torch is not available
-        from src.models.unified_architecture_resource_adapter import ResourceAwareComponent
-        from src.utils.component_resource_management import ComponentResourceManager
+        from src_OLD.models.unified_architecture_resource_adapter import ResourceAwareComponent
+        from src_OLD.utils.component_resource_management import ComponentResourceManager
         
         # Mock resource manager
         self.mock_resource_manager = MagicMock(spec=ComponentResourceManager)

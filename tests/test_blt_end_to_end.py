@@ -10,10 +10,10 @@ from pathlib import Path
 # Add parent directory to path to import src modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.components.blt.byte_processor import SmallByteLMConfig, SmallByteLM
-from src.trainers.main_trainer import ByteDataset, EntropyEstimatorTrainer
-from src.utils.config import ByteLMConfig
-from src.trainers import train_blt_model, create_blt_model
+from src_OLD.components.blt.byte_processor import SmallByteLMConfig, SmallByteLM
+from src_OLD.trainers.main_trainer import ByteDataset, EntropyEstimatorTrainer
+from src_OLD.utils.config import ByteLMConfig
+from src_OLD.trainers import train_blt_model, create_blt_model
 
 # Set memory watermark ratio for tests if using MPS
 if hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
@@ -164,7 +164,7 @@ class TestBLTEndToEnd(unittest.TestCase):
             json.dump(cli_config, f)
         
         # Convert CLI config to ByteLMConfig
-        from src.utils.config import convert_cli_config_to_byte_lm_config
+        from src_OLD.utils.config import convert_cli_config_to_byte_lm_config
         byte_lm_config = convert_cli_config_to_byte_lm_config(cli_config)
         
         # Explicitly set train_files and eval_files

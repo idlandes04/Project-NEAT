@@ -6,14 +6,14 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.utils.config import ModelConfig, MVoTConfig
-from src.components.mvot.visual_codebook import (
+from src_OLD.utils.config import ModelConfig, MVoTConfig
+from src_OLD.components.mvot.visual_codebook import (
     VisualCodebook,
     VQVAEAdapter,
     EmbeddingSpaceConverter,
     create_visual_codebook
 )
-from src.components.mvot.token_processor import (
+from src_OLD.components.mvot.token_processor import (
     TokenDiscrepancyLoss,
     MVoTTokenProcessor,
     MultimodalGenerator

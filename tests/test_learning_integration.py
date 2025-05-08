@@ -9,20 +9,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.components.learning.gradient_coordination import (
+from src_OLD.components.learning.gradient_coordination import (
     GradientCoordinator,
     ComponentGradientManager,
     GradientPriority
 )
-from src.components.titans.memory_system import (
+from src_OLD.components.titans.memory_system import (
     TitansMemorySystem,
     SurpriseBasedMemory
 )
-from src.components.transformer2.adaptation import (
+from src_OLD.components.transformer2.adaptation import (
     Transformer2Adaptation,
     SVDAdaptation
 )
-from src.utils.config import ModelConfig
+from src_OLD.utils.config import ModelConfig
 
 
 class TestTitansGradientIntegration:
@@ -467,7 +467,7 @@ class TestCrossComponentGradientIntegration:
         )
         
         # Create gradient isolation layer
-        from src.components.learning.gradient_coordination import GradientIsolationLayer
+        from src_OLD.components.learning.gradient_coordination import GradientIsolationLayer
         isolation_layer = GradientIsolationLayer(
             from_component="titans",
             to_component="transformer2",

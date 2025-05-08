@@ -21,10 +21,10 @@ import torch.optim as optim
 from typing import Dict, List, Optional, Tuple, Union, Any
 from pathlib import Path
 
-from src.utils.config import ModelConfig, get_default_config
-from src.utils.memory_optimization import GPUMemoryOptimizer, enable_mixed_precision
-from src.models.unified_architecture import UnifiedArchitecture, DynamicComponentController
-from src.trainers import HardwareAwareTrainer, PerformanceProfiler
+from src_OLD.utils.config import ModelConfig, get_default_config
+from src_OLD.utils.memory_optimization import GPUMemoryOptimizer, enable_mixed_precision
+from src_OLD.models.unified_architecture import UnifiedArchitecture, DynamicComponentController
+from src_OLD.trainers import HardwareAwareTrainer, PerformanceProfiler
 
 
 def parse_args():
@@ -525,8 +525,8 @@ def profile(args, config):
 
 def train_byte_lm_mode(args):
     """Run byte-level language model training."""
-    from src.utils.config import ByteLMConfig
-    from src.trainers.main_trainer import train_blt_model
+    from src_OLD.utils.config import ByteLMConfig
+    from src_OLD.trainers.main_trainer import train_blt_model
     
     # Handle train_files and eval_files if they are JSON strings
     train_files = None
@@ -606,7 +606,7 @@ def test_messaging_mode(args):
     print("Setting up component messaging testing environment...")
     
     # Import necessary modules
-    from src.components.messaging import (
+    from src_OLD.components.messaging import (
         Message, 
         MessageType, 
         send_message, 
@@ -718,7 +718,7 @@ def test_messaging_mode(args):
 
 def hardware_detection_mode(args):
     """Run hardware detection and print capabilities."""
-    from src.utils.hardware_detection import get_hardware_detector, get_optimal_config
+    from src_OLD.utils.hardware_detection import get_hardware_detector, get_optimal_config
     
     # Get hardware detector
     detector = get_hardware_detector()
@@ -843,7 +843,7 @@ def prepare_data_handler(args):
     if args.data_type == "synthetic_math":
         # Import synthetic data generator
         try:
-            from src.data.synthetic.math_generator import MathDataGenerator, DifficultyLevel, ProblemType
+            from src_OLD.data.synthetic.math_generator import MathDataGenerator, DifficultyLevel, ProblemType
             from scripts.prepare_training_dataset import prepare_training_dataset
             
             # Create arguments for prepare_training_dataset
@@ -862,7 +862,7 @@ def prepare_data_handler(args):
         except ImportError as e:
             logger.error(f"Error importing synthetic data generator: {e}")
             # Fallback to consolidated trainer functions
-            from src.trainers import prepare_data
+            from src_OLD.trainers import prepare_data
             prepare_data(args)
         
     elif args.data_type == "byte_level":
@@ -894,13 +894,13 @@ def prepare_data_handler(args):
         except Exception as e:
             logger.error(f"Error running byte-level data preparation: {e}")
             # Fallback to consolidated trainer functions
-            from src.trainers import prepare_data
+            from src_OLD.trainers import prepare_data
             prepare_data(args)
         
     elif args.data_type == "pile_subset":
         # Use our trainer function for pile subset
         try:
-            from src.trainers import download_pile_subset
+            from src_OLD.trainers import download_pile_subset
             
             # Ensure output directory is set
             pile_output_dir = args.pile_output_dir if hasattr(args, 'pile_output_dir') else "./data/pile_subset"
@@ -920,7 +920,7 @@ def prepare_data_handler(args):
     elif args.data_type == "component_test":
         # Create mock models for testing
         try:
-            from src.trainers import create_mock_models
+            from src_OLD.trainers import create_mock_models
             
             # Create mock models
             from argparse import Namespace
@@ -961,7 +961,7 @@ def train_handler(args):
         
         # Apply hardware-specific optimizations
         if args.optimize_for_hardware:
-            from src.utils.hardware_detection import get_optimal_config
+            from src_OLD.utils.hardware_detection import get_optimal_config
             
             # Get optimal configuration for current hardware
             optimal_config = get_optimal_config()
@@ -1027,7 +1027,7 @@ def train_handler(args):
             pid = os.getpid()
             
             # Use our monitor module from main_trainer
-            from src.trainers import monitor_training
+            from src_OLD.trainers import monitor_training
             
             # Create monitor args
             from argparse import Namespace
@@ -1047,7 +1047,7 @@ def train_handler(args):
         logger.info("MVoT codebook training not yet implemented. Using mock codebook.")
         
         # Use our data preparation from main_trainer module
-        from src.trainers import create_mock_models
+        from src_OLD.trainers import create_mock_models
         
         # Create mock models
         from argparse import Namespace
@@ -1089,7 +1089,7 @@ def eval_handler(args):
         # Check if we're evaluating BLT specifically
         if "blt" in args.model_path.lower() or "byte" in args.model_path.lower():
             # Use our BLT interactive tester from main_eval module
-            from src.trainers import interactive_shell
+            from src_OLD.trainers import interactive_shell
             
             # Run interactive shell with default threshold
             interactive_shell(args.model_path, threshold=0.5)
@@ -1105,7 +1105,7 @@ def test_handler(args):
     
     if args.test_type == "blt_interactive":
         # Use our BLT interactive tester from main_eval
-        from src.trainers import test_blt_model
+        from src_OLD.trainers import test_blt_model
         
         # Create test args
         from argparse import Namespace
@@ -1120,7 +1120,7 @@ def test_handler(args):
     
     elif args.test_type == "blt_monitor":
         # Use our monitoring module from main_trainer
-        from src.trainers import monitor_training
+        from src_OLD.trainers import monitor_training
         
         # Create monitor args if not provided
         if not args.output_dir:
@@ -1202,7 +1202,7 @@ def setup_handler(args):
     # Create mock models if requested
     if args.create_mock_models:
         # Use our data preparation from main_trainer module
-        from src.trainers import create_mock_models
+        from src_OLD.trainers import create_mock_models
         
         # Create mock models
         from argparse import Namespace
@@ -1411,7 +1411,7 @@ def main():
     
     # Run hardware detection if requested
     if args.detect_hardware:
-        from src.utils.hardware_detection import get_hardware_detector
+        from src_OLD.utils.hardware_detection import get_hardware_detector
         detector = get_hardware_detector()
         features = detector.get_features()
         logger.info(f"Hardware detected: {features.platform}")
@@ -1426,7 +1426,7 @@ def main():
     try:
         if args.mode == "prepare_data":
             # Use main_env_prepare functionality
-            from src.trainers.main_env_prep import create_directory_structure, clean_outputs_directory
+            from src_OLD.trainers.main_env_prep import create_directory_structure, clean_outputs_directory
             create_directory_structure(".", clean=False)
             logger.info("Environment prepared successfully")
             
@@ -1436,16 +1436,16 @@ def main():
             
             # Use main_trainer functionality
             if model_type == "blt":
-                from src.trainers.main_trainer import train_blt_entropy
+                from src_OLD.trainers.main_trainer import train_blt_entropy
                 train_blt_entropy(args)
             elif model_type == "mvot":
-                from src.trainers.main_trainer import train_mvot_codebook
+                from src_OLD.trainers.main_trainer import train_mvot_codebook
                 train_mvot_codebook(args)
             elif model_type == "full":
-                from src.trainers.main_trainer import train_full_model
+                from src_OLD.trainers.main_trainer import train_full_model
                 train_full_model(args)
             elif model_type == "baseline":
-                from src.trainers.main_trainer import train_baseline_model
+                from src_OLD.trainers.main_trainer import train_baseline_model
                 train_baseline_model(args)
             else:
                 logger.error(f"Unknown training type: {args.training_type}")
@@ -1460,19 +1460,19 @@ def main():
             model_type = args.eval_type if hasattr(args, "eval_type") else "full"
             
             if model_type == "blt":
-                from src.trainers.main_eval import evaluate_blt_entropy
+                from src_OLD.trainers.main_eval import evaluate_blt_entropy
                 evaluate_blt_entropy(args)
             elif model_type == "mvot":
-                from src.trainers.main_eval import evaluate_mvot_codebook
+                from src_OLD.trainers.main_eval import evaluate_mvot_codebook
                 evaluate_mvot_codebook(args)
             elif model_type == "full":
-                from src.trainers.main_eval import evaluate_full_model
+                from src_OLD.trainers.main_eval import evaluate_full_model
                 evaluate_full_model(args)
             elif model_type == "baseline":
-                from src.trainers.main_eval import evaluate_baseline_model
+                from src_OLD.trainers.main_eval import evaluate_baseline_model
                 evaluate_baseline_model(args)
             elif model_type == "ablation":
-                from src.trainers.main_eval import run_component_ablation
+                from src_OLD.trainers.main_eval import run_component_ablation
                 run_component_ablation(args)
             else:
                 logger.error(f"Unknown evaluation type: {model_type}")
@@ -1481,7 +1481,7 @@ def main():
         elif args.mode == "test":
             # Map test types to evaluation modes
             if args.test_type == "blt_interactive":
-                from src.trainers.main_eval import evaluate_blt_entropy
+                from src_OLD.trainers.main_eval import evaluate_blt_entropy
                 args.interactive = True
                 evaluate_blt_entropy(args)
             elif args.test_type == "hardware":
@@ -1492,7 +1492,7 @@ def main():
                 
         elif args.mode == "setup":
             # Use main_env_prepare functionality for setup
-            from src.trainers.main_env_prep import create_directory_structure, clean_outputs_directory
+            from src_OLD.trainers.main_env_prep import create_directory_structure, clean_outputs_directory
             # Clean only if specifically requested
             clean = hasattr(args, "clean") and args.clean
             create_directory_structure(".", clean=clean)
@@ -1517,7 +1517,7 @@ if __name__ == "__main__":
     else:
         # No arguments provided, launch the rich interactive CLI
         try:
-            from src.utils.cli_interface import main as cli_main
+            from src_OLD.utils.cli_interface import main as cli_main
             cli_main()
         except ImportError:
             # Fall back to normal CLI if the rich interface is not available

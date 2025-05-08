@@ -13,8 +13,8 @@ import torch
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.utils.config import get_default_config
-from src.components.messaging import (
+from src_OLD.utils.config import get_default_config
+from src_OLD.components.messaging import (
     Message,
     MessageType,
     MessageBus,
@@ -24,7 +24,7 @@ from src.components.messaging import (
     get_message_bus
 )
 
-from src.components.feedback import (
+from src_OLD.components.feedback import (
     TaskMemoryFeedback,
     AdaptationFeedback,
     ModalityFeedback

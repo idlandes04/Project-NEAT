@@ -5,8 +5,8 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.utils.config import ModelConfig
-from src.components.mvot.mapping import (
+from src_OLD.utils.config import ModelConfig
+from src_OLD.components.mvot.mapping import (
     ByteToTokenMapper,
     TokenToByteMapper,
     BidirectionalMapper,

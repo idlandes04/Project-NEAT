@@ -17,10 +17,10 @@ from datetime import datetime
 # Add project root to the Python path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.utils.config import ModelConfig, get_default_config
-from src.models.unified_architecture import UnifiedArchitecture
-from src.trainers import HardwareAwareTrainer
-from src.utils.hardware_detection import get_hardware_detector
+from src_OLD.utils.config import ModelConfig, get_default_config
+from src_OLD.models.unified_architecture import UnifiedArchitecture
+from src_OLD.trainers import HardwareAwareTrainer
+from src_OLD.utils.hardware_detection import get_hardware_detector
 
 def parse_args():
     """Parse command-line arguments."""
@@ -215,7 +215,7 @@ def main():
     # Set up MVoT codebook configuration
     if not hasattr(config, 'mvot'):
         # Initialize mvot configuration
-        from src.utils.config import MVoTConfig
+        from src_OLD.utils.config import MVoTConfig
         config.mvot = MVoTConfig()
     
     config.mvot.use_pretrained_codebook = True
