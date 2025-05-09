@@ -1,4 +1,4 @@
-# --- START OF FILE scripts/prepare_data.py ---
+# --- START OF CORRECTED scripts/prepare_data.py ---
 
 """
 Downloads and processes datasets from Hugging Face Hub for Project NEAT.
@@ -11,7 +11,7 @@ import argparse
 import os
 import logging
 from datasets import load_dataset, IterableDataset
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union # <-- IMPORT ADDED HERE
 import math
 import random
 
@@ -20,7 +20,7 @@ DEFAULT_OUTPUT_DIR = "./data/processed"
 DEFAULT_SOURCE_DATASET = "cerebras/SlimPajama-627B" # Example dataset
 DEFAULT_SUBSETS = None # Use all subsets by default
 DEFAULT_TEXT_FIELD = "text"
-DEFAULT_MAX_GIGABYTES = 50 # Limit download size for faster testing
+DEFAULT_MAX_GIGABYTES = 5 # Limit download size for faster testing
 DEFAULT_TRAIN_SPLIT = 0.98
 DEFAULT_OUTPUT_FORMAT = "txt" # 'txt' or 'bin'
 DEFAULT_FILES_PER_DIR = 100 # Split output into multiple files
@@ -75,31 +75,45 @@ def process_dataset(
         # C4/Pile might need filtering after loading the main config.
         # Handling this generically is complex; focusing on SlimPajama structure for now.
         if "SlimPajama" in dataset_name and subsets:
-             ds = load_dataset(dataset_name, name=",".join(subsets), streaming=True, trust_remote_code=True) # SlimPajama uses 'name'
+             # Join subsets correctly for the 'name' parameter
+             subset_string = ",".join(subsets)
+             logger.info(f"Attempting to load SlimPajama with subset string: '{subset_string}'")
+             ds = load_dataset(dataset_name, name=subset_string, streaming=True, trust_remote_code=True) # SlimPajama uses 'name'
         else:
+             logger.info(f"Loading dataset '{dataset_name}' without specific subset names (will load default or all).")
              ds = load_dataset(dataset_name, streaming=True, trust_remote_code=True)
-             # TODO: Add filtering logic here if subsets are provided for non-SlimPajama datasets
+             if subsets:
+                  logger.warning(f"Subsets {subsets} provided, but dataset name '{dataset_name}' might not support loading by name. Filtering might be needed manually if this fails or loads everything.")
+                  # TODO: Add manual filtering logic here if needed for other datasets
 
         # Assume 'train' split exists, common for large datasets
         if 'train' not in ds:
-             logger.warning(f"'train' split not found in {dataset_name}. Trying first available split: {list(ds.keys())[0]}")
-             split_name = list(ds.keys())[0]
+             available_splits = list(ds.keys())
+             if not available_splits:
+                  logger.error(f"No splits found in dataset {dataset_name}. Cannot proceed.")
+                  return
+             logger.warning(f"'train' split not found in {dataset_name}. Using first available split: '{available_splits[0]}'")
+             split_name = available_splits[0]
              ds_iterable: IterableDataset = ds[split_name]
         else:
              ds_iterable: IterableDataset = ds['train']
 
         # Get dataset info if possible for size estimation
-        ds_info = getattr(ds_iterable, 'info', None)
+        # Accessing info on IterableDataset directly might not work as expected
+        # Try accessing info from the original DatasetDict before selecting the split
+        ds_info = ds.info if hasattr(ds, 'info') else None # Get info from the main DatasetDict if possible
         estimated_total_gb = estimate_gigabytes(ds_info)
-        logger.info(f"Estimated total dataset size: {estimated_total_gb:.2f} GB")
+        logger.info(f"Estimated total dataset size: {estimated_total_gb:.2f} GB (Note: Streaming may not provide accurate size beforehand)")
 
     except Exception as e:
         logger.error(f"Failed to load dataset {dataset_name}: {e}", exc_info=True)
         return
 
     # --- Prepare Output Directories ---
-    train_dir = os.path.join(output_dir, f"{os.path.basename(dataset_name)}_train")
-    eval_dir = os.path.join(output_dir, f"{os.path.basename(dataset_name)}_eval")
+    # Use dataset name in directory path to avoid collisions if processing multiple datasets
+    base_output_name = dataset_name.split('/')[-1] # Get dataset name part
+    train_dir = os.path.join(output_dir, f"{base_output_name}_train")
+    eval_dir = os.path.join(output_dir, f"{base_output_name}_eval")
     os.makedirs(train_dir, exist_ok=True)
     os.makedirs(eval_dir, exist_ok=True)
 
@@ -112,46 +126,74 @@ def process_dataset(
     eval_file_handle = None
     write_mode = 'w' if output_format == 'txt' else 'wb'
     encoding = 'utf-8' if output_format == 'txt' else None
+    # Estimate target file size based on files_per_dir and max_gb (very rough estimate)
+    target_file_size_gb = max_gb / (files_per_dir * 2) if files_per_dir > 0 else max_gb
+    target_file_size_bytes = target_file_size_gb * (1024**3)
+    # Use a smaller, fixed size for file rotation if estimate is too large or small
+    file_rotation_size_bytes = max(10 * 1024 * 1024, min(500 * 1024 * 1024, int(target_file_size_bytes))) # Between 10MB and 500MB
+    logger.info(f"Targeting file rotation size: {file_rotation_size_bytes / (1024**2):.2f} MB")
+
 
     try:
         logger.info("Iterating through dataset stream...")
         for example in ds_iterable:
-            if text_field not in example or not example[text_field]:
+            if text_field not in example or not example[text_field] or not isinstance(example[text_field], str):
+                logger.debug(f"Skipping example due to missing or invalid text field: {example.keys()}")
                 continue
 
             text = example[text_field]
             data_to_write: Union[str, bytes]
+            data_len_bytes = 0
 
             if output_format == 'txt':
                 # Add EOS token between documents
-                data_to_write = text + eos_token
-                processed_gb += len(data_to_write.encode(encoding)) / (1024**3)
+                data_to_write = text + eos_token + "\n" # Add newline for better readability/parsing
+                try:
+                    # Use specified encoding to estimate byte size accurately
+                    data_len_bytes = len(data_to_write.encode(encoding, errors='ignore'))
+                except Exception:
+                     data_len_bytes = len(data_to_write) # Fallback estimate
             elif output_format == 'bin':
-                data_to_write = text.encode(encoding, errors='replace') # Encode to bytes
-                processed_gb += len(data_to_write) / (1024**3)
+                try:
+                    data_to_write = text.encode(encoding or 'utf-8', errors='replace') # Encode to bytes
+                    data_len_bytes = len(data_to_write)
+                except Exception as e:
+                     logger.warning(f"Could not encode text to bytes: {e}. Skipping example.")
+                     continue
             else:
                 logger.error(f"Invalid output format: {output_format}")
                 return
+
+            processed_gb += data_len_bytes / (1024**3)
 
             # Decide train/eval split
             target_dir = train_dir if random.random() < train_split_ratio else eval_dir
             is_train = target_dir == train_dir
 
-            # Manage file handles
-            if is_train:
-                if train_file_handle is None or train_file_handle.tell() > (100 * 1024 * 1024): # New file every ~100MB
-                    if train_file_handle: train_file_handle.close()
-                    train_file_path = os.path.join(train_dir, f"part_{train_file_idx:05d}.{output_format}")
-                    train_file_handle = open(train_file_path, write_mode, encoding=encoding)
-                    train_file_idx += 1
-                save_chunk(data_to_write, train_file_handle, output_format)
-            else:
-                 if eval_file_handle is None or eval_file_handle.tell() > (100 * 1024 * 1024):
-                    if eval_file_handle: eval_file_handle.close()
-                    eval_file_path = os.path.join(eval_dir, f"part_{eval_file_idx:05d}.{output_format}")
-                    eval_file_handle = open(eval_file_path, write_mode, encoding=encoding)
-                    eval_file_idx += 1
-                 save_chunk(data_to_write, eval_file_handle, output_format)
+            # Manage file handles and rotation
+            try:
+                if is_train:
+                    if train_file_handle is None or train_file_handle.tell() > file_rotation_size_bytes:
+                        if train_file_handle: train_file_handle.close()
+                        train_file_path = os.path.join(train_dir, f"part_{train_file_idx:05d}.{output_format}")
+                        train_file_handle = open(train_file_path, write_mode, encoding=encoding)
+                        logger.info(f"Opened new train file: {train_file_path}")
+                        train_file_idx += 1
+                    save_chunk(data_to_write, train_file_handle, output_format)
+                else:
+                    if eval_file_handle is None or eval_file_handle.tell() > file_rotation_size_bytes:
+                        if eval_file_handle: eval_file_handle.close()
+                        eval_file_path = os.path.join(eval_dir, f"part_{eval_file_idx:05d}.{output_format}")
+                        eval_file_handle = open(eval_file_path, write_mode, encoding=encoding)
+                        logger.info(f"Opened new eval file: {eval_file_path}")
+                        eval_file_idx += 1
+                    save_chunk(data_to_write, eval_file_handle, output_format)
+            except IOError as e:
+                 logger.error(f"IOError writing data: {e}. Skipping example.", exc_info=True)
+                 # Attempt to close handles just in case
+                 if train_file_handle: train_file_handle.close(); train_file_handle = None
+                 if eval_file_handle: eval_file_handle.close(); eval_file_handle = None
+                 continue # Skip to next example
 
 
             example_count += 1
@@ -162,6 +204,8 @@ def process_dataset(
                 logger.info(f"Reached max processing size ({max_gb:.2f} GB). Stopping.")
                 break
 
+    except StopIteration:
+         logger.info("Dataset stream finished before reaching max_gb limit.")
     except Exception as e:
         logger.error(f"Error during dataset iteration: {e}", exc_info=True)
     finally:
@@ -182,7 +226,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_format", type=str, default=DEFAULT_OUTPUT_FORMAT, choices=['txt', 'bin'], help="Output format ('txt' or 'bin').")
     parser.add_argument("--max_gb", type=float, default=DEFAULT_MAX_GIGABYTES, help="Maximum gigabytes of data to process.")
     parser.add_argument("--train_split", type=float, default=DEFAULT_TRAIN_SPLIT, help="Fraction of data for the training set (0.0 to 1.0).")
-    parser.add_argument("--files_per_dir", type=int, default=DEFAULT_FILES_PER_DIR, help="Approximate number of files to split output into per directory (controls file size).")
+    parser.add_argument("--files_per_dir", type=int, default=DEFAULT_FILES_PER_DIR, help="Approximate number of files to split output into per directory (used for rough file size estimate).")
     parser.add_argument("--eos_token", type=str, default="<|endoftext|>", help="EOS token to add between documents in 'txt' format.")
 
     args = parser.parse_args()
@@ -198,8 +242,8 @@ if __name__ == "__main__":
         text_field=args.text_field,
         max_gb=args.max_gb,
         train_split_ratio=args.train_split,
-        files_per_dir=args.files_per_dir,
+        files_per_dir=args.files_per_dir, # Note: files_per_dir is now just for rough estimate
         eos_token=args.eos_token
     )
 
-# --- END OF FILE scripts/prepare_data.py ---
+# --- END OF CORRECTED scripts/prepare_data.py ---
