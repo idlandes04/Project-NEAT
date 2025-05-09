@@ -1,5 +1,3 @@
-# --- START OF FILE src/model/transformer.py ---
-
 """
 Core Transformer building blocks (Attention, FeedForward, TransformerBlock).
 
@@ -34,6 +32,7 @@ class Attention(nn.Module):
     Uses FlashAttention (torch.nn.functional.scaled_dot_product_attention)
     if available and enabled in the config, otherwise falls back to a manual
     implementation suitable for broader compatibility.
+    Uses separate Q, K, V projection layers.
     """
     def __init__(self, config: Any):
         """
@@ -61,8 +60,11 @@ class Attention(nn.Module):
         self.head_dim = self.hidden_size // self.num_heads
         self.scaling = self.head_dim ** -0.5 # Scale factor for dot products
 
-        # Use fused QKV projection for potential efficiency gains
-        self.qkv_proj = nn.Linear(self.hidden_size, 3 * self.hidden_size, bias=True) # Bias often included
+        # Separate Q, K, V projection layers
+        self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
+        self.k_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
+        self.v_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
+
         self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=True)
 
         self.attn_dropout_prob = config.attention_probs_dropout_prob
@@ -184,10 +186,10 @@ class Attention(nn.Module):
         """
         batch_size, seq_len, _ = hidden_states.shape
 
-        # 1. Project Q, K, V
-        qkv = self.qkv_proj(hidden_states)
-        # Split Q, K, V
-        query, key, value = qkv.split(self.hidden_size, dim=-1)
+        # 1. Project Q, K, V separately
+        query = self.q_proj(hidden_states)
+        key = self.k_proj(hidden_states)
+        value = self.v_proj(hidden_states)
 
         # 2. Split Heads
         query = self._split_heads(query) # [B, H, S, Dh]
@@ -330,5 +332,3 @@ class TransformerBlock(nn.Module):
         hidden_states = residual + ffn_output
 
         return hidden_states
-
-# --- END OF FILE src/model/transformer.py ---

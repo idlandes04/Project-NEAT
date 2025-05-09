@@ -1,4 +1,4 @@
-# --- START OF MODIFIED src/scripts/train.py ---
+# --- START OF src/scripts/train.py (Should be mostly correct now) ---
 
 """
 Main training script for Project NEAT.
@@ -22,8 +22,8 @@ try:
     from transformers import AutoTokenizer # Import AutoTokenizer
     from src.utils.config import load_config, ModelConfig
     from src.utils.logging_utils import setup_logging
-    from src.utils.hardware import detect_device
-    from src.utils.tokenization import TokenizerBase # Keep base for type hint
+    # from src.utils.hardware import detect_device # Not directly used in train.py, config handles it
+    from src.utils.tokenization import TokenizerBase
     from src.training.data import UnifiedDataset, collate_fn
     from src.model.architecture import UnifiedModel
     from src.training.trainer import Trainer
@@ -45,79 +45,71 @@ def main():
     # --- 1. Load Configuration ---
     config = load_config(args.config)
     if config is None:
-        # load_config logs the error
         sys.exit(1)
 
     # --- 2. Setup Logging ---
-    # Ensure output_dir exists before setting up file logging
     os.makedirs(config.training.output_dir, exist_ok=True)
-    setup_logging(log_dir=os.path.join(config.training.output_dir, "logs"), log_filename="train.log")
-    logger = logging.getLogger(__name__) # Get logger after setup
+    log_file_path = os.path.join(config.training.output_dir, "logs") # Define log_dir
+    setup_logging(log_dir=log_file_path, log_filename="train.log") # Pass log_dir
+    logger = logging.getLogger(__name__)
     logger.info("Starting training script...")
     logger.info(f"Loaded configuration from: {args.config}")
 
     # --- 3. Initialize Tokenizer ---
-    tokenizer: Optional[TokenizerBase] = None # Use base class for type hint
+    tokenizer: Optional[Any] = None # Use Any for HF tokenizer, or TokenizerBase for our own
     if not config.use_blt_processor:
-        tokenizer_name = getattr(config, 'tokenizer_name', None)
-        if not tokenizer_name:
-            logger.error("BLT is disabled, but 'tokenizer_name' is not specified in the config.")
+        # Now config.tokenizer_name should be populated correctly by ModelConfig
+        # or defaulted by resolve_config
+        if not config.tokenizer_name: # Should have been defaulted if None
+            logger.error("BLT is disabled, but 'tokenizer_name' is not specified in the config after resolution.")
             sys.exit(1)
         try:
-            logger.info(f"Loading tokenizer '{tokenizer_name}' from Hugging Face Hub...")
-            # Load the actual tokenizer using AutoTokenizer
-            tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-            # Set padding side to right (consistent with causal LM)
+            logger.info(f"Loading tokenizer '{config.tokenizer_name}' from Hugging Face Hub...")
+            tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_name)
             tokenizer.padding_side = "right"
-            # Set pad token if missing (common for models like GPT2, Llama)
             if tokenizer.pad_token is None:
                  if tokenizer.eos_token:
                      tokenizer.pad_token = tokenizer.eos_token
-                     logger.warning(f"Tokenizer '{tokenizer_name}' has no pad_token. Setting pad_token to eos_token ('{tokenizer.eos_token}').")
+                     logger.warning(f"Tokenizer '{config.tokenizer_name}' has no pad_token. Setting pad_token to eos_token ('{tokenizer.eos_token}').")
                  else:
-                     # Add a generic pad token if EOS is also missing (less ideal)
-                     added_tokens = tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-                     logger.warning(f"Tokenizer '{tokenizer_name}' has no pad_token or eos_token. Added a '[PAD]' token.")
-                     # NOTE: If we add tokens, the vocab size changes, which affects the model embedding layer.
-                     # It's better to use tokenizers that already have these defined.
-
-            # Dynamically update config vocab size
+                     tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+                     logger.warning(f"Tokenizer '{config.tokenizer_name}' has no pad_token or eos_token. Added a '[PAD]' token.")
+            
+            # Update config.vocab_size based on the loaded tokenizer
             if config.vocab_size != tokenizer.vocab_size:
-                 logger.warning(f"Updating config.vocab_size from {config.vocab_size} to {tokenizer.vocab_size} based on loaded tokenizer '{tokenizer_name}'.")
-                 config.vocab_size = tokenizer.vocab_size
-            logger.info(f"Tokenizer '{tokenizer_name}' loaded successfully. Vocab size: {config.vocab_size}, Pad token ID: {tokenizer.pad_token_id}")
+                 logger.warning(f"Updating config.vocab_size from {config.vocab_size} to {tokenizer.vocab_size} based on loaded tokenizer '{config.tokenizer_name}'.")
+                 config.vocab_size = tokenizer.vocab_size # This modification to config object is key
+            logger.info(f"Tokenizer '{config.tokenizer_name}' loaded successfully. Vocab size: {config.vocab_size}, Pad token ID: {tokenizer.pad_token_id}")
 
         except Exception as e:
-            logger.error(f"Failed to load tokenizer '{tokenizer_name}': {e}", exc_info=True)
+            logger.error(f"Failed to load tokenizer '{config.tokenizer_name}': {e}", exc_info=True)
             sys.exit(1)
     else:
          logger.info("BLT enabled, skipping external tokenizer loading.")
-         # Ensure vocab_size is correct for BLT
-         if config.vocab_size != 260:
-              logger.warning(f"BLT enabled, but config.vocab_size is {config.vocab_size}. Overriding to 260 for byte processing.")
-              config.vocab_size = 260
-         tokenizer = None # Explicitly set to None
+         if config.vocab_size != 260: # BLT uses byte vocab
+              logger.warning(f"BLT enabled, but config.vocab_size is {config.vocab_size}. Ensure it's set to 260 for byte processing.")
+              config.vocab_size = 260 # Correct it if not set properly for BLT
+         tokenizer = None
 
     # --- 4. Load Datasets ---
     logger.info("Loading datasets...")
     try:
         train_dataset = UnifiedDataset(
             file_paths_or_dir=config.data.train_data_dir,
-            config=config,
-            tokenizer=tokenizer # Pass the loaded HF tokenizer or None
+            config=config, # Pass the potentially modified config (with updated vocab_size)
+            tokenizer=tokenizer
         )
         eval_dataset = None
         if config.data.eval_data_dir:
             eval_dataset = UnifiedDataset(
                 file_paths_or_dir=config.data.eval_data_dir,
                 config=config,
-                tokenizer=tokenizer # Pass the loaded HF tokenizer or None
+                tokenizer=tokenizer
             )
         else:
             logger.warning("No evaluation data directory specified.")
     except FileNotFoundError as e:
          logger.error(f"Dataset loading failed: {e}")
-         logger.error(f"Please ensure data exists at the specified paths and run the data preparation script if needed.")
          sys.exit(1)
     except (ValueError, Exception) as e:
         logger.error(f"Failed to load datasets: {e}", exc_info=True)
@@ -126,7 +118,7 @@ def main():
     # --- 5. Initialize Model ---
     logger.info("Initializing UnifiedModel...")
     try:
-        # Now config.vocab_size is correctly updated if needed
+        # Pass the config object that might have had its vocab_size updated
         model = UnifiedModel(config)
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -143,7 +135,7 @@ def main():
             config=config,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            tokenizer=tokenizer, # Pass HF tokenizer or None
+            tokenizer=tokenizer,
             collate_fn_func=collate_fn
         )
     except (ValueError, AttributeError, Exception) as e:
@@ -158,10 +150,11 @@ def main():
     except Exception as e:
         logger.error(f"Training loop encountered an error: {e}", exc_info=True)
         logger.info("Attempting to save final checkpoint after error...")
-        trainer.save_checkpoint("error_final")
+        if trainer: # Ensure trainer was initialized
+            trainer.save_checkpoint("error_final")
         sys.exit(1)
 
 if __name__ == "__main__":
     main()
 
-# --- END OF MODIFIED src/scripts/train.py ---
+# --- END OF src/scripts/train.py ---

@@ -1,23 +1,27 @@
 # --- START OF FILE configs/config_full_500m.yaml ---
 # Full configuration for a ~500M parameter model.
 # Enables ALL components: BLT, Titans, T2, MVoT.
-# Requires setting paths for BLT/MVoT components if pretrained.
+# Paths for BLT/MVoT components are null (random init).
 
 # Core Model Parameters (~500M target)
 hidden_size: 2048
 num_layers: 24
 num_attention_heads: 16
-intermediate_size: 8192 # 4 * hidden_size
+intermediate_size: 8192
 hidden_dropout_prob: 0.1
 attention_probs_dropout_prob: 0.1
-max_position_embeddings: 4096 # Needs to be large enough for max BLT patches or block_size
-vocab_size: 260 # Set to byte vocab size when using BLT
+max_position_embeddings: 4096 # Max number of patches or tokens
+vocab_size: 260 # For BLT (byte vocab size)
+layer_norm_eps: 1.0e-5
+
+# Tokenizer (Not used when use_blt_processor is true)
+tokenizer_name: null
 
 # Component Activation Flags
-use_blt_processor: true # Enable BLT
-use_titans_memory: true # Enable Titans memory
-use_transformer2_adaptation: true # Enable T2 adaptation
-use_mvot_processor: true # Enable MVoT
+use_blt_processor: true
+use_titans_memory: true
+use_transformer2_adaptation: true
+use_mvot_processor: true
 
 # Nested Component Configurations
 blt:
@@ -33,15 +37,15 @@ blt:
     intermediate_size: 1024
     byte_lm_dropout: 0.1
     byte_lm_model_type: "transformer"
-  # !! IMPORTANT: Set path if using a pretrained SmallByteLM for entropy calculation
-  blt_checkpoint_path: null # e.g., "./models/small_byte_lm.pt"
+    byte_lm_max_position: 512 # Max context for the small LM
+  blt_checkpoint_path: null # Path to pretrained SmallByteLM (if any)
 
 titans:
   use_window_attention: true
   use_surprise_based: true
   use_persistent: true
-  window_size: 512
-  memory_size: 4096
+  window_size: 512 # Window for short-term memory (num patches)
+  memory_size: 4096 # Number of slots in surprise memory
   surprise_threshold: 0.5
   num_persistent_vectors: 64
   persistent_init_scale: 0.02
@@ -53,36 +57,35 @@ titans:
 transformer2:
   num_tasks: 8
   task_embedding_dim: 64
-  num_singular_values: 128 # k
+  num_singular_values: 128
   expert_init_scale: 0.01
   adapt_attention: true
   adapt_ffn: true
-  adapt_embeddings: false
-  adapt_lm_head: false
+  adapt_embeddings: false # Typically not adapted for BLT
+  adapt_lm_head: false    # MVoT projection is separate
   layer_specific: false
   use_randomized_svd: true
   svd_precision: "fixed"
   svd_n_oversamples: 10
   svd_n_iter: 5
   enable_svd_caching: true
-  svd_cache_dir: ".svd_cache_full" # Use separate cache dir
+  svd_cache_dir: ".svd_cache_full"
 
 mvot:
   codebook_size: 8192
-  embedding_dim: 2048 # Match hidden_size for simplicity (no projection needed)
+  embedding_dim: 2048 # Should match model's hidden_size
   discrepancy_loss_weight: 0.1
   codebook_model_type: "vqvae" # Hint for loading function
-  # !! IMPORTANT: Set path to load pretrained visual codebook embeddings
-  codebook_path: null # e.g., "./models/vqvae_codebook.safetensors"
-  use_pretrained_codebook: true # Enable loading
+  codebook_path: null # Path to pretrained visual codebook
+  use_pretrained_codebook: false # Set to false if path is null
 
-# In your config_base_500m.yaml or config_full_500m.yaml
+# Data, Training, Hardware Configs
 data:
-  train_data_dir: "../data/processed_slimpajama_all_train" # Update this path
-  eval_data_dir: "../data/processed_slimpajama_all_eval"   # Update this path
-  train_file_pattern: "*.txt" # Should match output_format
+  train_data_dir: "./src/data/processed_wikitext103/wikitext_wikitext-103-raw-v1_train"
+  eval_data_dir: "./src/data/processed_wikitext103/wikitext_wikitext-103-raw-v1_eval"
+  train_file_pattern: "*.txt" # prepare_data.py saves as .txt, BLT will process bytes from text
   eval_file_pattern: "*.txt"
-  block_size: 4096 # Or whatever block size you intend to use
+  block_size: 4096 # Sequence length in BYTES for BLT
 
 training:
   learning_rate: 3.0e-4
@@ -91,21 +94,20 @@ training:
   adam_beta2: 0.95
   adam_epsilon: 1.0e-8
   max_grad_norm: 1.0
-  max_steps: 200000
-  warmup_steps: 2000
-  batch_size: 8
-  gradient_accumulation_steps: 4
-  logging_steps: 100
-  eval_steps: 1000
-  save_steps: 1000
-  output_dir: "./output/neat_full_500m"
+  max_steps: 5000 # Reduced for initial test runs
+  warmup_steps: 200  # Adjusted
+  batch_size: 4      # Reduced
+  gradient_accumulation_steps: 8 # Increased
+  logging_steps: 50
+  eval_steps: 500
+  save_steps: 500
+  output_dir: ".src/output/neat_full_500m_wikitext103" # Specific output dir
   resume_from: null
 
 hardware:
   mixed_precision: true
   gradient_checkpointing: false
   force_cpu: false
-  num_workers: 4
+  num_workers: 0 # Set to 0 for easier debugging on Windows
   use_flash_attention: true
-
 # --- END OF FILE configs/config_full_500m.yaml ---

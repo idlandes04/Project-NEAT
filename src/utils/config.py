@@ -1,4 +1,4 @@
-# --- START OF FILE src/utils/config.py ---
+# --- START OF CORRECTED src/utils/config.py ---
 
 """
 Configuration system for Project NEAT using dataclasses.
@@ -36,7 +36,6 @@ def _init_from_dict(cls: Type[Any], data: Dict[str, Any]) -> Any:
 
     for name, default_value in field_defaults.items():
         field_type = field_types[name]
-        # Check if the field type itself is a dataclass for nested initialization
         origin_type = getattr(field_type, "__origin__", None)
         is_nested_dataclass = False
         nested_type = None
@@ -44,7 +43,6 @@ def _init_from_dict(cls: Type[Any], data: Dict[str, Any]) -> Any:
         if dataclasses.is_dataclass(field_type):
             is_nested_dataclass = True
             nested_type = field_type
-        # Handle Optional[Dataclass] or Union[Dataclass, None]
         elif origin_type is Union:
              union_args = getattr(field_type, "__args__", ())
              for arg in union_args:
@@ -56,43 +54,39 @@ def _init_from_dict(cls: Type[Any], data: Dict[str, Any]) -> Any:
         if name in data:
             value = data[name]
             if is_nested_dataclass and isinstance(value, dict) and nested_type is not None:
-                # Recursively initialize nested dataclass
                 init_args[name] = _init_from_dict(nested_type, value)
             elif isinstance(value, dict) and not is_nested_dataclass and default_value != dataclasses.MISSING:
-                 # If field is not a dataclass but data provides a dict, maybe warn or use default?
                  logger.warning(f"Received dict for non-dataclass field '{name}' of type {field_type}. Using default value: {default_value}")
                  init_args[name] = default_value
-            elif type(value) == field_type or isinstance(value, field_type):
-                 # Basic type match or instance match
+            # Check for exact type match or if value is an instance of field_type
+            # This handles cases like int for float, or subclasses.
+            elif isinstance(value, field_type) or type(value) == field_type:
                  init_args[name] = value
+            # Handle Optional[type] where value might be None
+            elif origin_type is Union and type(None) in getattr(field_type, "__args__", ()) and value is None:
+                init_args[name] = None
             else:
-                 # Attempt type coercion or use default if coercion fails/inappropriate
-                 try:
-                     # Handle Optional[type] case where value might be None
-                     if origin_type is Union and type(None) in getattr(field_type, "__args__", ()) and value is None:
-                          init_args[name] = None
-                     # Basic type coercion
-                     elif not isinstance(value, field_type):
-                          init_args[name] = field_type(value)
-                     else: # Should not happen based on earlier check, but fallback
-                          init_args[name] = value
+                 try: # Attempt basic type coercion for simple types
+                      if not isinstance(value, field_type): # Check if coercion is needed
+                           # Only coerce if field_type is a basic type that supports it
+                           if field_type in [int, float, str, bool]:
+                                init_args[name] = field_type(value)
+                           else: # Cannot coerce complex types, use default
+                                raise TypeError("Cannot coerce") # Trigger warning and default
+                      else: # Already correct type
+                           init_args[name] = value
                  except (TypeError, ValueError):
-                      logger.warning(f"Type mismatch for field '{name}'. Expected {field_type}, got {type(value)}. Using default value: {default_value}")
+                      logger.warning(f"Type mismatch or coercion failed for field '{name}'. Expected {field_type}, got {type(value)}. Using default value: {default_value}")
                       init_args[name] = default_value
-
         else:
-            # Key missing in data dict, use default value
             init_args[name] = default_value
 
-    # Filter out args that are MISSING (should only happen if no default was defined)
     final_args = {k: v for k, v in init_args.items() if v is not dataclasses.MISSING}
-
     try:
         return cls(**final_args)
     except TypeError as e:
          logger.error(f"Error initializing {cls.__name__} with args {final_args}: {e}")
          raise
-
 
 @dataclasses.dataclass
 class TitansConfig:
@@ -101,32 +95,30 @@ class TitansConfig:
     use_surprise_based: bool = True
     use_persistent: bool = True
     window_size: int = 512
-    memory_size: int = 4096 # Increased default
+    memory_size: int = 4096
     surprise_threshold: float = 0.5
-    # max_memory_updates_per_step: int = 10 # Maybe handle in Trainer logic?
     num_persistent_vectors: int = 64
     persistent_init_scale: float = 0.02
-    base_decay_rate: float = 0.99 # Decay factor per step/call
-    importance_half_life: int = 1000 # Steps for importance to halve via decay (alternative way to think about rate)
-    memory_prune_threshold: float = 0.01 # Importance below which inactive entries might be pruned
-    surprise_method: str = "gradient_norm" # Options: 'gradient_norm', 'prediction_error', 'hidden_norm'
+    base_decay_rate: float = 0.99
+    importance_half_life: int = 1000
+    memory_prune_threshold: float = 0.01
+    surprise_method: str = "gradient_norm"
+    integration_layers: List[int] = dataclasses.field(default_factory=lambda: [0, 12, 23]) # Example for 24 layers
 
 @dataclasses.dataclass
 class Transformer2Config:
     """Configuration for the Transformer² adaptation."""
-    # use_task_dispatcher: bool = True # Controlled by use_transformer2_adaptation
-    # use_svd_adaptation: bool = True # Controlled by use_transformer2_adaptation
-    num_tasks: int = 8 # Number of expert SV vectors
-    task_embedding_dim: int = 64 # Dimension for internal task representation/classifier
-    num_singular_values: int = 128 # Max number of SVs to adapt (k)
-    expert_init_scale: float = 0.01 # Scale for initializing expert SV offsets
-    adapt_attention: bool = True # Adapt attention matrices (q,k,v,o)
-    adapt_ffn: bool = True # Adapt FFN matrices (fc1, fc2)
-    adapt_embeddings: bool = False # Adapt input/position embeddings
-    adapt_lm_head: bool = False # Adapt output projection
-    layer_specific: bool = False # Use shared or layer-specific expert SVs
-    use_randomized_svd: bool = True # Use randomized SVD if faster
-    svd_precision: str = "fixed" # 'fixed' (use num_singular_values), 'adaptive' (future: estimate k)
+    num_tasks: int = 8
+    task_embedding_dim: int = 64
+    num_singular_values: int = 128
+    expert_init_scale: float = 0.01
+    adapt_attention: bool = True
+    adapt_ffn: bool = True
+    adapt_embeddings: bool = False
+    adapt_lm_head: bool = False
+    layer_specific: bool = False
+    use_randomized_svd: bool = True
+    svd_precision: str = "fixed"
     svd_n_oversamples: int = 10
     svd_n_iter: int = 5
     enable_svd_caching: bool = True
@@ -135,103 +127,94 @@ class Transformer2Config:
 @dataclasses.dataclass
 class MVoTConfig:
     """Configuration for the MVoT token processor."""
-    # is_multimodal: bool = True # Controlled by use_mvot_processor
-    codebook_size: int = 8192 # Size of the visual codebook
-    embedding_dim: int = 768 # Dimension of codebook embeddings (adjust to match pretrained)
-    discrepancy_loss_weight: float = 0.1 # Weight for the token discrepancy loss
-    codebook_model_type: str = "vqvae" # Type hint for loading ('vqvae', 'vqgan', 'dalle')
-    codebook_path: Optional[str] = None # Path to pretrained codebook state_dict
-    use_pretrained_codebook: bool = False # Whether to load pretrained weights
-    # decision_strategy: str = "heuristic" # Future: 'neural', 'hybrid'
+    codebook_size: int = 8192
+    embedding_dim: int = 768
+    discrepancy_loss_weight: float = 0.1
+    codebook_model_type: str = "vqvae"
+    codebook_path: Optional[str] = None
+    use_pretrained_codebook: bool = False
 
 @dataclasses.dataclass
 class ByteLMConfig:
     """Configuration specific to the SmallByteLM used by BLT."""
-    hidden_size: int = 256 # Smaller hidden size for the byte LM
-    num_layers: int = 4 # More layers might capture byte patterns better
+    hidden_size: int = 256
+    num_layers: int = 4
     num_attention_heads: int = 4
-    intermediate_size: int = 1024 # 4 * hidden_size
+    intermediate_size: int = 1024
     byte_lm_dropout: float = 0.1
-    byte_lm_model_type: str = "transformer" # 'transformer' or 'gru'
-    # byte_lm_max_position: int = 512 # Max sequence length for the small LM (maybe link to main block_size?)
+    byte_lm_model_type: str = "transformer"
+    byte_lm_max_position: int = 512
 
 @dataclasses.dataclass
 class BLTConfig:
     """Configuration for the BLT byte processor."""
-    entropy_threshold: float = 0.5 # Threshold for creating new patches
-    min_patch_size: int = 8 # Minimum bytes per patch
-    max_patch_size: int = 128 # Maximum bytes per patch
-    num_local_layers: int = 1 # Layers in LocalEncoder/Decoder
-    num_latent_layers: int = 2 # Layers in LatentTransformer
-    # Byte LM config is nested
+    entropy_threshold: float = 0.5
+    min_patch_size: int = 8
+    max_patch_size: int = 128
+    num_local_layers: int = 1
+    num_latent_layers: int = 2
     byte_lm: ByteLMConfig = dataclasses.field(default_factory=ByteLMConfig)
-    blt_checkpoint_path: Optional[str] = None # Path to pretrained byte LM if needed
+    blt_checkpoint_path: Optional[str] = None
 
 @dataclasses.dataclass
 class DataConfig:
     """Configuration for the data pipeline."""
-    train_data_dir: Optional[str] = None # Directory containing training files
-    eval_data_dir: Optional[str] = None # Directory containing evaluation files
-    train_file_pattern: str = "*.txt" # Pattern to match training files
-    eval_file_pattern: str = "*.txt" # Pattern to match eval files
-    block_size: int = 4096 # Sequence length / chunk size for datasets
+    train_data_dir: Optional[str] = None
+    eval_data_dir: Optional[str] = None
+    train_file_pattern: str = "*.txt"
+    eval_file_pattern: str = "*.txt"
+    block_size: int = 4096
 
 @dataclasses.dataclass
 class HardwareConfig:
     """Configuration for hardware-specific optimizations."""
-    mixed_precision: bool = True # Enable AMP (Automatic Mixed Precision)
-    # compute_dtype: str = 'bf16' # Deduced automatically based on hardware
-    gradient_checkpointing: bool = False # Enable gradient checkpointing
-    force_cpu: bool = False # Force CPU usage
-    num_workers: int = 0 # Dataloader workers
-    use_flash_attention: bool = True # Use FlashAttention if available
+    mixed_precision: bool = True
+    gradient_checkpointing: bool = False
+    force_cpu: bool = False
+    num_workers: int = 0
+    use_flash_attention: bool = True
 
 @dataclasses.dataclass
 class TrainingConfig:
     """Configuration for training."""
-    # Optimizer
-    learning_rate: float = 3e-4 # Common LR for ~1B models
-    weight_decay: float = 0.1 # Weight decay (AdamW)
+    learning_rate: float = 3e-4
+    weight_decay: float = 0.1
     adam_beta1: float = 0.9
-    adam_beta2: float = 0.95 # Often 0.95 for large models
+    adam_beta2: float = 0.95
     adam_epsilon: float = 1e-8
-    max_grad_norm: float = 1.0 # Gradient clipping norm
-
-    # Schedule
-    max_steps: int = 200000 # Example total steps (adjust based on dataset size)
-    warmup_steps: int = 2000 # Number of linear warmup steps (alternative to ratio)
-    # lr_scheduler_type: str = "cosine_with_warmup" # Handled by LambdaLR in Trainer for now
-
-    # Batching
-    batch_size: int = 8 # Per-device batch size (adjust based on GPU memory)
-    gradient_accumulation_steps: int = 4 # Accumulate gradients over N steps
-
-    # Logging & Checkpointing
+    max_grad_norm: float = 1.0
+    max_steps: int = 200000
+    warmup_steps: int = 2000
+    batch_size: int = 8
+    gradient_accumulation_steps: int = 4
     logging_steps: int = 100
     eval_steps: int = 1000
     save_steps: int = 1000
     output_dir: str = "./output/project_neat_model"
-    resume_from: Optional[str] = None # Path to checkpoint to resume
-
+    resume_from: Optional[str] = None
 
 @dataclasses.dataclass
 class ModelConfig:
     """Main configuration aggregating all settings."""
-    # Core Model Parameters (~500M target)
+    # Core Model Parameters
     hidden_size: int = 2048
     num_layers: int = 24
-    num_attention_heads: int = 16 # hidden_size / num_heads = 128
-    intermediate_size: int = 8192 # 4 * hidden_size
+    num_attention_heads: int = 16
+    intermediate_size: int = 8192
     hidden_dropout_prob: float = 0.1
     attention_probs_dropout_prob: float = 0.1
     max_position_embeddings: int = 4096
-    vocab_size: int = 32000 # Example size, adjust to match tokenizer
+    vocab_size: int = 32000
+    layer_norm_eps: float = 1.0e-5 # Added default
+
+    # Tokenizer name (used if BLT is off)
+    tokenizer_name: Optional[str] = None # <<<< ----- ADDED THIS FIELD ----- >>>>
 
     # Component Activation Flags
-    use_blt_processor: bool = False # Default to standard tokenizer
+    use_blt_processor: bool = False
     use_titans_memory: bool = True
     use_transformer2_adaptation: bool = True
-    use_mvot_processor: bool = False # Default to text-only
+    use_mvot_processor: bool = False
 
     # Nested Component Configurations
     blt: BLTConfig = dataclasses.field(default_factory=BLTConfig)
@@ -244,33 +227,26 @@ class ModelConfig:
     training: TrainingConfig = dataclasses.field(default_factory=TrainingConfig)
     hardware: HardwareConfig = dataclasses.field(default_factory=HardwareConfig)
 
-    # --- Methods for handling config ---
-
     def to_dict(self) -> Dict[str, Any]:
-        """Converts the dataclass instance to a dictionary."""
         return dataclasses.asdict(self)
 
     @classmethod
     def from_dict(cls: Type['ModelConfig'], config_dict: Dict[str, Any]) -> 'ModelConfig':
-        """Creates a ModelConfig instance from a dictionary, handling nested structures."""
         instance = _init_from_dict(cls, config_dict)
-        # Resolve dependencies after loading
         instance = resolve_config(instance)
         return instance
 
     def save(self, path: str):
-        """Saves the configuration to a JSON or YAML file."""
         config_dict = self.to_dict()
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            if path.endswith(".yaml") or path.endswith(".yml"):
+            if path.endswith((".yaml", ".yml")):
                 with open(path, 'w', encoding='utf-8') as f:
                     yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
                 logger.info(f"Configuration saved to YAML: {path}")
-            else: # Default to JSON
+            else:
                 if not path.endswith(".json"):
-                     # Ensure .json extension if not yaml
-                     base, ext = os.path.splitext(path)
+                     base, _ = os.path.splitext(path)
                      path = base + ".json"
                 with open(path, 'w', encoding='utf-8') as f:
                     json.dump(config_dict, f, indent=2, ensure_ascii=False)
@@ -278,31 +254,25 @@ class ModelConfig:
         except Exception as e:
             logger.error(f"Failed to save configuration to {path}: {e}")
 
-# --- Helper Functions ---
-
 def get_default_config() -> ModelConfig:
-    """Returns a ModelConfig instance with default values, resolved."""
     return resolve_config(ModelConfig())
 
 def load_config(path: str) -> Optional[ModelConfig]:
-    """Loads configuration from a JSON or YAML file."""
     if not os.path.exists(path):
         logger.error(f"Configuration file not found: {path}")
         return None
     try:
         with open(path, 'r', encoding='utf-8') as f:
-            if path.endswith(".yaml") or path.endswith(".yml"):
+            if path.endswith((".yaml", ".yml")):
                 config_dict = yaml.safe_load(f)
             elif path.endswith(".json"):
                 config_dict = json.load(f)
             else:
                 logger.error(f"Unsupported config file format: {path}. Use .json or .yaml")
                 return None
-
-        if config_dict is None: # Handle empty file case
+        if config_dict is None:
              logger.error(f"Configuration file is empty or invalid: {path}")
              return None
-
         config = ModelConfig.from_dict(config_dict)
         logger.info(f"Configuration loaded from: {path}")
         return config
@@ -311,98 +281,69 @@ def load_config(path: str) -> Optional[ModelConfig]:
         return None
 
 def resolve_config(config: ModelConfig) -> ModelConfig:
-    """
-    Resolves potential inconsistencies or dependencies in the configuration.
-    Modifies the config object in-place and returns it.
-    """
     logger.debug("Resolving configuration dependencies...")
-
-    # --- Basic Model Checks ---
     if config.hidden_size % config.num_attention_heads != 0:
-        logger.error(f"hidden_size ({config.hidden_size}) must be divisible by num_attention_heads ({config.num_attention_heads}).")
-        # Attempt to fix or raise error? Raising is safer.
-        raise ValueError("Incompatible hidden_size and num_attention_heads.")
-
+        raise ValueError(f"hidden_size ({config.hidden_size}) must be divisible by num_attention_heads ({config.num_attention_heads}).")
     if config.data.block_size > config.max_position_embeddings:
         logger.warning(f"data.block_size ({config.data.block_size}) > max_position_embeddings ({config.max_position_embeddings}). Adjusting block_size.")
         config.data.block_size = config.max_position_embeddings
-
-    # --- Component-Specific Checks ---
-    # Titans
     if config.use_titans_memory:
         if config.titans.window_size > config.max_position_embeddings:
-            logger.warning(f"Titans window_size ({config.titans.window_size}) > max_position_embeddings ({config.max_position_embeddings}). Adjusting window_size.")
+            logger.warning(f"Titans window_size ({config.titans.window_size}) > max_position_embeddings. Adjusting window_size.")
             config.titans.window_size = config.max_position_embeddings
+        # Update Titans integration layers if num_layers changed
+        default_integration_layers = [0, config.num_layers // 2, config.num_layers -1 if config.num_layers > 0 else 0]
+        if config.titans.integration_layers == [0, 12, 23] and config.num_layers != 24 : # if default was used and num_layers isn't 24
+             config.titans.integration_layers = default_integration_layers
+             logger.info(f"Adjusted Titans integration_layers to {config.titans.integration_layers} for num_layers={config.num_layers}")
 
-    # Transformer2
+
     if config.use_transformer2_adaptation:
-        # Ensure k <= relevant dimension
         k = config.transformer2.num_singular_values
-        if config.transformer2.adapt_attention or config.transformer2.adapt_lm_head or config.transformer2.adapt_embeddings:
-             max_k_attn = min(config.hidden_size, config.hidden_size) # M=N for self-attn, maybe different for emb/head
-             if k > max_k_attn:
-                  logger.warning(f"T2 k ({k}) > hidden_size ({config.hidden_size}). Clamping k.")
-                  config.transformer2.num_singular_values = max_k_attn
-        if config.transformer2.adapt_ffn:
-             max_k_ffn1 = min(config.hidden_size, config.intermediate_size)
-             max_k_ffn2 = min(config.intermediate_size, config.hidden_size)
-             if k > min(max_k_ffn1, max_k_ffn2):
-                  logger.warning(f"T2 k ({k}) > FFN dimensions. Clamping k.")
-                  config.transformer2.num_singular_values = min(k, max_k_ffn1, max_k_ffn2)
-
-    # MVoT
+        max_k_attn = config.hidden_size
+        if k > max_k_attn and (config.transformer2.adapt_attention or config.transformer2.adapt_lm_head or config.transformer2.adapt_embeddings):
+            logger.warning(f"T2 k ({k}) > hidden_size ({max_k_attn}). Clamping k.")
+            config.transformer2.num_singular_values = max_k_attn
+        max_k_ffn = min(config.hidden_size, config.intermediate_size)
+        if k > max_k_ffn and config.transformer2.adapt_ffn:
+            logger.warning(f"T2 k ({k}) > FFN dimensions ({max_k_ffn}). Clamping k.")
+            config.transformer2.num_singular_values = min(k, max_k_ffn)
     if config.use_mvot_processor:
         if config.mvot.embedding_dim != config.hidden_size:
-            logger.info("MVoT embedding_dim differs from hidden_size. Ensure projection layers are used.")
-        if not config.mvot.use_pretrained_codebook:
-             logger.warning("MVoT enabled but use_pretrained_codebook is False. VisualCodebook will use random init.")
-        elif not config.mvot.codebook_path:
-             logger.error("MVoT use_pretrained_codebook is True, but codebook_path is not set.")
-             raise ValueError("MVoT codebook_path must be specified when use_pretrained_codebook=True")
-
-    # BLT
+             logger.info(f"MVoT embedding_dim ({config.mvot.embedding_dim}) differs from model hidden_size ({config.hidden_size}). Ensure VisualCodebook projection layers handle this.")
+        if config.mvot.use_pretrained_codebook and not config.mvot.codebook_path:
+            raise ValueError("MVoT use_pretrained_codebook is True, but codebook_path is not set.")
     if config.use_blt_processor:
-        if config.vocab_size != 260: # SimpleByteTokenizer vocab size
-             logger.warning(f"BLT processor is enabled, but vocab_size ({config.vocab_size}) is not 260. Ensure tokenizer/model handles this.")
-             # We don't force vocab_size=260 here, as the main model might still need a text vocab if BLT is disabled later.
+        if config.vocab_size != 260:
+             logger.warning(f"BLT processor is enabled. Overriding vocab_size from {config.vocab_size} to 260.")
+             config.vocab_size = 260
         if config.blt.max_patch_size > config.data.block_size:
-             logger.warning(f"BLT max_patch_size ({config.blt.max_patch_size}) > data.block_size ({config.data.block_size}). This might lead to issues.")
+             logger.warning(f"BLT max_patch_size ({config.blt.max_patch_size}) > data.block_size ({config.data.block_size}). This might lead to issues if block_size refers to bytes.")
+    else: # Not using BLT
+         if not config.tokenizer_name:
+              logger.warning("BLT is disabled, but 'tokenizer_name' is not set in ModelConfig. Defaulting to 'gpt2'. Training script might override.")
+              config.tokenizer_name = "gpt2" # Provide a default if none specified
 
-    # --- Hardware Checks ---
     try:
         import torch
         can_use_mps = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
         can_use_cuda = torch.cuda.is_available()
-
-        if config.hardware.force_cpu:
-            effective_device = 'cpu'
-        elif can_use_cuda:
-            effective_device = 'cuda'
-        elif can_use_mps:
-            effective_device = 'mps'
-        else:
-            effective_device = 'cpu'
-
-        # Disable mixed precision if not on CUDA/MPS or forced CPU
+        effective_device = 'cpu'
+        if config.hardware.force_cpu: effective_device = 'cpu'
+        elif can_use_cuda: effective_device = 'cuda'
+        elif can_use_mps: effective_device = 'mps'
         if config.hardware.mixed_precision and effective_device == 'cpu':
             logger.info("Disabling mixed precision because device is CPU.")
             config.hardware.mixed_precision = False
-
-        # Disable FlashAttention if not on CUDA or explicitly disabled
         if config.hardware.use_flash_attention:
-             if effective_device != 'cuda':
-                  logger.info("Disabling FlashAttention because device is not CUDA.")
-                  config.hardware.use_flash_attention = False
-             elif not hasattr(torch.nn.functional, "scaled_dot_product_attention"):
-                  logger.info("Disabling FlashAttention because it's not available in this PyTorch version.")
-                  config.hardware.use_flash_attention = False
-
+            if effective_device != 'cuda' or not hasattr(torch.nn.functional, "scaled_dot_product_attention"):
+                logger.info(f"Disabling FlashAttention (device: {effective_device}, PyTorch supports: {hasattr(torch.nn.functional, 'scaled_dot_product_attention')}).")
+                config.hardware.use_flash_attention = False
     except ImportError:
         logger.warning("PyTorch not found during config resolution. Hardware checks skipped.")
         config.hardware.mixed_precision = False
         config.hardware.use_flash_attention = False
-
     logger.debug("Configuration resolution complete.")
     return config
 
-# --- END OF FILE src/utils/config.py ---
+# --- END OF CORRECTED src/utils/config.py ---

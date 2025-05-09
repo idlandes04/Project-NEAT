@@ -132,6 +132,7 @@ data/**
 !data/**/*.json
 !data/**/*.jsonl
 !data/**/*.config
+src/data/**
 
 # Ignore data files
 #data/
