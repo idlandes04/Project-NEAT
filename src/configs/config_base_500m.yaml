@@ -80,14 +80,13 @@ mvot:
   codebook_path: null
   use_pretrained_codebook: false
 
-# Data, Training, Hardware Configs
+# In your config_base_500m.yaml or config_full_500m.yaml
 data:
-  # !! IMPORTANT: Update these paths after running prepare_data.py !!
-  train_data_dir: "./data/processed/SlimPajama-627B_train" # Example output path for SlimPajama
-  eval_data_dir: "./data/processed/SlimPajama-627B_eval"   # Example output path for SlimPajama
-  train_file_pattern: "*.txt" # Match output format from prepare_data.py
+  train_data_dir: "../data/processed_slimpajama_all_train" # Update this path
+  eval_data_dir: "../data/processed_slimpajama_all_eval"   # Update this path
+  train_file_pattern: "*.txt" # Should match output_format
   eval_file_pattern: "*.txt"
-  block_size: 4096 # Sequence length (in tokens for standard tokenizer)
+  block_size: 4096 # Or whatever block size you intend to use
 
 training:
   learning_rate: 3.0e-4
