@@ -2,17 +2,15 @@
 # Core dependencies
 torch>=2.0.0 # PyTorch version 2.0+ recommended for scaled_dot_product_attention
 PyYAML>=6.0 # For loading YAML configuration files
+datasets>=2.10.0 # For downloading/processing data
+transformers>=4.30.0 # For loading standard tokenizers
+sentencepiece # Often needed by HF tokenizers like Llama
 
 # Optional dependencies (used by specific features)
 numpy>=1.20.0 # Often used with torch, explicitly used in SVD utils
 scikit-learn>=1.0.0 # For randomized SVD in svd_utils (optional)
 safetensors>=0.4.0 # For loading models/codebooks saved in .safetensors format (optional)
 
-# Add other dependencies as needed (e.g., for specific tokenizers, datasets, logging)
-# Example:
-# transformers>=4.30.0 # If integrating Hugging Face models/tokenizers
-# datasets>=2.10.0 # If using Hugging Face datasets library
-# sentencepiece # If using SentencePiece tokenizer
+# Add other dependencies as needed (e.g., for specific datasets, logging)
 # wandb # If using Weights & Biases for logging
-
 # --- END OF FILE requirements.txt ---
