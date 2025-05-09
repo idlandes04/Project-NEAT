@@ -1,25 +1,16 @@
+# --- START OF FILE requirements.txt ---
 # Core dependencies
-torch>=2.0.0
-numpy>=1.20.0
-tqdm>=4.62.0
+torch>=2.0.0 # PyTorch version 2.0+ recommended for scaled_dot_product_attention
+PyYAML>=6.0 # For loading YAML configuration files
+datasets>=2.10.0 # For downloading/processing data
+transformers>=4.30.0 # For loading standard tokenizers
+sentencepiece # Often needed by HF tokenizers like Llama
 
-# Hardware optimization
-psutil>=5.9.0  # For CPU monitoring
-py3nvml>=0.2.7  # For NVIDIA GPU monitoring
+# Optional dependencies (used by specific features)
+numpy>=1.20.0 # Often used with torch, explicitly used in SVD utils
+scikit-learn>=1.0.0 # For randomized SVD in svd_utils (optional)
+safetensors>=0.4.0 # For loading models/codebooks saved in .safetensors format (optional)
 
-# Utilities
-pyyaml>=6.0  # For configuration files
-matplotlib>=3.5.0  # For visualization
-rich>=12.0.0  # For CLI interface
-colorama>=0.4.4  # For colored terminal output
-tabulate>=0.8.9  # For formatted table output
-requests>=2.25.1  # For downloading data
-tabulate>=0.9.0
-
-# Optional dependencies
-scikit-learn>=1.0.0  # For randomized SVD
-pillow>=8.3.0  # For image handling
-
-# Testing
-pytest>=7.0.0
-pytest-xdist>=2.5.0  # For parallel test execution
+# Add other dependencies as needed (e.g., for specific datasets, logging)
+# wandb # If using Weights & Biases for logging
+# --- END OF FILE requirements.txt ---
