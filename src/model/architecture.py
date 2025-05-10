@@ -240,7 +240,10 @@ class UnifiedModel(nn.Module):
 
             # --- Memory Integration ---
             if self.memory_comp is not None and i in self.memory_integration_layers:
-                logger.debug(f"Applying memory component before layer {i}")
+                # ** MODIFICATION FOR STEP 1.1 **
+                # Commented out the verbose per-step logging.
+                # Can be re-enabled with a conditional for specific debugging if needed.
+                # logger.debug(f"Applying memory component before layer {i}")
                 hidden_states = self.memory_comp(hidden_states, current_model_outputs_for_memory)
 
             # --- Transformer Block ---

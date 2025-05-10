@@ -1,30 +1,30 @@
-# --- START OF FILE configs/config_base_500m.yaml ---
-# Base configuration for a ~500M parameter model.
-# Enables Titans Memory and Transformer2 Adaptation by default.
-# Disables BLT and MVoT for simpler initial setup.
+# --- START OF FILE configs/config_baseline_transformer.yaml ---
+# Baseline Transformer configuration for a ~500M parameter model.
+# Disables ALL advanced components: BLT, Titans, T2, MVoT.
 # Uses a standard Hugging Face tokenizer (e.g., gpt2).
+# Intended for establishing baseline performance and resource usage.
 
-# Core Model Parameters (~500M target)
-hidden_size: 512
-num_layers: 12
+# Core Model Parameters (~250M target)
+hidden_size: 1024
+num_layers: 16
 num_attention_heads: 8
-intermediate_size: 2048 # 4 * hidden_size
+intermediate_size: 4096 # 4 * hidden_size
 hidden_dropout_prob: 0.1
 attention_probs_dropout_prob: 0.1
-max_position_embeddings: 1024 # Should be >= data.block_size
+max_position_embeddings: 1024
 vocab_size: 50257 # Default for GPT2, train.py will override based on tokenizer_name
-layer_norm_eps: 1.0e-5 # Added for LayerNorm stability
+layer_norm_eps: 1.0e-5
 
 # Tokenizer (Used when use_blt_processor is false)
 tokenizer_name: "gpt2" # train.py will load this and update vocab_size
 
-# Component Activation Flags
+# Component Activation Flags - ALL FALSE FOR BASELINE
 use_blt_processor: false
-use_titans_memory: true
+use_titans_memory: false
 use_transformer2_adaptation: false
 use_mvot_processor: false
 
-# Nested Component Configurations
+# Nested Component Configurations (Defaults are fine as components are disabled)
 blt:
   entropy_threshold: 0.5
   min_patch_size: 8
@@ -32,8 +32,8 @@ blt:
   num_local_layers: 1
   num_latent_layers: 2
   byte_lm:
-    hidden_size: 256
-    num_layers: 4
+    hidden_size: 512
+    num_layers: 12
     num_attention_heads: 4
     intermediate_size: 1024
     byte_lm_dropout: 0.1
@@ -42,9 +42,9 @@ blt:
   blt_checkpoint_path: null
 
 titans:
-  use_window_attention: true
-  use_surprise_based: true
-  use_persistent: true
+  use_window_attention: false # Ensure these are also off if main flag is off
+  use_surprise_based: false
+  use_persistent: false
   window_size: 512
   memory_size: 4096
   surprise_threshold: 0.5
@@ -60,8 +60,8 @@ transformer2:
   task_embedding_dim: 64
   num_singular_values: 128 # k
   expert_init_scale: 0.01
-  adapt_attention: true
-  adapt_ffn: true
+  adapt_attention: false # Ensure these are also off
+  adapt_ffn: false
   adapt_embeddings: false
   adapt_lm_head: false
   layer_specific: false
@@ -70,23 +70,23 @@ transformer2:
   svd_n_oversamples: 10
   svd_n_iter: 5
   enable_svd_caching: true
-  svd_cache_dir: ".svd_cache_base"
+  svd_cache_dir: ".svd_cache_baseline" # Separate cache dir
 
 mvot:
   codebook_size: 8192
-  embedding_dim: 2048 # Matches hidden_size
+  embedding_dim: 2048
   discrepancy_loss_weight: 0.1
   codebook_model_type: "vqvae"
   codebook_path: null
-  use_pretrained_codebook: false # Set to false if path is null
+  use_pretrained_codebook: false
 
 # Data, Training, Hardware Configs
 data:
   train_data_dir: "data/processed_wikitext103/wikitext_wikitext-103-raw-v1_train"
   eval_data_dir: "data/processed_wikitext103/wikitext_wikitext-103-raw-v1_eval"
-  train_file_pattern: "*.txt" # Matches output from prepare_data.py
+  train_file_pattern: "*.txt"
   eval_file_pattern: "*.txt"
-  block_size: 512 # Max sequence length in tokens for wikitext-103
+  block_size: 512
 
 training:
   learning_rate: 3.0e-4
@@ -95,22 +95,22 @@ training:
   adam_beta2: 0.95
   adam_epsilon: 1.0e-8
   max_grad_norm: 1.0
-  max_steps: 10000 # Reduced for initial test runs, was 200000
-  warmup_steps: 10  # Adjusted relative to max_steps, was 2000
-  batch_size: 4      # Reduced for potentially smaller GPUs, was 8
-  gradient_accumulation_steps: 2 # Increased to maintain effective batch size, was 4
-  logging_steps: 10
-  eval_steps: 1000 # Evaluate every 100 steps (can be increased for longer runs)
-  eval_max_batches: 5 # ** NEW: Limit eval to 50 batches for quicker dev cycles, set to null for full eval **
-  save_steps: 100
-  output_dir: "output/neat_base_500m_wikitext103" # Specific output dir
+  max_steps: 3000 # Increased for a more meaningful baseline
+  warmup_steps: 600  # Adjusted relative to max_steps
+  batch_size: 4
+  gradient_accumulation_steps: 2
+  logging_steps: 100 # Log less frequently for longer run
+  eval_steps: 300
+  eval_max_batches: 50 # Evaluate on a subset for speed
+  save_steps: 300
+  output_dir: "output/neat_baseline_transformer_wikitext103" # Specific output dir
   resume_from: null
 
 hardware:
   mixed_precision: true
-  gradient_checkpointing: true
+  gradient_checkpointing: true # Keep enabled for larger models
   force_cpu: false
-  num_workers: 4
+  num_workers: 8
   use_flash_attention: true
   pin_memory: true
-# --- END OF FILE configs/config_base_500m.yaml ---
+# --- END OF FILE configs/config_baseline_transformer.yaml ---
