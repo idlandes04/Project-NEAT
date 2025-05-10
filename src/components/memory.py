@@ -1,11 +1,10 @@
 # --- START OF FILE src/components/memory.py ---
-
 """
 Titans-inspired memory system implementation.
 
 This module includes components for short-term (windowed attention),
-long-term (surprise-based), and persistent memory, designed for
-integration into the unified architecture.
+long-term (surprise-based MLP whose parameters are updated at test time),
+and persistent memory, designed for integration into the unified architecture.
 """
 
 import torch
@@ -45,14 +44,12 @@ class WindowAttentionMemory(nn.Module):
 
         self.head_dim = self.hidden_size // self.num_heads
 
-        # Use standard MultiheadAttention. Windowing is handled in forward.
         self.attention = nn.MultiheadAttention(
             embed_dim=self.hidden_size,
             num_heads=self.num_heads,
             dropout=config.attention_probs_dropout_prob,
             batch_first=True
         )
-        # Pre-Attention LayerNorm (common practice)
         self.layer_norm = nn.LayerNorm(self.hidden_size, eps=layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         logger.info(f"Initialized WindowAttentionMemory (Window: {self.window_size})")
@@ -71,286 +68,220 @@ class WindowAttentionMemory(nn.Module):
         """
         batch_size, seq_len, _ = hidden_states.shape
         residual = hidden_states
-
-        # Apply LayerNorm before attention
         hidden_states_norm = self.layer_norm(hidden_states)
 
-        # --- Windowed Attention Logic ---
-        # We need to compute attention for each query position using only keys/values
-        # within its window. A full causal mask combined with windowing is complex
-        # for nn.MultiheadAttention's mask input.
-        # Alternative: Loop or unfold/fold (can be memory intensive).
-        # Simpler approach for now: Approximate by having all queries attend to the
-        # *last* window_size key/value states. This is less precise than a true
-        # sliding window but simpler to implement with standard MHA.
-        # A true sliding window might require a custom attention implementation.
+        # Create a sliding window causal mask
+        # Mask has shape (seq_len, seq_len)
+        # True means "masked out" / "cannot attend"
+        # For MHA, mask is additive (0 for attend, -inf for mask) or boolean (True for mask out)
+        # We will use boolean mask where True means masked out for MHA if it supports it,
+        # otherwise convert to additive. nn.MultiheadAttention expects additive mask (float tensor).
+        
+        # Create a full causal mask first
+        causal_mask_full = torch.triu(torch.ones(seq_len, seq_len, device=hidden_states.device, dtype=torch.bool), diagonal=1)
 
-        if seq_len <= self.window_size:
-            # If sequence is shorter than window, attend to everything (causally)
-            key_value_states = hidden_states_norm
-            # Create a causal mask for this case
-            causal_mask = torch.triu(torch.ones(seq_len, seq_len, dtype=torch.bool, device=hidden_states.device), diagonal=1)
-        else:
-            # Attend only to the last 'window_size' states as K/V context
-            # This is an approximation of a true sliding window.
-            key_value_states = hidden_states_norm[:, -self.window_size:, :]
-            # No explicit mask needed here as all queries attend to the same K/V window.
-            # Causality is implicitly handled by using past states.
-            causal_mask = None
+        # Create window mask: attend only to self.window_size previous tokens
+        # For each query token i, it can attend to key tokens j where max(0, i - window_size + 1) <= j <= i
+        indices = torch.arange(seq_len, device=hidden_states.device)
+        # Mask out tokens outside the window: (query_idx - key_idx >= window_size)
+        window_mask_shape = (seq_len, seq_len)
+        window_mask_raw = torch.ones(window_mask_shape, device=hidden_states.device, dtype=torch.bool)
+        for i in range(seq_len):
+            start_idx = max(0, i - self.window_size + 1)
+            window_mask_raw[i, start_idx : i+1] = False # False means can attend
 
-        # MultiheadAttention expects query, key, value
-        # Q: All hidden states
-        # K, V: Windowed states (or full sequence if shorter than window)
+        # Combine causal and window masks
+        # If either causal_mask_full is True (upper triangle) OR window_mask_raw is True (outside window), then mask out.
+        final_mask_bool = causal_mask_full | window_mask_raw
+
+        # Convert boolean mask to float mask for nn.MultiheadAttention
+        # (0 for attend, -inf for masked positions)
+        final_mask_float = torch.zeros_like(final_mask_bool, dtype=hidden_states.dtype)
+        final_mask_float.masked_fill_(final_mask_bool, float('-inf'))
+        
+        # nn.MultiheadAttention expects mask shape (L, S) or (N*num_heads, L, S)
+        # Here L=target_seq_len, S=source_seq_len. For self-attention, L=S=seq_len.
+        # It will be broadcast across batch and heads.
+        attn_mask_for_mha = final_mask_float
+
         attn_output, _ = self.attention(
             query=hidden_states_norm,
-            key=key_value_states,
-            value=key_value_states,
-            attn_mask=causal_mask, # Apply causal mask only if attending to full sequence
+            key=hidden_states_norm,
+            value=hidden_states_norm,
+            attn_mask=attn_mask_for_mha,
             need_weights=False
         )
 
-        # Add residual connection and apply dropout
         output = residual + self.dropout(attn_output)
         return output
 
-class SurpriseMemory(nn.Module):
+class SurpriseMemoryMLP(nn.Module):
     """
-    Long-term memory updated based on surprise, inspired by Titans.
-    Uses gradient norm as the surprise metric.
+    Long-term memory implemented as an MLP whose parameters (M_t) are updated
+    at test time based on an associative memory objective, inspired by Titans.
     """
     def __init__(self, config: Any):
-        """
-        Initializes the SurpriseMemory.
-
-        Args:
-            config: Configuration object with hidden_size, titans sub-config
-                    (memory_size, surprise_threshold, decay parameters, surprise_method).
-        """
         super().__init__()
-        self.config = config
-        self.hidden_size = config.hidden_size
+        self.config = config # Main model config
         titans_cfg = config.titans
-        self.memory_size = titans_cfg.memory_size
-        self.surprise_threshold = titans_cfg.surprise_threshold
-        self.base_decay_rate = titans_cfg.base_decay_rate
-        self.prune_threshold = titans_cfg.memory_prune_threshold
-        self.surprise_method = titans_cfg.surprise_method
+        self.hidden_size = config.hidden_size # Dimension of keys and values
+        self.mlp_num_layers = titans_cfg.memory_mlp_num_layers
+        self.mlp_intermediate_size = titans_cfg.mem_mlp_intermediate_size
 
-        if self.memory_size <= 0:
-            logger.warning("SurpriseMemory size is <= 0. Disabling.")
-            self.enabled = False
+        self.learning_rate = titans_cfg.memory_learning_rate
+        self.momentum_factor = titans_cfg.memory_momentum
+        self.weight_decay_factor = titans_cfg.memory_weight_decay
+
+        self.enabled = titans_cfg.use_surprise_based
+        if not self.enabled:
+            logger.info("SurpriseMemoryMLP is disabled by configuration.")
             return
-        self.enabled = True
 
-        # Initialize memory buffer, importance scores, usage, age, access time
-        self.register_buffer("memory_buffer", torch.zeros(self.memory_size, self.hidden_size))
-        # Importance can be initialized randomly or with surprise scores
-        self.register_buffer("importance_scores", torch.zeros(self.memory_size))
-        self.register_buffer("usage_counters", torch.zeros(self.memory_size, dtype=torch.long))
-        self.register_buffer("age_counters", torch.zeros(self.memory_size, dtype=torch.long))
-        # Use float for global step to avoid potential overflow with large steps
-        self.register_buffer("global_step", torch.tensor(0.0, dtype=torch.float32))
+        # Define the memory_mlp
+        layers = []
+        current_dim = self.hidden_size
+        if self.mlp_num_layers == 1:
+            layers.append(nn.Linear(current_dim, self.hidden_size))
+        elif self.mlp_num_layers > 1:
+            layers.append(nn.Linear(current_dim, self.mlp_intermediate_size))
+            layers.append(nn.ReLU()) # Or GELU, Tanh
+            for _ in range(self.mlp_num_layers - 2): # Intermediate hidden layers
+                layers.append(nn.Linear(self.mlp_intermediate_size, self.mlp_intermediate_size))
+                layers.append(nn.ReLU())
+            layers.append(nn.Linear(self.mlp_intermediate_size, self.hidden_size))
+        else:
+            raise ValueError("memory_mlp_num_layers must be at least 1.")
+        self.memory_mlp = nn.Sequential(*layers)
 
-        # Projections for querying memory
-        self.query_proj = nn.Linear(self.hidden_size, self.hidden_size)
-        self.key_proj = nn.Linear(self.hidden_size, self.hidden_size) # Project memory buffer for key matching
-        # Value projection (optional, can just use memory buffer directly)
-        # self.value_proj = nn.Linear(self.hidden_size, self.hidden_size)
+        # Initialize momentum buffers for each parameter of memory_mlp
+        self.momentum_buffers = {}
+        for name, param in self.memory_mlp.named_parameters():
+            if param.requires_grad:
+                self.register_buffer(f"momentum_{name.replace('.', '_')}", torch.zeros_like(param.data))
+        
+        logger.info(f"Initialized SurpriseMemoryMLP (Layers: {self.mlp_num_layers}, LR: {self.learning_rate}, Momentum: {self.momentum_factor}, WD: {self.weight_decay_factor})")
 
-        logger.info(f"Initialized SurpriseMemory (Size: {self.memory_size}, Method: {self.surprise_method})")
-
-    def _calculate_surprise_grad_norm(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """Calculates surprise based on gradient norm w.r.t hidden states."""
-        batch_size, seq_len, hidden_dim = hidden_states.shape
-        device = hidden_states.device
-
-        # Ensure hidden_states requires grad for this calculation
-        original_requires_grad = hidden_states.requires_grad
-        if not original_requires_grad:
-            hidden_states.requires_grad_(True)
-
-        # Define a simple proxy loss: MSE between hidden_states and zeros (or detached self)
-        # The goal is just to get gradients whose norm reflects state magnitude/change.
-        proxy_target = torch.zeros_like(hidden_states)
-        # proxy_target = hidden_states.detach() # Alternative target
-        proxy_loss = F.mse_loss(hidden_states, proxy_target, reduction='sum')
-
-        # Calculate gradients of this proxy loss w.r.t. hidden_states
-        try:
-            grads = torch.autograd.grad(proxy_loss, hidden_states, retain_graph=False, allow_unused=True)[0]
-            if grads is None:
-                 logger.warning("Surprise calculation: Gradients are None. Returning zero surprise.")
-                 surprise_scores = torch.zeros(batch_size, seq_len, device=device)
-            else:
-                 # Calculate L2 norm of gradients per token
-                 surprise_scores = torch.norm(grads, p=2, dim=-1) # [batch, seq_len]
-        except RuntimeError as e:
-             logger.error(f"Error during surprise gradient calculation: {e}. Returning zero surprise.", exc_info=True)
-             surprise_scores = torch.zeros(batch_size, seq_len, device=device)
-
-
-        # Restore original requires_grad state if changed
-        if not original_requires_grad:
-            hidden_states.requires_grad_(False)
-
-        return surprise_scores.detach() # Detach scores from computation graph
-
-    def _calculate_surprise(self, hidden_states: torch.Tensor, model_outputs: Optional[Dict] = None) -> torch.Tensor:
+    def _get_associative_loss_and_param_gradients(
+        self, k_t_batch: torch.Tensor, v_t_batch: torch.Tensor
+    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         """
-        Computes a surprise score for each element in the hidden_states sequence.
+        Calculates associative loss and gradients of this loss w.r.t. memory_mlp parameters.
+        k_t_batch: [batch_size, ..., key_dim (hidden_size)]
+        v_t_batch: [batch_size, ..., value_dim (hidden_size)]
+        """
+        self.memory_mlp.train() # Ensure MLP is in train mode for grad calculation
+        
+        # Flatten batch and sequence dimensions if present, MLP expects [N, dim]
+        original_shape_k = k_t_batch.shape
+        if k_t_batch.ndim > 2:
+            k_t_batch_flat = k_t_batch.reshape(-1, original_shape_k[-1])
+            v_t_batch_flat = v_t_batch.reshape(-1, original_shape_k[-1]) # Assume v_t has same leading dims
+        else:
+            k_t_batch_flat = k_t_batch
+            v_t_batch_flat = v_t_batch
 
-        Args:
-            hidden_states: Tensor [batch, seq_len, hidden_size]. May need requires_grad=True.
-            model_outputs: Optional dictionary (unused by gradient norm method).
+        v_t_pred_batch = self.memory_mlp(k_t_batch_flat)
+        associative_loss = F.mse_loss(v_t_pred_batch, v_t_batch_flat)
 
-        Returns:
-            Surprise score tensor [batch, seq_len].
+        # Gradients for memory_mlp parameters
+        # These grads should not flow back to the main model's graph from this specific loss.
+        # The memory_mlp parameters themselves are part of the main graph and will receive
+        # gradients from the main model's final loss during backpropagation (meta-learning).
+        param_grads = torch.autograd.grad(
+            associative_loss,
+            [p for p in self.memory_mlp.parameters() if p.requires_grad], # Only consider trainable params
+            create_graph=False, # Do not create graph for these grads
+            retain_graph=False, # No need to retain graph for this specific operation
+            allow_unused=True   # In case some MLP params are frozen (not typical here)
+        )
+        # Filter out None gradients if allow_unused=True resulted in some
+        param_grads = [g if g is not None else torch.zeros_like(p) 
+                       for p, g in zip(self.memory_mlp.parameters(), param_grads)]
+
+        self.memory_mlp.eval() # Set back to eval mode after grad calculation
+        return associative_loss.detach(), param_grads
+
+    # update_parameters should be done with torch.no_grad() context externally if called during main forward
+    # or if we want to ensure no interference with main model's backward pass.
+    # The parameters of memory_mlp ARE part of the main model's computation graph for the *outer loop* (meta-learning).
+    # This internal update is the "inner loop" or test-time adaptation.
+    def update_parameters(self, param_grads: List[torch.Tensor]):
+        """
+        Updates parameters of memory_mlp using SGD with momentum and weight decay.
+        This is an in-place update.
+        """
+        if not self.enabled: return
+
+        with torch.no_grad(): # Crucial: Parameter updates are done in-place, not part of AD graph for this step
+            idx = 0
+            for name, param in self.memory_mlp.named_parameters():
+                if not param.requires_grad:
+                    continue
+                
+                grad_p = param_grads[idx]
+                idx += 1
+                if grad_p is None: # Should be handled by _get_associative_loss_and_param_gradients
+                    logger.warning(f"Gradient for {name} is None during memory_mlp update. Skipping.")
+                    continue
+
+                # Get momentum buffer
+                momentum_buffer_name = f"momentum_{name.replace('.', '_')}"
+                # Ensure momentum buffer exists and is on the same device as param
+                if not hasattr(self, momentum_buffer_name):
+                     self.register_buffer(momentum_buffer_name, torch.zeros_like(param.data))
+                
+                # Access buffer correctly
+                current_momentum = getattr(self, momentum_buffer_name)
+                current_momentum = current_momentum.to(param.device)
+
+
+                # Update momentum: S_p_t = eta * S_p_{t-1} - theta * grad_p
+                new_momentum = self.momentum_factor * current_momentum - self.learning_rate * grad_p
+                setattr(self, momentum_buffer_name, new_momentum) # Update buffer
+
+                # Apply weight decay to parameter p: p_decayed = (1 - alpha) * p
+                param_decayed = (1.0 - self.weight_decay_factor) * param.data
+
+                # Update parameter: p = p_decayed + new_momentum
+                param.data.copy_(param_decayed + new_momentum)
+
+
+    def query(self, q_t_batch: torch.Tensor) -> torch.Tensor:
+        """
+        Queries the memory_mlp.
+        q_t_batch: [batch_size, ..., query_dim (hidden_size)]
         """
         if not self.enabled:
-             return torch.zeros(hidden_states.shape[:-1], device=hidden_states.device)
+            return torch.zeros_like(q_t_batch) # Return zeros if disabled
 
-        if self.surprise_method == "gradient_norm":
-            return self._calculate_surprise_grad_norm(hidden_states)
-        elif self.surprise_method == "hidden_norm":
-            # Simple baseline: Use norm of hidden states (likely ineffective)
-            surprise = torch.norm(hidden_states, p=2, dim=-1)
-            return surprise.detach()
-        elif self.surprise_method == "prediction_error":
-            # Requires logits and labels from model_outputs - more complex integration
-            logger.warning("Surprise method 'prediction_error' not implemented yet. Using 'hidden_norm'.")
-            surprise = torch.norm(hidden_states, p=2, dim=-1)
-            return surprise.detach()
+        self.memory_mlp.eval() # Ensure MLP is in eval mode for querying
+        
+        original_shape_q = q_t_batch.shape
+        if q_t_batch.ndim > 2:
+            q_t_batch_flat = q_t_batch.reshape(-1, original_shape_q[-1])
         else:
-            raise ValueError(f"Unknown surprise method: {self.surprise_method}")
+            q_t_batch_flat = q_t_batch
+            
+        with torch.no_grad(): # Querying should not compute gradients
+            retrieved_values_flat = self.memory_mlp(q_t_batch_flat)
+        
+        if q_t_batch.ndim > 2:
+            return retrieved_values_flat.reshape(*original_shape_q[:-1], self.hidden_size)
+        else:
+            return retrieved_values_flat
 
-    @torch.no_grad()
-    def _update_memory(self, states_to_store: torch.Tensor, surprise_scores: torch.Tensor):
+    def perform_memory_update_step(self, k_t_batch: torch.Tensor, v_t_batch: torch.Tensor) -> Optional[torch.Tensor]:
         """
-        Updates the memory buffer with highly surprising states, replacing least important ones.
-
-        Args:
-            states_to_store: Candidate states for memory [num_candidates, hidden_size].
-            surprise_scores: Corresponding surprise scores [num_candidates].
+        Calculates associative loss, gets gradients, and updates memory_mlp parameters.
+        Returns the associative loss value.
         """
-        if not self.enabled: return
+        if not self.enabled:
+            return None
+        
+        associative_loss, param_grads = self._get_associative_loss_and_param_gradients(k_t_batch, v_t_batch)
+        self.update_parameters(param_grads)
+        return associative_loss
 
-        num_candidates = states_to_store.size(0)
-        if num_candidates == 0: return
-
-        # Filter states based on surprise threshold
-        high_surprise_mask = surprise_scores > self.surprise_threshold
-        high_surprise_indices = torch.where(high_surprise_mask)[0]
-
-        num_to_update = len(high_surprise_indices)
-        if num_to_update == 0: return
-
-        # Select the actual states and scores to potentially store
-        states_for_update = states_to_store[high_surprise_indices]
-        scores_for_update = surprise_scores[high_surprise_indices]
-
-        # Sort candidates by surprise score (descending)
-        sorted_surprise_indices = torch.argsort(scores_for_update, descending=True)
-
-        # Identify least important slots in memory buffer
-        num_slots_to_replace = min(num_to_update, self.memory_size)
-        if num_slots_to_replace == 0: return
-
-        # Get indices of least important slots (lowest scores)
-        # Add small noise to break ties randomly if scores are identical
-        noise = torch.randn_like(self.importance_scores) * 1e-6
-        _, least_important_indices = torch.topk(self.importance_scores + noise, k=num_slots_to_replace, largest=False)
-
-        # Select the top surprising candidates to write
-        indices_to_write = least_important_indices
-        candidate_indices_to_use = sorted_surprise_indices[:num_slots_to_replace]
-        states_to_write = states_for_update[candidate_indices_to_use]
-        scores_to_write = scores_for_update[candidate_indices_to_use]
-
-        # Perform update
-        self.memory_buffer[indices_to_write] = states_to_write
-        self.importance_scores[indices_to_write] = scores_to_write # Initialize importance with surprise
-        self.usage_counters[indices_to_write] = 0 # Reset usage
-        self.age_counters[indices_to_write] = 0 # Reset age
-
-        # logger.debug(f"SurpriseMemory: Updated {num_slots_to_replace} slots.")
-
-    @torch.no_grad()
-    def _apply_decay(self):
-        """
-        Applies decay to importance scores and handles memory aging/pruning.
-        Should be called periodically (e.g., every N steps).
-        """
-        if not self.enabled: return
-
-        # Increment age for all slots
-        self.age_counters += 1
-
-        # Apply base decay rate
-        self.importance_scores *= self.base_decay_rate
-
-        # Prune entries based on threshold and potentially age
-        # Prune if importance is low AND hasn't been used recently (optional)
-        prune_mask = (self.importance_scores < self.prune_threshold) & (self.age_counters > 100) # Example: prune if old & unimportant
-        num_pruned = prune_mask.sum().item()
-
-        if num_pruned > 0:
-            self.importance_scores[prune_mask] = 0.0
-            self.usage_counters[prune_mask] = 0
-            self.age_counters[prune_mask] = 0
-            # Optionally clear the buffer slots as well
-            # self.memory_buffer[prune_mask] = 0.0
-            # logger.debug(f"SurpriseMemory: Pruned {num_pruned} slots.")
-
-        # Increment global step counter used for aging
-        self.global_step += 1.0
-
-    def query(self, query_states: torch.Tensor) -> torch.Tensor:
-        """
-        Retrieves relevant information from the memory buffer based on query states.
-
-        Args:
-            query_states: Tensor [batch, seq_len, hidden_size].
-
-        Returns:
-            Retrieved memory information, aggregated per query position
-            [batch, seq_len, hidden_size]. Returns zeros if memory is disabled or empty.
-        """
-        if not self.enabled or self.memory_size == 0:
-            return torch.zeros_like(query_states)
-
-        batch_size, seq_len, _ = query_states.shape
-        device = query_states.device
-
-        # Ensure memory buffer is on the correct device
-        memory_buffer_device = self.memory_buffer.to(device)
-        # memory_values = self.value_proj(memory_buffer_device) if hasattr(self, 'value_proj') else memory_buffer_device
-        memory_values = memory_buffer_device
-
-        # Project queries and memory keys
-        query_proj = self.query_proj(query_states) # [batch, seq_len, hidden_size]
-        memory_keys = self.key_proj(memory_buffer_device) # [memory_size, hidden_size]
-
-        # Calculate attention scores: [batch, seq_len, memory_size]
-        attn_scores = torch.matmul(query_proj, memory_keys.t())
-        # Scale scores
-        attn_scores = attn_scores * (self.hidden_size ** -0.5)
-
-        # Apply softmax to get attention weights
-        attn_weights = F.softmax(attn_scores, dim=-1) # [batch, seq_len, memory_size]
-
-        # Retrieve memory: Weighted sum of memory values
-        retrieved_memory = torch.matmul(attn_weights, memory_values) # [batch, seq_len, hidden_size]
-
-        # --- Update usage stats (no_grad context) ---
-        # This part should not affect the main computation graph.
-        with torch.no_grad():
-            # Update usage counter for accessed slots.
-            # Simple approach: Increment usage for slots with weight > threshold for any query.
-            accessed_mask = (attn_weights > 0.01).any(dim=0).any(dim=0) # [memory_size] boolean mask
-            self.usage_counters[accessed_mask] += 1
-            # Could also update last_access_time here if needed
-
-        return retrieved_memory
 
 class PersistentMemory(nn.Module):
     """
@@ -358,13 +289,6 @@ class PersistentMemory(nn.Module):
     accessed via attention.
     """
     def __init__(self, config: Any):
-        """
-        Initializes the PersistentMemory.
-
-        Args:
-            config: Configuration object with titans.num_persistent_vectors,
-                    hidden_size, num_attention_heads, layer_norm_eps.
-        """
         super().__init__()
         self.config = config
         titans_cfg = config.titans
@@ -372,17 +296,15 @@ class PersistentMemory(nn.Module):
         self.hidden_size = config.hidden_size
         layer_norm_eps = getattr(config, 'layer_norm_eps', 1e-12)
 
-        if self.num_persistent <= 0:
-             logger.warning("PersistentMemory size is <= 0. Disabling.")
-             self.enabled = False
+        self.enabled = titans_cfg.use_persistent
+        if not self.enabled or self.num_persistent <= 0:
+             logger.info("PersistentMemory is disabled or size is <= 0.")
+             self.enabled = False # Ensure it's marked as disabled
              return
-        self.enabled = True
 
-        # Learnable persistent memory vectors
         self.persistent_vectors = nn.Parameter(
             torch.randn(self.num_persistent, self.hidden_size) * titans_cfg.persistent_init_scale
         )
-        # Layer for attending hidden states to persistent memory
         self.attention = nn.MultiheadAttention(
             embed_dim=self.hidden_size,
             num_heads=config.num_attention_heads,
@@ -392,57 +314,34 @@ class PersistentMemory(nn.Module):
         logger.info(f"Initialized PersistentMemory (Vectors: {self.num_persistent})")
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """
-        Integrates persistent memory with hidden states via attention.
-        Hidden states attend to persistent vectors.
-
-        Args:
-            hidden_states: Input tensor [batch, seq_len, hidden_size].
-
-        Returns:
-            Output tensor [batch, seq_len, hidden_size] with persistent knowledge integrated,
-            or original hidden_states if disabled.
-        """
         if not self.enabled:
             return hidden_states
 
         batch_size, seq_len, _ = hidden_states.shape
         residual = hidden_states
-
-        # Expand persistent vectors to batch size for attention K/V
-        persistent_expanded = self.persistent_vectors.unsqueeze(0).expand(batch_size, -1, -1) # [batch, num_persistent, hidden_size]
-
-        # Attend hidden states (query) to persistent vectors (key, value)
-        # Apply LayerNorm to query for stability
         hidden_states_norm = self.layer_norm(hidden_states)
+        
+        persistent_expanded = self.persistent_vectors.unsqueeze(0).expand(batch_size, -1, -1)
+        
         attn_output, _ = self.attention(
             query=hidden_states_norm,
             key=persistent_expanded,
             value=persistent_expanded,
             need_weights=False
         )
-
-        # Add the attended persistent information back to the original hidden states (residual connection)
-        output = residual + attn_output # Dropout applied in main block if needed
+        output = residual + attn_output
         return output
 
 class MemoryComponent(nn.Module):
     """
-    Main memory component integrating short-term, long-term, and persistent memory.
-    Orchestrates calls and combines outputs.
+    Main memory component integrating short-term, long-term (MLP), and persistent memory.
     """
     def __init__(self, config: Any):
-        """
-        Initializes the MemoryComponent.
-
-        Args:
-            config: Main configuration object (ModelConfig).
-        """
         super().__init__()
         self.config = config
         titans_cfg = config.titans
         self.use_window = titans_cfg.use_window_attention
-        self.use_surprise = titans_cfg.use_surprise_based
+        self.use_surprise_mlp = titans_cfg.use_surprise_based # This now refers to SurpriseMemoryMLP
         self.use_persistent = titans_cfg.use_persistent
         layer_norm_eps = getattr(config, 'layer_norm_eps', 1e-12)
 
@@ -450,98 +349,91 @@ class MemoryComponent(nn.Module):
         if self.use_window:
             self.window_memory = WindowAttentionMemory(config)
 
-        self.surprise_memory: Optional[SurpriseMemory] = None
-        if self.use_surprise:
-            self.surprise_memory = SurpriseMemory(config)
+        self.surprise_memory_mlp: Optional[SurpriseMemoryMLP] = None
+        if self.use_surprise_mlp:
+            self.surprise_memory_mlp = SurpriseMemoryMLP(config)
+            # Projections for deriving k_t, v_t for the surprise memory MLP's associative loss,
+            # and q_t for querying it. These are part of the main model's learnable parameters.
+            self.k_projection_for_surprise_update = nn.Linear(config.hidden_size, config.hidden_size)
+            self.v_projection_for_surprise_update = nn.Linear(config.hidden_size, config.hidden_size)
+            self.q_projection_for_surprise_query = nn.Linear(config.hidden_size, config.hidden_size)
+
 
         self.persistent_memory: Optional[PersistentMemory] = None
         if self.use_persistent:
             self.persistent_memory = PersistentMemory(config)
 
-        # Integration mechanism: Simple addition for now
-        # Future: Could use learnable gates or weights
-        self.num_active_memories = sum([self.use_window, self.use_surprise, self.use_persistent])
-
-        # Final LayerNorm after integration
-        if self.num_active_memories > 0:
+        num_active_memories = sum([
+            1 if self.use_window and self.window_memory else 0,
+            1 if self.use_surprise_mlp and self.surprise_memory_mlp else 0,
+            1 if self.use_persistent and self.persistent_memory else 0
+        ])
+        
+        if num_active_memories > 0:
              self.layer_norm_final = nn.LayerNorm(config.hidden_size, eps=layer_norm_eps)
-
-        self.decay_interval = 100 # Apply surprise memory decay every N forward calls
-        self.call_count = 0 # Internal counter for periodic decay
-
-        logger.info(f"Initialized MemoryComponent (Window: {self.use_window}, Surprise: {self.use_surprise}, Persistent: {self.use_persistent})")
+        else:
+             self.layer_norm_final = nn.Identity()
 
 
-    def forward(self, hidden_states: torch.Tensor, model_outputs: Optional[Dict] = None) -> torch.Tensor:
+        logger.info(f"Initialized MemoryComponent (Window: {self.use_window}, SurpriseMLP: {self.use_surprise_mlp}, Persistent: {self.use_persistent})")
+
+    def forward(self, hidden_states: torch.Tensor, is_eval_active_update: bool = False) -> torch.Tensor:
         """
         Forward pass through the integrated memory system.
 
         Args:
-            hidden_states: Input tensor [batch, seq_len, hidden_size].
-            model_outputs: Optional dictionary containing outputs from the main model
-                           (unused currently, but available for future surprise methods).
+            hidden_states: Input tensor [batch, seq_len, hidden_size] from the main model.
+            is_eval_active_update (bool): Flag to indicate if surprise memory MLP should update its
+                                          parameters during evaluation phase. Controlled by config
+                                          and trainer state.
 
         Returns:
             Output tensor [batch, seq_len, hidden_size] after memory integration.
         """
-        self.call_count += 1
-        current_states = hidden_states
-        outputs_to_integrate = [hidden_states] # Start with original input
+        current_processing_state = hidden_states
+        logged_associative_loss = None
 
-        # --- Apply Memory Modules Sequentially or in Parallel? ---
-        # Sequential application might be simpler:
-        # Input -> Window -> Surprise Query -> Persistent -> Output
+        # --- Surprise Memory MLP (Long-Term Memory) ---
+        if self.use_surprise_mlp and self.surprise_memory_mlp and self.surprise_memory_mlp.enabled:
+            # 1. Project input hidden_states to get query (q_mem) for the memory MLP
+            q_mem = self.q_projection_for_surprise_query(hidden_states)
+            retrieved_LTM = self.surprise_memory_mlp.query(q_mem) # Query M_{t-1}
 
-        # 1. Window Memory (Short-term context)
-        if self.window_memory is not None:
-            current_states = self.window_memory(current_states)
-            # Decide whether to integrate additively now or at the end
-            # Let's integrate at the end for simplicity
+            # 2. If training the main model OR active update during eval is enabled, update memory_mlp
+            should_update_memory_mlp = self.training or (is_eval_active_update and self.config.titans.active_update_during_eval)
+            if should_update_memory_mlp:
+                # Project input hidden_states to get k_update and v_update for the associative loss
+                k_for_update = self.k_projection_for_surprise_update(hidden_states.detach()) # Detach to not backprop main loss through these projections for *this* update
+                v_for_update = self.v_projection_for_surprise_update(hidden_states.detach())
+                
+                # Perform the internal update step of the memory_mlp
+                # This step calculates its own loss, grads, and updates its params
+                assoc_loss = self.surprise_memory_mlp.perform_memory_update_step(k_for_update, v_for_update)
+                if assoc_loss is not None and logged_associative_loss is None : # Log once per forward pass if updated
+                    # TODO: How to log this effectively? It's per-batch. Maybe store and average in Trainer.
+                    # For now, just a debug log.
+                    logger.debug(f"SurpriseMemoryMLP associative loss: {assoc_loss.item():.4f}")
+                    logged_associative_loss = assoc_loss.item()
 
-        # 2. Surprise Memory (Long-term associative recall & update)
-        if self.surprise_memory is not None and self.surprise_memory.enabled:
-            # --- Surprise Calculation & Update ---
-            # Need to potentially enable grad for surprise calculation
-            requires_grad_backup = current_states.requires_grad
-            grad_context = torch.enable_grad() if self.surprise_memory.surprise_method == "gradient_norm" else torch.no_grad()
 
-            with grad_context:
-                 if self.surprise_memory.surprise_method == "gradient_norm" and not current_states.requires_grad:
-                      current_states.requires_grad_(True)
+            # 3. Combine retrieved LTM with the current processing state
+            # Following MAC architecture (Fig 2), LTM retrieval is combined with input.
+            # For now, simple addition. Concatenation would require careful handling of sequence lengths/types.
+            current_processing_state = current_processing_state + retrieved_LTM
 
-                 surprise_scores = self.surprise_memory._calculate_surprise(current_states, model_outputs) # [B, S]
+        # --- Persistent Memory ---
+        if self.use_persistent and self.persistent_memory and self.persistent_memory.enabled:
+            current_processing_state = self.persistent_memory(current_processing_state)
 
-                 # Restore grad state if changed
-                 if self.surprise_memory.surprise_method == "gradient_norm" and not requires_grad_backup:
-                      current_states.requires_grad_(False)
-
-            # Flatten states and scores for update (run update with no_grad)
-            batch_size, seq_len, hidden_dim = current_states.shape
-            flat_states = current_states.detach().reshape(-1, hidden_dim)
-            flat_scores = surprise_scores.reshape(-1)
-            self.surprise_memory._update_memory(flat_states, flat_scores)
-
-            # --- Query Memory ---
-            retrieved_surprise_memory = self.surprise_memory.query(current_states)
-            # Integrate query result (e.g., additively)
-            current_states = current_states + retrieved_surprise_memory
-
-            # --- Periodic Decay ---
-            if self.call_count % self.decay_interval == 0:
-                 self.surprise_memory._apply_decay()
-
-        # 3. Persistent Memory (Task-agnostic knowledge)
-        if self.persistent_memory is not None and self.persistent_memory.enabled:
-            current_states = self.persistent_memory(current_states)
-
-        # 4. Final Integration / Output
-        # If we applied memories sequentially, current_states holds the final result
-        # Apply a final LayerNorm if any memory was active
-        if self.num_active_memories > 0:
-             final_output = self.layer_norm_final(current_states)
-        else:
-             final_output = hidden_states # Return original if no memory active
-
+        # --- Window Memory (Short-Term Context) ---
+        if self.use_window and self.window_memory:
+            current_processing_state = self.window_memory(current_processing_state)
+        
+        # Final LayerNorm
+        final_output = self.layer_norm_final(current_processing_state)
+        
+        # TODO: Return associative loss if needed by the trainer for logging/monitoring
+        # For now, it's handled internally.
         return final_output
 
 # --- END OF FILE src/components/memory.py ---

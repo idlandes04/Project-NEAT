@@ -17,8 +17,8 @@ from typing import Dict, List, Optional, Tuple, Union, Any
 try:
     from .transformer import TransformerBlock
 except ImportError:
-    logger = logging.getLogger(__name__)
-    logger.error("Failed to import transformer.TransformerBlock. Ensure relative imports are correct.")
+    logger_arch = logging.getLogger(__name__) # Define logger before use
+    logger_arch.error("Failed to import transformer.TransformerBlock. Ensure relative imports are correct.")
     raise
 
 # Import components
@@ -28,11 +28,11 @@ try:
     from ..components.adaptation import TaskAdaptationComponent
     from ..components.multimodal import MultimodalComponent, MultimodalProjection
 except ImportError:
-    logger = logging.getLogger(__name__)
-    logger.error("Failed to import one or more components (BLT, Memory, Adaptation, Multimodal). Ensure relative imports are correct.")
+    logger_arch = logging.getLogger(__name__) # Define logger before use
+    logger_arch.error("Failed to import one or more components (BLT, Memory, Adaptation, Multimodal). Ensure relative imports are correct.")
     raise
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) # General logger for this module
 
 class UnifiedModel(nn.Module):
     """
@@ -58,9 +58,6 @@ class UnifiedModel(nn.Module):
         # --- Core Transformer Components ---
         logger.info("Initializing Core Transformer Components...")
         self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_size)
-        # Max position embeddings should accommodate the longest possible sequence
-        # (either block_size or max number of BLT patches)
-        # Using config.max_position_embeddings which should be set appropriately.
         self.position_embedding = nn.Embedding(config.max_position_embeddings, config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.layers = nn.ModuleList([TransformerBlock(config) for _ in range(config.num_layers)])
@@ -78,8 +75,7 @@ class UnifiedModel(nn.Module):
                  raise ValueError("BLT config seems incomplete.") from e
 
         self.memory_comp: Optional[MemoryComponent] = None
-        # Determine memory integration points (e.g., before specific layers)
-        self.memory_integration_layers = set(getattr(config.titans, 'integration_layers', [0, config.num_layers // 2, config.num_layers - 1]))
+        self.memory_integration_layers = set(getattr(config.titans, 'integration_layers', [0, config.num_layers // 2, config.num_layers - 1 if config.num_layers > 0 else 0]))
         if config.use_titans_memory:
             logger.info(f"Initializing Memory Component (integrating before layers: {sorted(list(self.memory_integration_layers))})...")
             try:
@@ -93,14 +89,14 @@ class UnifiedModel(nn.Module):
              logger.info("Initializing Adaptation Component...")
              try:
                  self.adapt_comp = TaskAdaptationComponent(config)
-                 logger.warning("Adaptation Component initialized. SVD precomputation (adapt_comp.precompute_svd(model)) should be called externally after model initialization and moving to device.")
+                 logger.info("Adaptation Component initialized. SVD precomputation (adapt_comp.precompute_svd(model)) should be called externally after model initialization and moving to device.")
              except AttributeError as e:
                  logger.error(f"Failed to initialize Adaptation Component. Missing config in config.transformer2?: {e}", exc_info=True)
                  raise ValueError("Transformer2 config seems incomplete.") from e
 
         self.multimodal_comp: Optional[MultimodalComponent] = None
-        self.lm_head: Optional[nn.Linear] = None
-        self.output_projection: nn.Module # Define type hint
+        self.lm_head: Optional[nn.Linear] = None # Standard LM head
+        self.output_projection: nn.Module # Can be standard LM head or MultimodalProjection
 
         if config.use_mvot_processor:
             logger.info("Initializing Multimodal Component...")
@@ -108,21 +104,21 @@ class UnifiedModel(nn.Module):
                 self.multimodal_comp = MultimodalComponent(config)
                 if self.multimodal_comp.multimodal_projection is None:
                      raise ValueError("MultimodalComponent initialized but multimodal_projection is None.")
-                # Use the multimodal projection head
                 self.output_projection = self.multimodal_comp.multimodal_projection
             except AttributeError as e:
                  logger.error(f"Failed to initialize Multimodal Component. Missing config in config.mvot?: {e}", exc_info=True)
                  raise ValueError("MVoT config seems incomplete.") from e
         else:
-            # Use standard LM head
             logger.info("Initializing standard LM Head.")
             self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
             self.output_projection = self.lm_head
-            # Tie weights between input embedding and LM head
-            logger.info("Tying weights between token embedding and LM head.")
-            self.lm_head.weight = self.token_embedding.weight
+            if config.vocab_size > 0 and config.hidden_size > 0 : # Ensure valid dimensions before tying
+                logger.info("Tying weights between token embedding and LM head.")
+                self.lm_head.weight = self.token_embedding.weight
+            else:
+                logger.warning("Cannot tie LM head weights: vocab_size or hidden_size is 0.")
 
-        # Initialize weights for newly added layers/modules
+
         logger.info("Applying weight initialization...")
         self.apply(self._init_weights)
         logger.info("UnifiedModel initialization complete.")
@@ -130,7 +126,6 @@ class UnifiedModel(nn.Module):
     def _init_weights(self, module):
         """Initializes weights of linear and embedding layers."""
         if isinstance(module, nn.Linear):
-            # Slightly different init for LM head potentially
             if hasattr(module, 'weight') and module.weight is not None:
                  torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if hasattr(module, 'bias') and module.bias is not None:
@@ -138,7 +133,6 @@ class UnifiedModel(nn.Module):
         elif isinstance(module, nn.Embedding):
              if hasattr(module, 'weight') and module.weight is not None:
                   torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-                  # Zero out padding embedding if it exists
                   if module.padding_idx is not None:
                        with torch.no_grad():
                             module.weight[module.padding_idx].fill_(0)
@@ -152,187 +146,116 @@ class UnifiedModel(nn.Module):
         self,
         input_ids: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.Tensor] = None, # Expected for MVoT: 0 for text, 1 for image?
+        token_type_ids: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None, # Needed for some surprise calculations potentially
-        image_targets: Optional[torch.Tensor] = None, # Needed for MVoT loss calculation
+        labels: Optional[torch.Tensor] = None,
+        image_targets: Optional[torch.Tensor] = None,
         return_dict: bool = True,
-        output_attentions: bool = False, # Not implemented in base blocks yet
-        output_hidden_states: bool = False # Not implemented yet
+        output_attentions: bool = False,
+        output_hidden_states: bool = False
     ) -> Dict[str, Optional[torch.Tensor]]:
-        """
-        Forward pass through the unified architecture.
-
-        Args:
-            input_ids: Input tensor [batch, seq_len] (bytes or tokens).
-            attention_mask: Mask tensor [batch, seq_len] (1=attend, 0=pad).
-            token_type_ids: Optional tensor [batch, seq_len] indicating token type (e.g., text=0, image=1).
-                            Required if MVoT loss calculation needs to identify image hidden states.
-            position_ids: Optional tensor for position IDs [batch, seq_len].
-            labels: Optional labels tensor [batch, seq_len] (unused by default forward, but passed to calculate_loss).
-            image_targets: Optional ground truth image indices or embeddings [batch, img_seq_len, ...].
-            return_dict: Whether to return a dictionary.
-            output_attentions: Whether to return attention weights (not implemented).
-            output_hidden_states: Whether to return all hidden states (not implemented).
-
-        Returns:
-            Dictionary containing model outputs:
-            - 'logits': Text logits [batch, seq_len, vocab_size].
-            - 'image_logits': Image logits [batch, seq_len, codebook_size] (if MVoT active).
-            - 'image_hidden_states_for_loss': Hidden states corresponding to image tokens
-              [num_image_tokens, hidden_size] (if MVoT active and token_type_ids provided).
-            - Potentially others like 'loss' (calculated externally), 'hidden_states', 'attentions'.
-        """
         batch_size, seq_len_input = input_ids.shape
         device = input_ids.device
 
-        # Ensure attention mask exists if not provided
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
 
-        # 1. Input Processing (BLT or Standard Embedding)
         if self.blt_comp is not None:
-            # BLT processes byte_sequence -> latent patch embeddings
-            hidden_states, latent_mask = self.blt_comp(input_ids, attention_mask) # [B, S_patch, D], [B, S_patch]
-            # Update seq_len and attention_mask for subsequent layers
+            hidden_states, latent_mask = self.blt_comp(input_ids, attention_mask)
             seq_len = hidden_states.size(1)
-            current_attention_mask = latent_mask # Mask for patch sequence
-            # Position IDs need to correspond to patches
+            current_attention_mask = latent_mask
             if position_ids is None:
                 position_ids = torch.arange(seq_len, dtype=torch.long, device=device).unsqueeze(0).expand(batch_size, -1)
             else:
-                 # If position_ids were provided for bytes, they need remapping - complex.
-                 # Assume if BLT is used, position_ids are either None or already patch-based.
-                 logger.warning("Using provided position_ids with BLT. Ensure they correspond to patches.")
-                 position_ids = position_ids[:, :seq_len] # Truncate if needed
+                 logger.debug("Using provided position_ids with BLT. Ensure they correspond to patches.")
+                 position_ids = position_ids[:, :seq_len]
         else:
-            # Standard token embedding
-            hidden_states = self.token_embedding(input_ids) # [B, S_in, D]
+            hidden_states = self.token_embedding(input_ids)
             seq_len = seq_len_input
-            current_attention_mask = attention_mask # Mask for token sequence
-            # Standard position IDs
+            current_attention_mask = attention_mask
             if position_ids is None:
                 position_ids = torch.arange(seq_len, dtype=torch.long, device=device).unsqueeze(0).expand(batch_size, -1)
             else:
-                 position_ids = position_ids[:, :seq_len] # Truncate if needed
+                 position_ids = position_ids[:, :seq_len]
 
-        # 2. Add Positional Embeddings & Dropout
         if position_ids.size(1) != seq_len:
-             raise ValueError(f"Position IDs length ({position_ids.size(1)}) does not match sequence length ({seq_len}).")
+             # This can happen if BLT reduces sequence length but position_ids are not adjusted
+             logger.warning(f"Position IDs length ({position_ids.size(1)}) does not match sequence length ({seq_len}). Recreating position_ids.")
+             position_ids = torch.arange(seq_len, dtype=torch.long, device=device).unsqueeze(0).expand(batch_size, -1)
+
         pos_embeddings = self.position_embedding(position_ids)
         hidden_states = hidden_states + pos_embeddings
         hidden_states = self.dropout(hidden_states)
 
-        # 3. Transformer Layers with Integrated Components
-        all_hidden_states_list = [] if output_hidden_states else None
-        # Pass the padding mask (0 for pad, 1 for attend) to the blocks
         transformer_attention_mask = current_attention_mask
-
-        # Placeholder for outputs needed by memory (currently unused in simplified version)
-        current_model_outputs_for_memory = None
-
-        # Store hidden states corresponding to image tokens if MVoT is active
-        image_hidden_states_list = []
+        image_hidden_states_list = [] # For MVoT
 
         for i, layer in enumerate(self.layers):
-            if output_hidden_states and all_hidden_states_list is not None:
-                all_hidden_states_list.append(hidden_states)
-
-            # --- Memory Integration ---
             if self.memory_comp is not None and i in self.memory_integration_layers:
-                # ** MODIFICATION FOR STEP 1.1 **
-                # Commented out the verbose per-step logging.
-                # Can be re-enabled with a conditional for specific debugging if needed.
-                # logger.debug(f"Applying memory component before layer {i}")
-                hidden_states = self.memory_comp(hidden_states, current_model_outputs_for_memory)
+                # Pass current hidden_states and a flag indicating if we are in eval/no_grad context
+                # The MemoryComponent will use this and its own config.titans.active_update_during_eval
+                # to decide if the SurpriseMemoryMLP parameters should be updated.
+                hidden_states = self.memory_comp(
+                    hidden_states,
+                    is_eval_or_no_grad_context=(not self.training) # True if model.eval()
+                )
 
-            # --- Transformer Block ---
             layer_output = layer(hidden_states, attention_mask=transformer_attention_mask)
-            hidden_states = layer_output # Output of the block is the new hidden_states
+            hidden_states = layer_output
 
-            # --- Collect Image Hidden States (if needed for MVoT loss) ---
             if self.config.use_mvot_processor and token_type_ids is not None:
-                 # Assume token_type_id == 1 indicates an image token
-                 # This selection happens *after* the transformer block for this layer
-                 image_token_mask = (token_type_ids == 1) # [B, S]
-                 # Need to handle potential length mismatch if BLT is used (token_type_ids might be byte-based)
-                 # Simple approach: Assume token_type_ids matches current seq_len
+                 image_token_mask = (token_type_ids == 1)
                  if image_token_mask.size(1) == seq_len:
-                      # Select states where mask is True
-                      image_states_layer = hidden_states[image_token_mask] # [NumImageTokensInBatch, D]
-                      image_hidden_states_list.append(image_states_layer)
-                 else:
-                      # This indicates a mismatch, likely need a mapping from byte/token indices to patch indices if using BLT
-                      if i == 0: # Log warning only once
-                           logger.warning(f"token_type_ids length ({token_type_ids.size(1)}) doesn't match sequence length ({seq_len}). Cannot reliably collect image hidden states for MVoT loss.")
+                      image_states_layer = hidden_states[image_token_mask]
+                      if image_states_layer.numel() > 0: # Only append if there are actual image states
+                           image_hidden_states_list.append(image_states_layer)
+                 elif i == 0: # Log warning only once per forward pass
+                      logger.warning(f"MVoT: token_type_ids length ({token_type_ids.size(1)}) doesn't match current sequence length ({seq_len}). Cannot reliably collect image hidden states.")
 
-
-        # 4. Final Layer Norm
         hidden_states = self.ln_f(hidden_states)
-
-        # --- Collect final layer's image hidden states for loss ---
         final_image_hidden_states = None
         if self.config.use_mvot_processor and token_type_ids is not None:
-             if image_hidden_states_list: # If we collected states
-                  # Option 1: Use states from the *last* layer
-                  # Need to re-select based on the *final* hidden_states
-                  image_token_mask = (token_type_ids == 1)
-                  if image_token_mask.size(1) == seq_len:
-                       final_image_hidden_states = hidden_states[image_token_mask]
-                  # Option 2: Concatenate/Pool states collected from all layers (more complex)
-                  # final_image_hidden_states = torch.cat(image_hidden_states_list, dim=0) # Example
-             else:
-                  logger.debug("No image hidden states collected for MVoT loss.")
+             image_token_mask = (token_type_ids == 1)
+             if image_token_mask.size(1) == seq_len:
+                  final_image_hidden_states = hidden_states[image_token_mask]
+                  if final_image_hidden_states.numel() == 0: # If mask is all false
+                       final_image_hidden_states = None # Ensure it's None, not empty tensor
+             # If lengths don't match, final_image_hidden_states remains None
 
-
-        # 5. Output Projection
-        if self.config.use_mvot_processor and self.multimodal_comp is not None:
-            logits_dict = self.output_projection(hidden_states) # Returns {"text_logits": ..., "image_logits": ...}
-        else:
-            text_logits = self.output_projection(hidden_states) # Returns [B, S, V_text]
+        if self.config.use_mvot_processor and self.multimodal_comp is not None and self.multimodal_comp.multimodal_projection is not None:
+            logits_dict = self.multimodal_comp.multimodal_projection(hidden_states)
+        elif self.lm_head is not None: # Standard LM head
+            text_logits = self.lm_head(hidden_states)
             logits_dict = {"text_logits": text_logits, "image_logits": None}
+        else: # Should not happen if correctly initialized
+             logger.error("Output projection layer (lm_head or multimodal_projection) is not initialized.")
+             logits_dict = {"text_logits": None, "image_logits": None}
 
-        # 6. Prepare Output Dictionary
+
         output_data = {
             "logits": logits_dict["text_logits"],
             "image_logits": logits_dict["image_logits"],
             "image_hidden_states_for_loss": final_image_hidden_states,
-            # Add other outputs if implemented
-            # "hidden_states": tuple(all_hidden_states_list) if output_hidden_states else None,
-            # "attentions": None, # Not implemented
         }
-        # Filter out None values before returning
         final_output = {k: v for k, v in output_data.items() if v is not None}
 
         if not return_dict:
-             # Convert to tuple format if requested (less common now)
-             return tuple(final_output.values())
+             return tuple(final_output.get(k) for k in ["logits", "image_logits", "image_hidden_states_for_loss"] if k in final_output)
         else:
              return final_output
 
-
     def adapt_weights(self, task_weights: torch.Tensor):
-        """
-        Applies Transformer2-style adaptation to the model weights in-place.
-        Requires SVD components to be precomputed.
-
-        Args:
-            task_weights: Task weights tensor [batch=1, num_tasks].
-        """
         if self.adapt_comp is not None:
-             # Check if SVD cache exists, run precomputation if not (might be slow here)
              if not hasattr(self.adapt_comp, 'svd_cache') or not self.adapt_comp.svd_cache:
-                  logger.warning("SVD components not precomputed for adaptation. Running precomputation now... This should ideally be done after model init.")
+                  logger.warning("SVD components not precomputed for adaptation. Running precomputation now...")
                   try:
                        self.adapt_comp.precompute_svd(self)
                   except Exception as e:
                        logger.error(f"SVD precomputation failed during adapt_weights call: {e}", exc_info=True)
-                       return # Cannot adapt if SVD fails
-                  if not self.adapt_comp.svd_cache:
-                       logger.error("SVD precomputation failed. Cannot adapt weights.")
                        return
-
-             # Apply adaptation
+                  if not self.adapt_comp.svd_cache:
+                       logger.error("SVD precomputation failed post-attempt. Cannot adapt weights.")
+                       return
              try:
                   self.adapt_comp.adapt_model_weights(self, task_weights)
                   logger.debug("Applied SVD weight adaptation.")
@@ -347,71 +270,43 @@ class UnifiedModel(nn.Module):
         labels: Optional[torch.Tensor] = None,
         image_targets: Optional[torch.Tensor] = None
     ) -> Optional[torch.Tensor]:
-        """
-        Calculates the total loss, including standard LM loss and optional multimodal loss.
-
-        Args:
-            model_outputs: The dictionary returned by the forward pass. Must contain 'logits'.
-                           Needs 'image_logits' and 'image_hidden_states_for_loss' if multimodal.
-            labels: Ground truth token IDs [batch, seq_len]. Required for LM loss.
-            image_targets: Optional ground truth image indices or embeddings. Required for MVoT loss.
-
-        Returns:
-            Scalar loss tensor, or None if loss cannot be computed.
-        """
-        total_loss_value = 0.0
+        total_loss_value = torch.tensor(0.0, device=self.device) # Ensure loss is on correct device
         loss_calculated = False
 
-        # 1. Standard Language Modeling Loss (Cross-Entropy)
         text_logits = model_outputs.get("logits")
         if text_logits is not None and labels is not None:
             try:
-                # Shift logits and labels for next token prediction
-                # Logits: [B, S, V] -> [B, S-1, V]
-                # Labels: [B, S] -> [B, S-1]
                 shift_logits = text_logits[..., :-1, :].contiguous()
                 shift_labels = labels[..., 1:].contiguous()
-
-                # Flatten the tokens
-                loss_fct = nn.CrossEntropyLoss(ignore_index=-100) # Use -100 ignore index
+                loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
                 lm_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-
-                if not torch.isnan(lm_loss): # Check for NaN loss
+                if not torch.isnan(lm_loss):
                     total_loss_value += lm_loss
                     loss_calculated = True
                 else:
                     logger.warning("LM loss calculation resulted in NaN.")
-
             except Exception as e:
                  logger.error(f"Error calculating LM loss: {e}", exc_info=True)
         elif labels is not None:
-             logger.warning("Cannot compute LM loss: 'logits' missing from model output.")
-        # If labels are None, we assume loss calculation is not requested for LM part.
+             logger.debug("Cannot compute LM loss: 'logits' missing from model output or labels are None.")
 
-        # 2. Multimodal Loss (Token Discrepancy)
         if self.config.use_mvot_processor and self.multimodal_comp is not None and image_targets is not None:
             image_hidden_states = model_outputs.get("image_hidden_states_for_loss")
+            if image_hidden_states is not None and image_hidden_states.numel() > 0:
+                try:
+                    multimodal_loss = self.multimodal_comp.compute_multimodal_loss(
+                        image_hidden_states=image_hidden_states,
+                        target_image_embeddings=image_targets
+                    )
+                    if not torch.isnan(multimodal_loss):
+                         total_loss_value += multimodal_loss
+                         loss_calculated = True
+                    else:
+                         logger.warning("Multimodal loss calculation resulted in NaN.")
+                except Exception as e:
+                     logger.error(f"Error calculating multimodal loss: {e}", exc_info=True)
+            elif image_targets is not None: # image_targets provided but no states
+                 logger.debug("MVoT: 'image_hidden_states_for_loss' missing or empty in model output, but image_targets provided. Skipping multimodal loss.")
 
-            if image_hidden_states is not None:
-                if image_hidden_states.numel() > 0: # Ensure there are actually image tokens
-                    try:
-                        multimodal_loss = self.multimodal_comp.compute_multimodal_loss(
-                            image_hidden_states=image_hidden_states,
-                            target_image_embeddings=image_targets # Assume targets are already embeddings
-                        )
-                        if not torch.isnan(multimodal_loss): # Check for NaN loss
-                             total_loss_value += multimodal_loss
-                             loss_calculated = True
-                        else:
-                             logger.warning("Multimodal loss calculation resulted in NaN.")
-                    except Exception as e:
-                         logger.error(f"Error calculating multimodal loss: {e}", exc_info=True)
-                else:
-                     logger.debug("No image tokens found in batch, skipping multimodal loss calculation.")
-            else:
-                 logger.warning("Cannot compute multimodal loss: 'image_hidden_states_for_loss' missing or None in model output. Ensure token_type_ids are provided and processed correctly.")
-
-        # Return total loss only if at least one part was calculated successfully
         return total_loss_value if loss_calculated else None
-
 # --- END OF FILE src/model/architecture.py ---
