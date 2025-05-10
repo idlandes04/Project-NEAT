@@ -82,8 +82,8 @@ mvot:
 
 # Data, Training, Hardware Configs
 data:
-  train_data_dir: "./src/data/processed_wikitext103/wikitext_wikitext-103-raw-v1_train"
-  eval_data_dir: "./src/data/processed_wikitext103/wikitext_wikitext-103-raw-v1_eval"
+  train_data_dir: "data/processed_wikitext103/wikitext_wikitext-103-raw-v1_train"
+  eval_data_dir: "data/processed_wikitext103/wikitext_wikitext-103-raw-v1_eval"
   train_file_pattern: "*.txt" # Matches output from prepare_data.py
   eval_file_pattern: "*.txt"
   block_size: 512 # Max sequence length in tokens for wikitext-103
@@ -95,20 +95,21 @@ training:
   adam_beta2: 0.95
   adam_epsilon: 1.0e-8
   max_grad_norm: 1.0
-  max_steps: 1000 # Reduced for initial test runs, was 200000
-  warmup_steps: 100  # Adjusted relative to max_steps, was 2000
-  batch_size: 2      # Reduced for potentially smaller GPUs, was 8
+  max_steps: 100 # Reduced for initial test runs, was 200000
+  warmup_steps: 10  # Adjusted relative to max_steps, was 2000
+  batch_size: 4      # Reduced for potentially smaller GPUs, was 8
   gradient_accumulation_steps: 2 # Increased to maintain effective batch size, was 4
   logging_steps: 10
   eval_steps: 100
   save_steps: 100
-  output_dir: ".src/output/neat_base_500m_wikitext103" # Specific output dir
+  output_dir: "output/neat_base_500m_wikitext103" # Specific output dir
   resume_from: null
 
 hardware:
   mixed_precision: true
-  gradient_checkpointing: false # Keep false for initial debugging
+  gradient_checkpointing: true 
   force_cpu: false
-  num_workers: 0 # Set to 0 for easier debugging on Windows, was 4
+  num_workers: 4
   use_flash_attention: true
+  pin_memory: true
 # --- END OF FILE configs/config_base_500m.yaml ---

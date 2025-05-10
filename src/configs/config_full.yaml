@@ -101,7 +101,7 @@ training:
   logging_steps: 50
   eval_steps: 500
   save_steps: 500
-  output_dir: "./output/neat_full_500m_wikitext103" # Specific output dir
+  output_dir: ".src/output/neat_full_500m_wikitext103" # Specific output dir
   resume_from: null
 
 hardware:
