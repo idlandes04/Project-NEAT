@@ -45,14 +45,25 @@ titans:
   use_surprise_based: true
   use_persistent: true
   window_size: 512 # Window for short-term memory (num patches)
-  memory_size: 4096 # Number of slots in surprise memory
-  surprise_threshold: 0.5
   num_persistent_vectors: 64
   persistent_init_scale: 0.02
+  integration_layers: [0, 12, 23] # Default for 24 layers
+
+  # MLP specific parameters
+  memory_mlp_num_layers: 2
+  mem_mlp_intermediate_size: 1024 # Relative to hidden_size=2048
+  memory_learning_rate: 0.001    # Explicitly set lower than dataclass default
+  memory_momentum: 0.9
+  memory_weight_decay: 0.0001
+  active_update_during_eval: true
+  
+  # Fields from old SurpriseMemory (less relevant for MLP, but kept for potential future use by MemoryComponent)
+  memory_size: 4096
+  surprise_threshold: 0.5
   base_decay_rate: 0.99
   importance_half_life: 1000
   memory_prune_threshold: 0.01
-  surprise_method: "gradient_norm"
+  surprise_method: "associative_loss_grad" # Consistent with MLP's internal update logic
 
 transformer2:
   num_tasks: 8
@@ -81,9 +92,9 @@ mvot:
 
 # Data, Training, Hardware Configs
 data:
-  train_data_dir: "./src/data/processed_wikitext103/wikitext_wikitext-103-raw-v1_train"
-  eval_data_dir: "./src/data/processed_wikitext103/wikitext_wikitext-103-raw-v1_eval"
-  train_file_pattern: "*.txt" # prepare_data.py saves as .txt, BLT will process bytes from text
+  train_data_dir: "./src/data/processed_wikitext103/wikitext_wikitext-103-raw-v1_train" # Example path
+  eval_data_dir: "./src/data/processed_wikitext103/wikitext_wikitext-103-raw-v1_eval"   # Example path
+  train_file_pattern: "*.txt" 
   eval_file_pattern: "*.txt"
   block_size: 4096 # Sequence length in BYTES for BLT
 
@@ -101,13 +112,13 @@ training:
   logging_steps: 50
   eval_steps: 500
   save_steps: 500
-  output_dir: ".src/output/neat_full_500m_wikitext103" # Specific output dir
+  output_dir: "./output/neat_full_500m_wikitext103" # Specific output dir
   resume_from: null
 
 hardware:
   mixed_precision: true
-  gradient_checkpointing: false
+  gradient_checkpointing: false # Good for initial stability
   force_cpu: false
-  num_workers: 0 # Set to 0 for easier debugging on Windows
+  num_workers: 0 
   use_flash_attention: true
 # --- END OF FILE configs/config_full_500m.yaml ---

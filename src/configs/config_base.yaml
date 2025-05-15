@@ -1,10 +1,10 @@
 # --- START OF FILE configs/config_base_500m.yaml ---
-# Base configuration for a ~500M parameter model.
-# Enables Titans Memory and Transformer2 Adaptation by default.
-# Disables BLT and MVoT for simpler initial setup.
+# Base configuration for a ~250M parameter model (matches baseline core).
+# Enables ONLY Titans Memory (MLP-based) by default.
+# Disables BLT, T2, MVoT for focused Titans testing.
 # Uses a standard Hugging Face tokenizer (e.g., gpt2).
 
-# Core Model Parameters (~500M target)
+# Core Model Parameters (~250M target, same as baseline_transformer.yaml)
 hidden_size: 1024
 num_layers: 16
 num_attention_heads: 8
@@ -18,14 +18,14 @@ layer_norm_eps: 1.0e-5
 # Tokenizer (Used when use_blt_processor is false)
 tokenizer_name: "gpt2" # train.py will load this and update vocab_size
 
-# Component Activation Flags - ALL FALSE FOR BASELINE
+# Component Activation Flags
 use_blt_processor: false
-use_titans_memory: true
-use_transformer2_adaptation: false
-use_mvot_processor: false
+use_titans_memory: true # ENABLED
+use_transformer2_adaptation: false # DISABLED
+use_mvot_processor: false # DISABLED
 
-# Nested Component Configurations (Defaults are fine as components are disabled)
-blt:
+# Nested Component Configurations
+blt: # Defaults are fine as it's disabled
   entropy_threshold: 0.5
   min_patch_size: 8
   max_patch_size: 128
@@ -42,25 +42,36 @@ blt:
   blt_checkpoint_path: null
 
 titans:
-  use_window_attention: false # Ensure these are also off if main flag is off
-  use_surprise_based: false
-  use_persistent: false
+  use_window_attention: true # Can be true or false for this test
+  use_surprise_based: true   # Enable MLP
+  use_persistent: true       # Can be true or false
   window_size: 512
-  memory_size: 4096
-  surprise_threshold: 0.5
   num_persistent_vectors: 64
   persistent_init_scale: 0.02
-  base_decay_rate: 0.98
+  integration_layers: [0, 8, 15] # Adjusted for 16 layers
+
+  # --- Parameters for the new SurpriseMemoryMLP ---
+  memory_mlp_num_layers: 2
+  mem_mlp_intermediate_size: 512 # For hidden_size=1024
+  memory_learning_rate: 0.001
+  memory_momentum: 0.9
+  memory_weight_decay: 0.0001
+  active_update_during_eval: true
+
+  # --- Fields from old SurpriseMemory (less relevant for MLP) ---
+  memory_size: 4096
+  surprise_threshold: 0.1
+  base_decay_rate: 0.99
   importance_half_life: 1000
   memory_prune_threshold: 0.01
-  surprise_method: "gradient_norm"
+  surprise_method: "associative_loss_grad" # Consistent with MLP
 
-transformer2:
+transformer2: # Defaults are fine as it's disabled
   num_tasks: 8
   task_embedding_dim: 64
-  num_singular_values: 128 # k
+  num_singular_values: 128
   expert_init_scale: 0.01
-  adapt_attention: false # Ensure these are also off
+  adapt_attention: false
   adapt_ffn: false
   adapt_embeddings: false
   adapt_lm_head: false
@@ -70,17 +81,17 @@ transformer2:
   svd_n_oversamples: 10
   svd_n_iter: 5
   enable_svd_caching: true
-  svd_cache_dir: ".svd_cache_baseline" # Separate cache dir
+  svd_cache_dir: ".svd_cache_base_500m_titans" # Different cache
 
-mvot:
+mvot: # Defaults are fine as it's disabled
   codebook_size: 8192
-  embedding_dim: 2048
+  embedding_dim: 1024 
   discrepancy_loss_weight: 0.1
   codebook_model_type: "vqvae"
   codebook_path: null
   use_pretrained_codebook: false
 
-# Data, Training, Hardware Configs
+# Data, Training, Hardware Configs (Similar to baseline)
 data:
   train_data_dir: "data/processed_wikitext103/wikitext_wikitext-103-raw-v1_train"
   eval_data_dir: "data/processed_wikitext103/wikitext_wikitext-103-raw-v1_eval"
@@ -95,20 +106,20 @@ training:
   adam_beta2: 0.95
   adam_epsilon: 1.0e-8
   max_grad_norm: 1.0
-  max_steps: 3000 # Increased for a more meaningful baseline
-  warmup_steps: 600  # Adjusted relative to max_steps
+  max_steps: 3000 
+  warmup_steps: 600  
   batch_size: 4
   gradient_accumulation_steps: 2
-  logging_steps: 100 # Log less frequently for longer run
+  logging_steps: 100 
   eval_steps: 300
-  eval_max_batches: 50 # Evaluate on a subset for speed
+  eval_max_batches: 50 
   save_steps: 300
-  output_dir: "output/neat_baseline_transformer_wikitext103" # Specific output dir
+  output_dir: "output/neat_base_250m_titans_wikitext103" # Specific output dir
   resume_from: null
 
 hardware:
   mixed_precision: true
-  gradient_checkpointing: true # Keep enabled for larger models
+  gradient_checkpointing: true 
   force_cpu: false
   num_workers: 8
   use_flash_attention: true

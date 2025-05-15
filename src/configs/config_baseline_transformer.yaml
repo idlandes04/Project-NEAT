@@ -1,5 +1,5 @@
 # --- START OF FILE configs/config_baseline_transformer.yaml ---
-# Baseline Transformer configuration for a ~500M parameter model.
+# Baseline Transformer configuration for a ~250M parameter model.
 # Disables ALL advanced components: BLT, Titans, T2, MVoT.
 # Uses a standard Hugging Face tokenizer (e.g., gpt2).
 # Intended for establishing baseline performance and resource usage.
@@ -42,7 +42,7 @@ blt:
   blt_checkpoint_path: null
 
 titans:
-  use_window_attention: false # Ensure these are also off if main flag is off
+  use_window_attention: false 
   use_surprise_based: false
   use_persistent: false
   window_size: 512
@@ -53,14 +53,21 @@ titans:
   base_decay_rate: 0.98
   importance_half_life: 1000
   memory_prune_threshold: 0.01
-  surprise_method: "gradient_norm"
+  surprise_method: "gradient_norm" # Default, not used
+
+  memory_mlp_num_layers: 2       
+  mem_mlp_intermediate_size: 512 
+  memory_learning_rate: 0.001    
+  memory_momentum: 0.9           
+  memory_weight_decay: 0.0001    
+  active_update_during_eval: false
 
 transformer2:
   num_tasks: 8
   task_embedding_dim: 64
   num_singular_values: 128 # k
   expert_init_scale: 0.01
-  adapt_attention: false # Ensure these are also off
+  adapt_attention: false 
   adapt_ffn: false
   adapt_embeddings: false
   adapt_lm_head: false
@@ -74,7 +81,7 @@ transformer2:
 
 mvot:
   codebook_size: 8192
-  embedding_dim: 2048
+  embedding_dim: 2048 # Matches a hypothetical larger model, not used here
   discrepancy_loss_weight: 0.1
   codebook_model_type: "vqvae"
   codebook_path: null
@@ -95,20 +102,20 @@ training:
   adam_beta2: 0.95
   adam_epsilon: 1.0e-8
   max_grad_norm: 1.0
-  max_steps: 3000 # Increased for a more meaningful baseline
-  warmup_steps: 600  # Adjusted relative to max_steps
+  max_steps: 3000 
+  warmup_steps: 600  
   batch_size: 4
   gradient_accumulation_steps: 2
-  logging_steps: 100 # Log less frequently for longer run
+  logging_steps: 100 
   eval_steps: 300
-  eval_max_batches: 50 # Evaluate on a subset for speed
+  eval_max_batches: 50 
   save_steps: 300
   output_dir: "output/neat_baseline_transformer_wikitext103" # Specific output dir
   resume_from: null
 
 hardware:
   mixed_precision: true
-  gradient_checkpointing: true # Keep enabled for larger models
+  gradient_checkpointing: true 
   force_cpu: false
   num_workers: 8
   use_flash_attention: true
