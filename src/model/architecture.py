@@ -98,9 +98,7 @@ class UnifiedModel(nn.Module):
                 logger.info("Tying weights between token embedding and LM head.")
                 self.lm_head.weight = self.token_embedding.weight
             else:
-                logger.warning("Cannot tie LM head weights: vocab_size or hidden_size is 0.")
-
-        logger.info("Applying weight initialization...")
+                logger.warning("Cannot tie LM head weights: vocab_size or hidden_size is 0.")        logger.info("Applying weight initialization...")
         self.apply(self._init_weights)
         logger.info("UnifiedModel initialization complete.")
 
@@ -133,7 +131,7 @@ class UnifiedModel(nn.Module):
         return_dict: bool = True,
         output_attentions: bool = False,
         output_hidden_states: bool = False
-    ) -> Dict[str, Optional[torch.Tensor]]:
+    ) -> Union[Dict[str, Optional[torch.Tensor]], Tuple[Optional[torch.Tensor], ...]]:
         batch_size, seq_len_input = input_ids.shape
         device = input_ids.device # Get device from input_ids
 
@@ -171,11 +169,15 @@ class UnifiedModel(nn.Module):
 
         for i, layer in enumerate(self.layers):
             if self.memory_comp is not None and i in self.memory_integration_layers:
+                # Detach the hidden states before passing to memory component
+                # This prevents unwanted gradient flow into the memory component
+                mem_input = hidden_states.detach() if self.training else hidden_states
                 hidden_states = self.memory_comp(
-                    hidden_states,
+                    mem_input,
                     is_eval_or_no_grad_context=(not self.training)
                 )
-
+            
+            # Process the layer normally with attention mask
             layer_output = layer(hidden_states, attention_mask=transformer_attention_mask)
             hidden_states = layer_output
 
@@ -214,9 +216,15 @@ class UnifiedModel(nn.Module):
         final_output = {k: v for k, v in output_data.items() if v is not None}
 
         if not return_dict:
-             return tuple(final_output.get(k) for k in ["logits", "image_logits", "image_hidden_states_for_loss"] if k in final_output)
+            # Convert the dict into a tuple with ordered values, ensuring consistent return types
+            output_tuple = (
+                final_output.get("logits", None),
+                final_output.get("image_logits", None),
+                final_output.get("image_hidden_states_for_loss", None)
+            )
+            return output_tuple  # Python will automatically convert this to the correct tuple type
         else:
-             return final_output
+            return final_output
 
     def adapt_weights(self, task_weights: torch.Tensor):
         if self.adapt_comp is not None:
