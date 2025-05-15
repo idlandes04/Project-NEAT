@@ -110,26 +110,33 @@ class WindowAttentionMemory(nn.Module):
 class SurpriseMemoryMLP(nn.Module):
     def __init__(self, config: Any, parent_hidden_size: int):
         super().__init__()
-        self.config_titans = config.titans # Store titans sub-config
+        self.config_titans = config.titans
         self.parent_hidden_size = parent_hidden_size
 
-        mlp_layers = []
-        current_dim = self.parent_hidden_size
-        
+        # Determine layer sizes
         if self.config_titans.memory_mlp_num_layers == 1:
-            mlp_layers.append(nn.Linear(current_dim, self.parent_hidden_size))
+            mlp_layers = [nn.Linear(parent_hidden_size, parent_hidden_size)]
         else:
+            mlp_layers = []
+            current_dim = parent_hidden_size
             for i in range(self.config_titans.memory_mlp_num_layers):
-                out_dim = self.config_titans.mem_mlp_intermediate_size if i < self.config_titans.memory_mlp_num_layers - 1 else self.parent_hidden_size
+                out_dim = (self.config_titans.mem_mlp_intermediate_size 
+                          if i < self.config_titans.memory_mlp_num_layers - 1 
+                          else parent_hidden_size)
                 mlp_layers.append(nn.Linear(current_dim, out_dim))
+                
+                # Add ReLU between layers, not after the last one
                 if i < self.config_titans.memory_mlp_num_layers - 1:
                     mlp_layers.append(nn.ReLU())
                 current_dim = out_dim
         
+        # Create sequential MLP
         self.memory_mlp = nn.Sequential(*mlp_layers)
-
+        
+        # Explicitly set requires_grad=True and initialize momentum buffers
         for name, param in self.memory_mlp.named_parameters():
-            if param.requires_grad:
+            param.requires_grad_(True)  # Ensure gradients are enabled
+            if param.requires_grad:  # Should always be true now
                 momentum_buffer_name = f"momentum_buffer_{name.replace('.', '_')}"
                 self.register_buffer(momentum_buffer_name, torch.zeros_like(param.data))
         
@@ -139,46 +146,65 @@ class SurpriseMemoryMLP(nn.Module):
         logger.debug(f"SurpriseMemoryMLP structure: {self.memory_mlp}")
 
     def _get_associative_loss_and_param_gradients(self, k_t_batch: torch.Tensor, v_t_batch: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
-        # Prepare for computation by casting inputs to model param dtype
+        # Safety check - inputs should not require grad as they're from detached hidden states
+        assert not k_t_batch.requires_grad and not v_t_batch.requires_grad, "Input tensors should not require grad"
+        
+        # Ensure we're on the right device and dtype
         mlp_param_dtype = next(self.memory_mlp.parameters()).dtype
         mlp_param_device = next(self.memory_mlp.parameters()).device
         
-        # Force to float32 for numerical stability during training
+        # Cast to float32 for stability, keep on same device
         k_t_batch_32 = k_t_batch.to(dtype=torch.float32, device=mlp_param_device)
         v_t_batch_32 = v_t_batch.to(dtype=torch.float32, device=mlp_param_device)
 
-        # Create new tensors that require grad
-        k_for_loss = k_t_batch_32.detach().requires_grad_(True)
-        v_for_loss = v_t_batch_32.detach().requires_grad_(True)
+        # Create fresh tensors that require grad, but don't attach to existing graph
+        k_t_batch_train = k_t_batch_32.clone().detach().requires_grad_(True)
+        v_t_batch_train = v_t_batch_32.clone().detach().requires_grad_(True)
 
-        # Set MLP to train mode inside a fresh grad-enabled context
-        with torch.enable_grad():
-            self.memory_mlp.train()
+        # Ensure MLP is in train mode and collecting gradients
+        self.memory_mlp.train()
+        
+        # Forward pass should always enable gradients
+        with torch.set_grad_enabled(True):
+            # Get MLP prediction
+            v_t_pred_batch = self.memory_mlp(k_t_batch_train)
             
-            v_t_pred_batch = self.memory_mlp(k_for_loss)
-            associative_loss = F.mse_loss(v_t_pred_batch, v_for_loss)
+            # Compute MSE loss
+            associative_loss = F.mse_loss(v_t_pred_batch, v_t_batch_train)
 
+            # Get trainable parameters
             trainable_params = [p for p in self.memory_mlp.parameters() if p.requires_grad]
             if not trainable_params:
                 logger.warning("SurpriseMemoryMLP has no trainable parameters. Cannot compute gradients.")
-                self.memory_mlp.eval() 
+                self.memory_mlp.eval()
                 return associative_loss.detach(), []
-            
+
+            # Verify loss requires grad
             if not associative_loss.requires_grad:
-                logger.warning("Associative loss does not require gradients w.r.t. memory_mlp parameters. Gradients will be zero.")
-                param_grads_cleaned = [torch.zeros_like(p, device=p.device) for p in trainable_params] 
+                logger.warning("Associative loss does not require gradients. This should not happen with proper setup.")
+                param_grads_cleaned = [torch.zeros_like(p, device=p.device) for p in trainable_params]
             else:
-                param_grads = torch.autograd.grad(associative_loss, trainable_params, retain_graph=False, allow_unused=True, create_graph=False)
+                # Compute gradients w.r.t MLP parameters
+                param_grads = torch.autograd.grad(
+                    associative_loss,
+                    trainable_params,
+                    retain_graph=False,
+                    allow_unused=True,
+                    create_graph=False
+                )
                 
+                # Clean up any None gradients (should not happen, but be safe)
                 param_grads_cleaned = []
                 for i, grad in enumerate(param_grads):
                     if grad is None:
                         logger.warning(f"Gradient for param of shape {trainable_params[i].shape} is None. Using zero grad.")
                         param_grads_cleaned.append(torch.zeros_like(trainable_params[i], device=trainable_params[i].device))
                     else:
-                        param_grads_cleaned.append(grad)
+                        # Ensure gradient is on the right device and detached
+                        param_grads_cleaned.append(grad.detach())
 
-            self.memory_mlp.eval()
+        # Set back to eval mode
+        self.memory_mlp.eval()
         
         return associative_loss.detach(), param_grads_cleaned
 
