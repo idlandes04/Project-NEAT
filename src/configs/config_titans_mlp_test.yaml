@@ -118,7 +118,7 @@ training:
 
 hardware:
   mixed_precision: true
-  gradient_checkpointing: true 
+  gradient_checkpointing: true
   force_cpu: false
   num_workers: 8
   use_flash_attention: true

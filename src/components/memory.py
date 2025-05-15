@@ -42,11 +42,10 @@ class WindowAttentionMemory(nn.Module):
         self.o_proj = nn.Linear(self.hidden_size, self.hidden_size)
 
         self.layer_norm = nn.LayerNorm(self.hidden_size, eps=layer_norm_eps)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob) # For output projection
+        self.dropout = nn.Dropout(config.hidden_dropout_prob) 
         self.attn_dropout_prob = config.attention_probs_dropout_prob
 
-        self.use_flash_attention = getattr(config.hardware, "use_flash_attention", True) and \
-                                   hasattr(torch.nn.functional, "scaled_dot_product_attention")
+        self.use_flash_attention = getattr(config.hardware, "use_flash_attention", True) and hasattr(torch.nn.functional, "scaled_dot_product_attention")
         if not self.use_flash_attention:
              self.manual_attn_dropout = nn.Dropout(self.attn_dropout_prob)
 
@@ -76,15 +75,10 @@ class WindowAttentionMemory(nn.Module):
         q_indices = torch.arange(seq_len, device=hidden_states.device).view(-1, 1)
         kv_indices = torch.arange(seq_len, device=hidden_states.device).view(1, -1)
         
-        # Mask for causality (upper triangle)
         causal_mask_bool = kv_indices > q_indices 
-        # Mask for outside window (lower triangle part beyond window_size)
         outside_window_mask_bool = kv_indices < (q_indices - self.window_size + 1)
         
-        # Combine masks: if a position is either causally masked OR outside window, it's masked
         final_mask_bool = causal_mask_bool | outside_window_mask_bool
-        
-        # For FlashAttention, the mask should be True where attention is NOT allowed.
         attn_mask_for_flash = final_mask_bool
 
         if self.use_flash_attention:
@@ -116,134 +110,185 @@ class SurpriseMemoryMLP(nn.Module):
         self.config_titans = config.titans
         self.parent_hidden_size = parent_hidden_size 
 
-        if self.config_titans.memory_mlp_num_layers <= 0:
+        self.mlp_num_layers = self.config_titans.memory_mlp_num_layers
+        if self.mlp_num_layers <= 0:
              raise ValueError("memory_mlp_num_layers must be positive.")
         
-        mlp_layers = []
-        current_dim = parent_hidden_size
-        if self.config_titans.memory_mlp_num_layers == 1:
-            mlp_layers.append(nn.Linear(parent_hidden_size, parent_hidden_size))
+        if self.mlp_num_layers == 1:
+            self.fc1 = nn.Linear(parent_hidden_size, parent_hidden_size)
+        elif self.mlp_num_layers == 2:
+            self.fc1 = nn.Linear(parent_hidden_size, self.config_titans.mem_mlp_intermediate_size)
+            self.relu1 = nn.ReLU() # Defined as a module attribute
+            self.fc2 = nn.Linear(self.config_titans.mem_mlp_intermediate_size, parent_hidden_size)
         else:
-            for i in range(self.config_titans.memory_mlp_num_layers):
-                is_last_layer = (i == self.config_titans.memory_mlp_num_layers - 1)
-                out_dim = parent_hidden_size if is_last_layer else self.config_titans.mem_mlp_intermediate_size
-                
-                if current_dim <=0 or out_dim <=0:
-                    raise ValueError(f"Invalid MLP dimensions: current_dim={current_dim}, out_dim={out_dim}")
+            raise NotImplementedError("SurpriseMemoryMLP >2 layers requires nn.Sequential or more explicit layers.")
 
-                mlp_layers.append(nn.Linear(current_dim, out_dim))
-                
-                if not is_last_layer: 
-                    mlp_layers.append(nn.ReLU())
-                current_dim = out_dim
+        self._explicit_mlp_layers_and_params = []
+        if hasattr(self, 'fc1'): self._explicit_mlp_layers_and_params.append(self.fc1)
+        if hasattr(self, 'fc2'): self._explicit_mlp_layers_and_params.append(self.fc2)
+
+        for i, layer in enumerate(self._explicit_mlp_layers_and_params):
+            layer_prefix = f"fc{i+1}" # fc1, fc2
+            for name_suffix, param in layer.named_parameters():
+                param.requires_grad_(True) 
+                momentum_buffer_name = f"momentum_buffer_{layer_prefix}_{name_suffix}"
+                self.register_buffer(momentum_buffer_name, torch.zeros_like(param.data))
         
-        self.memory_mlp = nn.Sequential(*mlp_layers)
-        
-        for name, param in self.memory_mlp.named_parameters():
-            param.requires_grad_(True) 
-            momentum_buffer_name = f"momentum_buffer_{name.replace('.', '_')}"
-            self.register_buffer(momentum_buffer_name, torch.zeros_like(param.data))
-        
-        logger.info(f"Initialized SurpriseMemoryMLP (Layers: {self.config_titans.memory_mlp_num_layers}, "
-                    f"Intermediate: {self.config_titans.mem_mlp_intermediate_size if self.config_titans.memory_mlp_num_layers > 1 else 'N/A'}, "
+        for name, param in self.named_parameters():
+            if any(layer_name in name for layer_name in ['fc1', 'fc2']):
+                assert param.requires_grad, f"CRITICAL INIT ERROR: MLP param {name} does not require grad after init!"
+
+        logger.info(f"Initialized SurpriseMemoryMLP (Layers: {self.mlp_num_layers}, "
+                    f"Intermediate: {self.config_titans.mem_mlp_intermediate_size if self.mlp_num_layers > 1 else 'N/A'}, "
                     f"LR: {self.config_titans.memory_learning_rate}, Momentum: {self.config_titans.memory_momentum}, "
                     f"WD: {self.config_titans.memory_weight_decay})")
-        logger.debug(f"SurpriseMemoryMLP structure: {self.memory_mlp}")
+
+    def _manual_mlp_forward(self, x: torch.Tensor) -> torch.Tensor:
+        # This forward pass is used by both query (no_grad) and internal update (grad_enabled)
+        if self.mlp_num_layers == 1:
+            x = F.linear(x, self.fc1.weight, self.fc1.bias)
+        elif self.mlp_num_layers == 2:
+            x = F.linear(x, self.fc1.weight, self.fc1.bias)
+            x = self.relu1(x) # Use the nn.ReLU module
+            x = F.linear(x, self.fc2.weight, self.fc2.bias)
+        else:
+            raise NotImplementedError(f"Manual MLP forward for {self.mlp_num_layers} layers not implemented.")
+        return x
+
+    def _get_parameters_for_update(self) -> List[torch.nn.Parameter]:
+        params = []
+        if hasattr(self, 'fc1'): params.extend(list(self.fc1.parameters()))
+        if hasattr(self, 'fc2'): params.extend(list(self.fc2.parameters()))
+        return params
 
     def _get_associative_loss_and_param_gradients(self, k_t_batch: torch.Tensor, v_t_batch: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
-        assert not k_t_batch.requires_grad and not v_t_batch.requires_grad, \
-               "Input tensors (k_t_batch, v_t_batch) to _get_associative_loss_and_param_gradients should be detached."
+        assert not k_t_batch.requires_grad, "Input k_t_batch should be detached."
+        assert not v_t_batch.requires_grad, "Input v_t_batch should be detached."
         
-        mlp_param_dtype = next(self.memory_mlp.parameters()).dtype
-        mlp_param_device = next(self.memory_mlp.parameters()).device
+        mlp_params_for_update = self._get_parameters_for_update()
+        if not mlp_params_for_update:
+            logger.error("No MLP parameters found for update.")
+            return torch.tensor(0.0), []
+
+        mlp_param_dtype = mlp_params_for_update[0].dtype
+        mlp_param_device = mlp_params_for_update[0].device
         
         k_t_batch_casted = k_t_batch.to(dtype=mlp_param_dtype, device=mlp_param_device)
         v_t_batch_casted = v_t_batch.to(dtype=mlp_param_dtype, device=mlp_param_device)
 
-        original_mode = self.memory_mlp.training
-        self.memory_mlp.train() 
-        self.memory_mlp.zero_grad() # Ensure grads are cleared for MLP params
-
-        # CRITICAL FIX: Ensure gradient calculation for MLP's internal update
-        with torch.enable_grad(): 
-            v_t_pred_batch = self.memory_mlp(k_t_batch_casted)
-            # Log requires_grad status for debugging
-            # logger.debug(f"v_t_pred_batch.requires_grad: {v_t_pred_batch.requires_grad}")
-            # for name, p in self.memory_mlp.named_parameters():
-            #     logger.debug(f"MLP param {name}.requires_grad: {p.requires_grad}")
-
-            associative_loss = F.mse_loss(v_t_pred_batch, v_t_batch_casted)
-            
-            if associative_loss.requires_grad:
-                associative_loss.backward()
-                param_grads_cleaned = [param.grad.clone() if param.grad is not None else torch.zeros_like(param) 
-                                       for param in self.memory_mlp.parameters()]
-            else: 
-                # This warning was the problem. With torch.enable_grad(), this should not be hit
-                # if the MLP has trainable parameters.
-                logger.warning("Associative loss does not require grad. No gradients for MLP update. This is unexpected after the fix.")
-                param_grads_cleaned = [torch.zeros_like(param) for param in self.memory_mlp.parameters()]
-
-        self.memory_mlp.train(original_mode) 
+        original_layer_training_states = {layer: layer.training for layer in self._explicit_mlp_layers_and_params}
+        for layer in self._explicit_mlp_layers_and_params:
+            layer.train() 
         
-        return associative_loss.detach(), param_grads_cleaned
+        for param in mlp_params_for_update:
+            if param.grad is not None:
+                param.grad.zero_()
 
-    @torch.no_grad()
-    def update_parameters(self, param_gradients: List[torch.Tensor]):
-        lr = self.config_titans.memory_learning_rate
-        momentum_factor = self.config_titans.memory_momentum
-        weight_decay = self.config_titans.memory_weight_decay
+        is_grad_enabled_globally_before = torch.is_grad_enabled()
+        if not is_grad_enabled_globally_before:
+            torch.set_grad_enabled(True)
+        
+        param_grads_cleaned = []
+        associative_loss_val = torch.tensor(0.0, device=mlp_param_device) 
 
-        if self.config_titans.surprise_method == "associative_loss_grad":
-            total_grad_norm = 0.0
-            for grad in param_gradients:
-                if grad is not None:
-                    total_grad_norm += grad.norm().item() ** 2
-            total_grad_norm = total_grad_norm ** 0.5
-            logger.debug(f"SurpriseMemoryMLP update: Total grad norm (surprise proxy) = {total_grad_norm:.4f}")
-
-        idx = 0
-        for name, param in self.memory_mlp.named_parameters():
-            if idx >= len(param_gradients):
-                logger.error(f"Mismatch: More MLP parameters ({len(list(self.memory_mlp.parameters()))}) than gradients ({len(param_gradients)}). Param: {name}. Stopping update.")
-                break
+        try:
+            # Using torch.enable_grad() here as an explicit scope for autograd operations
+            with torch.enable_grad():
+                v_t_pred_batch = self._manual_mlp_forward(k_t_batch_casted) 
+                associative_loss = F.mse_loss(v_t_pred_batch, v_t_batch_casted)
             
-            grad = param_gradients[idx]
-            
-            momentum_buffer_name = f"momentum_buffer_{name.replace('.', '_')}"
-            current_momentum = getattr(self, momentum_buffer_name).to(param.device) 
+            associative_loss_val = associative_loss.detach() 
 
-            effective_grad = grad 
+            if v_t_pred_batch.requires_grad and associative_loss.requires_grad:
+                # Gradients are computed only if loss requires grad.
+                # The backward call should happen *outside* the enable_grad if enable_grad was only for forward.
+                # However, for self-contained update, backward also needs grad.
+                # If torch.set_grad_enabled(True) was called, this context might be redundant.
+                # Let's assume the outer set_grad_enabled is sufficient for backward too.
+                associative_loss.backward() 
+                param_grads_cleaned = [
+                    param.grad.clone() if param.grad is not None else torch.zeros_like(param)
+                    for param in mlp_params_for_update
+                ]
+            else:
+                any_param_requires_grad_check = any(p.requires_grad for p in mlp_params_for_update)
+                logger.warning(
+                    "_get_associative_loss_and_param_gradients: Associative loss or v_t_pred_batch does not require grad. "
+                    f"v_t_pred_batch.requires_grad: {v_t_pred_batch.requires_grad}. "
+                    f"associative_loss.requires_grad: {associative_loss.requires_grad}. "
+                    f"Any MLP param requires_grad: {any_param_requires_grad_check}."
+                )
+                param_grads_cleaned = [torch.zeros_like(param) for param in mlp_params_for_update]
+        
+        finally: 
+            if not is_grad_enabled_globally_before:
+                torch.set_grad_enabled(False) # Restore original global state
             
-            current_momentum.mul_(momentum_factor).add_(effective_grad, alpha=-lr) 
-            setattr(self, momentum_buffer_name, current_momentum)
+            for layer, original_state in original_layer_training_states.items():
+                layer.train(original_state) 
 
-            param.data.mul_(1.0 - weight_decay) 
-            param.data.add_(current_momentum)   
-            
-            idx += 1
+        return associative_loss_val, param_grads_cleaned
 
+    # Removed @torch.no_grad() from query
     def query(self, q_t_batch: torch.Tensor) -> torch.Tensor:
-        with torch.no_grad(): 
-            mlp_param_dtype = next(self.memory_mlp.parameters()).dtype
-            return self.memory_mlp(q_t_batch.to(mlp_param_dtype))
+        # This method is now called within a `with torch.no_grad():` block by the caller (MemoryComponent)
+        # So, operations here will not track gradients unless there's an inner override.
+        mlp_param_dtype = self._get_parameters_for_update()[0].dtype
+        return self._manual_mlp_forward(q_t_batch.to(mlp_param_dtype))
+
+
+    def update_parameters(self, param_gradients: List[torch.Tensor]):
+        # This method is already decorated with @torch.no_grad() by the caller (perform_memory_update_step)
+        # or implicitly no_grad if called from a no_grad context.
+        # However, for safety and clarity if called elsewhere, ensure no_grad for manual updates.
+        with torch.no_grad():
+            lr = self.config_titans.memory_learning_rate
+            momentum_factor = self.config_titans.memory_momentum
+            weight_decay = self.config_titans.memory_weight_decay
+
+            mlp_params_for_update = self._get_parameters_for_update()
+
+            if len(param_gradients) != len(mlp_params_for_update):
+                logger.error(f"Gradient list length ({len(param_gradients)}) does not match number of MLP parameters ({len(mlp_params_for_update)}). Skipping update.")
+                return
+
+            param_iter_idx = 0
+            for layer_idx, layer in enumerate(self._explicit_mlp_layers_and_params):
+                layer_prefix = f"fc{layer_idx+1}"
+                for name_suffix, param in layer.named_parameters():
+                    if param_iter_idx >= len(param_gradients):
+                        logger.error("Ran out of gradients to apply. Parameter list and gradient list might be mismatched.")
+                        return 
+                    grad = param_gradients[param_iter_idx]
+                    param_iter_idx += 1
+                    
+                    if grad is None: 
+                        logger.error(f"Gradient for param (layer {layer_idx}, {name_suffix}) is None. Skipping update.")
+                        continue
+                    
+                    momentum_buffer_name = f"momentum_buffer_{layer_prefix}_{name_suffix}"
+                    current_momentum = getattr(self, momentum_buffer_name).to(param.device) 
+                    
+                    current_momentum.mul_(momentum_factor).add_(grad, alpha=-lr) 
+                    setattr(self, momentum_buffer_name, current_momentum)
+
+                    param.data.mul_(1.0 - weight_decay) 
+                    param.data.add_(current_momentum)   
 
     def perform_memory_update_step(self, k_for_update: torch.Tensor, v_for_update: torch.Tensor):
         if k_for_update.numel() == 0 or v_for_update.numel() == 0:
-            logger.debug(f"SurpriseMemoryMLP update skipped: empty k_for_update ({k_for_update.shape}) or v_for_update ({v_for_update.shape})")
             return 
         
-        mlp_device = next(self.memory_mlp.parameters()).device
+        mlp_device = self._get_parameters_for_update()[0].device
         k_for_update = k_for_update.to(mlp_device)
         v_for_update = v_for_update.to(mlp_device)
             
+        # _get_associative_loss_and_param_gradients handles its own grad context internally
         associative_loss, param_grads = self._get_associative_loss_and_param_gradients(k_for_update, v_for_update)
         
-        if param_grads: 
-            self.update_parameters(param_grads)
+        if param_grads and any(p is not None and p.numel() > 0 for p in param_grads): 
+            self.update_parameters(param_grads) # This will be no_grad due to its own decorator/usage
         
-        logger.debug(f"SurpriseMemoryMLP associative loss during update: {associative_loss.item():.4f}")
-
 class PersistentMemory(nn.Module):
     def __init__(self, config: Any):
         super().__init__()
@@ -274,8 +319,7 @@ class PersistentMemory(nn.Module):
         self.layer_norm_hs = nn.LayerNorm(self.hidden_size, eps=layer_norm_eps) 
         self.dropout = nn.Dropout(config.hidden_dropout_prob) 
 
-        self.use_flash_attention = getattr(config.hardware, "use_flash_attention", True) and \
-                                   hasattr(torch.nn.functional, "scaled_dot_product_attention")
+        self.use_flash_attention = getattr(config.hardware, "use_flash_attention", True) and hasattr(torch.nn.functional, "scaled_dot_product_attention")
         if not self.use_flash_attention:
              self.manual_attn_dropout = nn.Dropout(self.attn_dropout_prob)
 
@@ -369,13 +413,14 @@ class MemoryComponent(nn.Module):
             q_for_LTM_query_projected = self.q_projection_for_surprise_query(current_processing_state)
             
             if q_for_LTM_query_projected.numel() > 0:
-                retrieved_LTM = self.surprise_memory_mlp.query(q_for_LTM_query_projected.view(-1, self.config.hidden_size))
+                # Ensure query is no_grad if called from eval context and MLP is not updating,
+                # or if query itself should always be no_grad.
+                # The method itself is not decorated, so caller controls context.
+                with torch.no_grad(): # Explicitly no_grad for query part
+                    retrieved_LTM = self.surprise_memory_mlp.query(q_for_LTM_query_projected.view(-1, self.config.hidden_size))
                 retrieved_LTM_output = retrieved_LTM.view_as(current_processing_state)
-            else:
-                logger.debug("SurpriseMemoryMLP query skipped: empty q_for_LTM_query_projected.")
             
-            should_update_memory_mlp = (not is_eval_or_no_grad_context) or \
-                                      (is_eval_or_no_grad_context and self.config.titans.active_update_during_eval)
+            should_update_memory_mlp = (not is_eval_or_no_grad_context) or (is_eval_or_no_grad_context and self.config.titans.active_update_during_eval)
 
             if should_update_memory_mlp:
                 k_for_mlp_update_projected = self.k_projection_for_surprise_update(hidden_states) 
@@ -386,8 +431,6 @@ class MemoryComponent(nn.Module):
                 
                 if k_flat_detached.numel() > 0 and v_flat_detached.numel() > 0:
                     self.surprise_memory_mlp.perform_memory_update_step(k_flat_detached, v_flat_detached)
-                else:
-                    logger.debug("Skipping SurpriseMemoryMLP update due to empty k_flat_detached or v_flat_detached.")
 
         current_processing_state = current_processing_state + retrieved_LTM_output
 
