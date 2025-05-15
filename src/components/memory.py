@@ -157,52 +157,31 @@ class SurpriseMemoryMLP(nn.Module):
         k_t_batch_32 = k_t_batch.to(dtype=torch.float32, device=mlp_param_device)
         v_t_batch_32 = v_t_batch.to(dtype=torch.float32, device=mlp_param_device)
 
-        # Create fresh tensors that require grad, but don't attach to existing graph
-        k_t_batch_train = k_t_batch_32.clone().detach().requires_grad_(True)
-        v_t_batch_train = v_t_batch_32.clone().detach().requires_grad_(True)
-
+        # Zero gradients from previous iterations
+        self.memory_mlp.zero_grad()
+        
         # Ensure MLP is in train mode and collecting gradients
         self.memory_mlp.train()
         
-        # Forward pass should always enable gradients
-        with torch.set_grad_enabled(True):
-            # Get MLP prediction
-            v_t_pred_batch = self.memory_mlp(k_t_batch_train)
-            
-            # Compute MSE loss
-            associative_loss = F.mse_loss(v_t_pred_batch, v_t_batch_train)
-
-            # Get trainable parameters
-            trainable_params = [p for p in self.memory_mlp.parameters() if p.requires_grad]
-            if not trainable_params:
-                logger.warning("SurpriseMemoryMLP has no trainable parameters. Cannot compute gradients.")
-                self.memory_mlp.eval()
-                return associative_loss.detach(), []
-
-            # Verify loss requires grad
-            if not associative_loss.requires_grad:
-                logger.warning("Associative loss does not require gradients. This should not happen with proper setup.")
-                param_grads_cleaned = [torch.zeros_like(p, device=p.device) for p in trainable_params]
-            else:
-                # Compute gradients w.r.t MLP parameters
-                param_grads = torch.autograd.grad(
-                    associative_loss,
-                    trainable_params,
-                    retain_graph=False,
-                    allow_unused=True,
-                    create_graph=False
-                )
-                
-                # Clean up any None gradients (should not happen, but be safe)
-                param_grads_cleaned = []
-                for i, grad in enumerate(param_grads):
-                    if grad is None:
-                        logger.warning(f"Gradient for param of shape {trainable_params[i].shape} is None. Using zero grad.")
-                        param_grads_cleaned.append(torch.zeros_like(trainable_params[i], device=trainable_params[i].device))
-                    else:
-                        # Ensure gradient is on the right device and detached
-                        param_grads_cleaned.append(grad.detach())
-
+        # Forward pass with gradient tracking
+        # The key: only enable gradients if not in torch.no_grad context
+        if torch.is_grad_enabled():
+            v_t_pred_batch = self.memory_mlp(k_t_batch_32)
+            associative_loss = F.mse_loss(v_t_pred_batch, v_t_batch_32)
+            associative_loss.backward()
+            param_grads_cleaned = []
+            for param in self.memory_mlp.parameters():
+                if param.grad is None:
+                    logger.warning(f"Gradient for param of shape {param.shape} is None. Using zero grad.")
+                    param_grads_cleaned.append(torch.zeros_like(param))
+                else:
+                    param_grads_cleaned.append(param.grad.detach().clone())
+        else:
+            # If called in torch.no_grad context, skip backward and return zero grads
+            v_t_pred_batch = self.memory_mlp(k_t_batch_32)
+            associative_loss = F.mse_loss(v_t_pred_batch, v_t_batch_32)
+            param_grads_cleaned = [torch.zeros_like(param) for param in self.memory_mlp.parameters()]
+        
         # Set back to eval mode
         self.memory_mlp.eval()
         
@@ -374,6 +353,12 @@ class MemoryComponent(nn.Module):
             self.surprise_memory_mlp = SurpriseMemoryMLP(config, config.hidden_size)
             self.k_projection_for_surprise_update = nn.Linear(config.hidden_size, config.hidden_size)
             self.v_projection_for_surprise_update = nn.Linear(config.hidden_size, config.hidden_size)
+            # These projections are only used for memory updates and shouldn't be trained by main model gradients
+            for param in self.k_projection_for_surprise_update.parameters():
+                param.requires_grad_(False)
+            for param in self.v_projection_for_surprise_update.parameters():
+                param.requires_grad_(False)
+            # Query projection is used in the model's forward pass and should allow gradients
             self.q_projection_for_surprise_query = nn.Linear(config.hidden_size, config.hidden_size)
 
         self.persistent_memory: Optional[PersistentMemory] = None
@@ -410,16 +395,17 @@ class MemoryComponent(nn.Module):
                                       (is_eval_or_no_grad_context and self.config.titans.active_update_during_eval)
 
             if should_update_memory_mlp:
-                # We must detach here to prevent gradients flowing back to main model
-                with torch.set_grad_enabled(True):  # Explicitly enable grads for the update step
-                    k_for_update_projected = self.k_projection_for_surprise_update(hidden_states.detach())
-                    v_for_update_projected = self.v_projection_for_surprise_update(hidden_states.detach())
+                # Double ensure no gradients with both disabled grad tracking and detach
+                with torch.no_grad():
+                    detached_states = hidden_states.detach()
+                    k_for_update_projected = self.k_projection_for_surprise_update(detached_states).detach()
+                    v_for_update_projected = self.v_projection_for_surprise_update(detached_states).detach()
                     
                     k_flat = k_for_update_projected.view(-1, self.config.hidden_size)
                     v_flat = v_for_update_projected.view(-1, self.config.hidden_size)
                     
                     if k_flat.numel() > 0 and v_flat.numel() > 0:
-                        # Memory update should handle its own gradient context internally
+                        # Memory update step will handle its own gradient context
                         self.surprise_memory_mlp.perform_memory_update_step(k_flat, v_flat)
                     else:
                         logger.debug("Skipping SurpriseMemoryMLP update due to empty k_flat or v_flat.")

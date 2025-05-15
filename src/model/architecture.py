@@ -98,7 +98,9 @@ class UnifiedModel(nn.Module):
                 logger.info("Tying weights between token embedding and LM head.")
                 self.lm_head.weight = self.token_embedding.weight
             else:
-                logger.warning("Cannot tie LM head weights: vocab_size or hidden_size is 0.")        logger.info("Applying weight initialization...")
+                logger.warning("Cannot tie LM head weights: vocab_size or hidden_size is 0.")
+        
+        logger.info("Applying weight initialization...")
         self.apply(self._init_weights)
         logger.info("UnifiedModel initialization complete.")
 
