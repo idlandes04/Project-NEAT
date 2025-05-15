@@ -218,6 +218,12 @@ class SurpriseMemoryMLP(nn.Module):
             return self.memory_mlp(q_t_batch.to(mlp_param_dtype))
 
     def perform_memory_update_step(self, k_for_update: torch.Tensor, v_for_update: torch.Tensor):
+        # Debug: print shapes and check for empties
+        if k_for_update.numel() == 0 or v_for_update.numel() == 0:
+            logger.warning(f"SurpriseMemoryMLP update skipped: empty k_for_update ({k_for_update.shape}) or v_for_update ({v_for_update.shape})")
+            return torch.tensor(0.0, device=k_for_update.device)
+        if k_for_update.shape != v_for_update.shape:
+            logger.warning(f"SurpriseMemoryMLP update: shape mismatch k_for_update {k_for_update.shape} vs v_for_update {v_for_update.shape}")
         associative_loss, param_grads = self._get_associative_loss_and_param_gradients(k_for_update, v_for_update)
         if param_grads and any(p is not None for p in param_grads): # Check if any non-None grads
             self.update_parameters(param_grads)
@@ -349,6 +355,9 @@ class MemoryComponent(nn.Module):
         if self.surprise_memory_mlp is not None:
             q_for_LTM_query_projected = self.q_projection_for_surprise_query(current_processing_state)
             
+            # Debug: print shape
+            if q_for_LTM_query_projected.numel() == 0:
+                logger.warning(f"SurpriseMemoryMLP query skipped: empty q_for_LTM_query_projected ({q_for_LTM_query_projected.shape})")
             retrieved_LTM = self.surprise_memory_mlp.query(q_for_LTM_query_projected.view(-1, self.config.hidden_size))
             retrieved_LTM_output = retrieved_LTM.view_as(current_processing_state)
 
@@ -356,15 +365,14 @@ class MemoryComponent(nn.Module):
                                        (is_eval_or_no_grad_context and self.config.titans.active_update_during_eval)
 
             if should_update_memory_mlp:
-                # For updating M_{t-1} to M_t, use k/v derived from original hidden_states
-                # These projections are part of the MemoryComponent, their grads flow to main model optimizer.
-                # The MLP update itself is separate.
                 k_for_update_projected = self.k_projection_for_surprise_update(hidden_states.detach())
                 v_for_update_projected = self.v_projection_for_surprise_update(hidden_states.detach())
                 
                 k_flat = k_for_update_projected.view(-1, self.config.hidden_size)
                 v_flat = v_for_update_projected.view(-1, self.config.hidden_size)
                 
+                # Debug: print shapes
+                logger.debug(f"SurpriseMemoryMLP update: k_flat shape {k_flat.shape}, v_flat shape {v_flat.shape}")
                 if k_flat.numel() > 0 and v_flat.numel() > 0 :
                      self.surprise_memory_mlp.perform_memory_update_step(k_flat, v_flat)
                 else:
