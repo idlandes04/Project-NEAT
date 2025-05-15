@@ -1,0 +1,126 @@
+# --- START OF FILE configs/config_titans_mlp_test.yaml ---
+# Configuration for testing the refactored Titans Memory (MLP-based).
+# Based on the baseline transformer, with Titans enabled.
+
+# Core Model Parameters (matches baseline_transformer.yaml)
+hidden_size: 1024
+num_layers: 16
+num_attention_heads: 8
+intermediate_size: 4096 # 4 * hidden_size
+hidden_dropout_prob: 0.1
+attention_probs_dropout_prob: 0.1
+max_position_embeddings: 1024
+vocab_size: 50257 # Default for GPT2, train.py will override
+layer_norm_eps: 1.0e-5
+
+# Tokenizer
+tokenizer_name: "gpt2"
+
+# Component Activation Flags
+use_blt_processor: false
+use_titans_memory: true # ENABLED
+use_transformer2_adaptation: false
+use_mvot_processor: false
+
+# Nested Component Configurations
+blt: # Defaults are fine as it's disabled
+  entropy_threshold: 0.5
+  min_patch_size: 8
+  max_patch_size: 128
+  num_local_layers: 1
+  num_latent_layers: 2
+  byte_lm:
+    hidden_size: 512
+    num_layers: 12
+    num_attention_heads: 4
+    intermediate_size: 1024
+    byte_lm_dropout: 0.1
+    byte_lm_model_type: "transformer"
+    byte_lm_max_position: 512
+  blt_checkpoint_path: null
+
+titans:
+  use_window_attention: true
+  use_surprise_based: true # This will now use SurpriseMemoryMLP
+  use_persistent: true
+  window_size: 512       # For WindowAttentionMemory
+  num_persistent_vectors: 64
+  persistent_init_scale: 0.02
+  integration_layers: [0, 8, 15] # Adjusted for 16 layers
+
+  # --- Parameters for the new SurpriseMemoryMLP ---
+  memory_mlp_num_layers: 2       # e.g., A 2-layer MLP (Input -> Hidden -> Output)
+  mem_mlp_intermediate_size: 512 # Size of the MLP's hidden layer (if num_layers > 1)
+                                 # Input/Output dim of MLP is model's hidden_size (1024)
+  memory_learning_rate: 0.001    # Theta: Learning rate for memory_mlp parameter updates
+  memory_momentum: 0.9           # Eta: Momentum for memory_mlp parameter updates
+  memory_weight_decay: 0.0001    # Alpha: Weight decay for memory_mlp parameters
+  active_update_during_eval: true # CRITICAL: Enable test-time learning updates for memory_mlp
+
+  # --- Fields from old SurpriseMemory (less relevant for MLP, but keep for now if MemoryComponent uses them) ---
+  memory_size: 4096                 # Not directly used by MLP, but MemoryComponent might reference
+  surprise_threshold: 0.1           # May be re-purposed for deciding *when* to update MLP, or based on associative loss value
+  base_decay_rate: 0.99             # Not directly used by MLP's weight decay
+  importance_half_life: 1000        # Not used by MLP
+  memory_prune_threshold: 0.01      # Not used by MLP
+  surprise_method: "associative_loss_grad" # Confirms MLP update logic
+
+transformer2: # Defaults are fine as it's disabled
+  num_tasks: 8
+  task_embedding_dim: 64
+  num_singular_values: 128
+  expert_init_scale: 0.01
+  adapt_attention: false
+  adapt_ffn: false
+  adapt_embeddings: false
+  adapt_lm_head: false
+  layer_specific: false
+  use_randomized_svd: true
+  svd_precision: "fixed"
+  svd_n_oversamples: 10
+  svd_n_iter: 5
+  enable_svd_caching: true
+  svd_cache_dir: ".svd_cache_titans_test"
+
+mvot: # Defaults are fine as it's disabled
+  codebook_size: 8192
+  embedding_dim: 1024 # Should match hidden_size if used
+  discrepancy_loss_weight: 0.1
+  codebook_model_type: "vqvae"
+  codebook_path: null
+  use_pretrained_codebook: false
+
+# Data, Training, Hardware Configs (same as baseline_transformer.yaml)
+data:
+  train_data_dir: "data/processed_wikitext103/wikitext_wikitext-103-raw-v1_train"
+  eval_data_dir: "data/processed_wikitext103/wikitext_wikitext-103-raw-v1_eval"
+  train_file_pattern: "*.txt"
+  eval_file_pattern: "*.txt"
+  block_size: 512
+
+training:
+  learning_rate: 3.0e-4
+  weight_decay: 0.1
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 1.0e-8
+  max_grad_norm: 1.0
+  max_steps: 3000 # Same as baseline for comparison
+  warmup_steps: 600
+  batch_size: 4
+  gradient_accumulation_steps: 2
+  logging_steps: 100
+  eval_steps: 300
+  eval_max_batches: 5 # Keep short for dev
+  save_steps: 300
+  output_dir: "output/neat_titans_mlp_test_wikitext103" # New output dir
+  resume_from: null
+
+hardware:
+  mixed_precision: true
+  gradient_checkpointing: true
+  force_cpu: false
+  num_workers: 8
+  use_flash_attention: true
+  pin_memory: true
+# --- END OF FILE configs/config_titans_mlp_test.yaml ---

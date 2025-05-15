@@ -8,7 +8,7 @@ are resolved and provides loading/saving capabilities.
 """
 
 import dataclasses
-from typing import Dict, List, Optional, Union, Any, Type
+from typing import Dict, List, Optional, Union, Any, Type, get_origin, get_args
 import json
 import yaml # Requires PyYAML installation: pip install pyyaml
 import logging
@@ -29,24 +29,25 @@ def _init_from_dict(cls: Type[Any], data: Dict[str, Any]) -> Any:
     if not dataclasses.is_dataclass(cls):
         raise TypeError(f"{cls} is not a dataclass type.")
 
-    # Get field information including defaults
     fields_info = {f.name: f for f in dataclasses.fields(cls)}
     init_args = {}
 
     for name, field_info in fields_info.items():
-        field_type = field_info.type
+        field_type_hint = field_info.type
         default_value = field_info.default_factory() if field_info.default_factory is not dataclasses.MISSING else field_info.default
         
-        origin_type = getattr(field_type, "__origin__", None)
+        origin_type_hint = get_origin(field_type_hint) # e.g., list, dict, Union, Optional
+        type_args_hint = get_args(field_type_hint)   # e.g., (int,) for List[int], (int, str) for Union[int, str]
+
         is_nested_dataclass = False
         nested_type = None
 
-        if dataclasses.is_dataclass(field_type):
+        # Determine if the field is a dataclass or Optional[dataclass]
+        if dataclasses.is_dataclass(field_type_hint):
             is_nested_dataclass = True
-            nested_type = field_type
-        elif origin_type is Union: # Handles Optional[DataclassType]
-             union_args = getattr(field_type, "__args__", ())
-             for arg in union_args:
+            nested_type = field_type_hint
+        elif origin_type_hint is Union: # Handles Optional[DataclassType] and other Unions
+             for arg in type_args_hint:
                   if dataclasses.is_dataclass(arg):
                        is_nested_dataclass = True
                        nested_type = arg
@@ -56,48 +57,65 @@ def _init_from_dict(cls: Type[Any], data: Dict[str, Any]) -> Any:
             value_from_dict = data[name]
             if is_nested_dataclass and isinstance(value_from_dict, dict) and nested_type is not None:
                 init_args[name] = _init_from_dict(nested_type, value_from_dict)
-            elif isinstance(value_from_dict, dict) and not is_nested_dataclass and default_value is not dataclasses.MISSING:
-                 logger.warning(f"Received dict for non-dataclass field '{name}' of type {field_type}. Using default value: {default_value}")
-                 init_args[name] = default_value
-            # Check for exact type match or if value is an instance of field_type
-            # This handles cases like int for float, or subclasses.
-            # Also handle Optional[type] where value might be None
-            elif (origin_type is Union and type(None) in getattr(field_type, "__args__", ()) and value_from_dict is None) or \
-                 isinstance(value_from_dict, field_type): # This was the original check, needs to be more flexible for basic types
-                 init_args[name] = value_from_dict
             else:
-                 try: # Attempt basic type coercion for simple types
-                      # Check if field_type is a basic type that supports direct coercion
-                      # and value_from_dict is not already an instance of field_type (or a subclass)
-                      can_coerce = False
-                      if origin_type is Union: # Handle Optional[basic_type]
-                           # Check if any of the union args is a basic type we can coerce to
-                           for union_arg_type in getattr(field_type, "__args__", ()):
-                                if union_arg_type in [int, float, str, bool] and not isinstance(value_from_dict, union_arg_type):
-                                     field_type_to_coerce_to = union_arg_type
-                                     can_coerce = True
-                                     break
-                      elif field_type in [int, float, str, bool] and not isinstance(value_from_dict, field_type):
-                           field_type_to_coerce_to = field_type
-                           can_coerce = True
-                      
-                      if can_coerce:
-                           init_args[name] = field_type_to_coerce_to(value_from_dict)
-                      else: # Cannot coerce complex types or already correct type, or not a basic type
-                           # If it's not an instance and not coercible, it's a type mismatch
-                           if not isinstance(value_from_dict, field_type) and not (origin_type is Union and any(isinstance(value_from_dict, t) for t in getattr(field_type, "__args__", ()))):
-                                raise TypeError("Type mismatch, cannot coerce.")
-                           init_args[name] = value_from_dict # Already correct type or handled by Union check
+                # --- More robust type checking ---
+                type_matches = False
+                is_optional_and_value_is_none = (origin_type_hint is Union and type(None) in type_args_hint and value_from_dict is None)
 
-                 except (TypeError, ValueError):
-                      logger.warning(f"Type mismatch or coercion failed for field '{name}'. Expected {field_type}, got {type(value_from_dict)}. Using default value: {default_value}")
-                      if default_value is not dataclasses.MISSING:
-                           init_args[name] = default_value
-                      # If no default, this field will be missing, and class init might fail if it's required.
+                if is_optional_and_value_is_none:
+                    type_matches = True
+                elif origin_type_hint is Union:
+                    # For Union, check if value_from_dict is an instance of ANY of the types in the Union
+                    for union_arg_type in type_args_hint:
+                        if union_arg_type is type(None): continue # Already handled by is_optional_and_value_is_none
+                        actual_type_to_check = get_origin(union_arg_type) or union_arg_type
+                        if actual_type_to_check is List: actual_type_to_check = list
+                        elif actual_type_to_check is Dict: actual_type_to_check = dict
+                        # Add other common generics if needed
+                        if isinstance(value_from_dict, actual_type_to_check):
+                            type_matches = True
+                            break
+                else:
+                    # For non-Union types (or simple Optional[T] where T is not None)
+                    actual_type_to_check = origin_type_hint or field_type_hint
+                    if actual_type_to_check is List: actual_type_to_check = list
+                    elif actual_type_to_check is Dict: actual_type_to_check = dict
+                    # Add other common generics
+                    if isinstance(value_from_dict, actual_type_to_check):
+                        type_matches = True
+                
+                if type_matches:
+                    init_args[name] = value_from_dict
+                else:
+                    # Attempt coercion for basic types if direct isinstance fails
+                    coerced = False
+                    primary_type_for_coercion = field_type_hint
+                    if origin_type_hint is Union:
+                        non_none_types = [t for t in type_args_hint if t is not type(None)]
+                        if len(non_none_types) == 1: # If it's Optional[basic_type]
+                            primary_type_for_coercion = non_none_types[0]
+                        # If it's Union[typeA, typeB], coercion is ambiguous, prefer not to coerce
+                        # unless we add more sophisticated logic or expect specific coercion rules.
+
+                    if primary_type_for_coercion in [int, float, str, bool]:
+                        try:
+                            init_args[name] = primary_type_for_coercion(value_from_dict)
+                            coerced = True
+                            logger.debug(f"Coerced field '{name}' from {type(value_from_dict)} to {primary_type_for_coercion} with value '{init_args[name]}'.")
+                        except (ValueError, TypeError):
+                            pass # Coercion failed
+                    
+                    if not coerced:
+                        logger.warning(
+                            f"Type mismatch for field '{name}'. Expected {field_type_hint}, "
+                            f"got {type(value_from_dict)} with value '{str(value_from_dict)[:100]}'. "
+                            f"Using default value: {default_value}"
+                        )
+                        if default_value is not dataclasses.MISSING:
+                            init_args[name] = default_value
+                        # If no default, dataclass constructor will raise error if required.
         elif default_value is not dataclasses.MISSING:
             init_args[name] = default_value
-        # If key not in data and no default, it's a required field missing from dict.
-        # Dataclass constructor will raise TypeError if a required field without default is missing.
 
     try:
         return cls(**init_args)
@@ -112,25 +130,23 @@ class TitansConfig:
     use_surprise_based: bool = True
     use_persistent: bool = True
     window_size: int = 512
-    memory_size: int = 4096 # Original meaning: size of activation buffer. Now less relevant if MLP.
-    surprise_threshold: float = 0.5 # Original meaning. May need re-evaluation for MLP context.
+    memory_size: int = 4096 
+    surprise_threshold: float = 0.5 
     num_persistent_vectors: int = 64
     persistent_init_scale: float = 0.02
-    base_decay_rate: float = 0.99 # Original meaning. Less relevant for MLP weight decay.
-    importance_half_life: int = 1000 # Original meaning. Less relevant for MLP.
-    memory_prune_threshold: float = 0.01 # Original meaning. Less relevant for MLP.
-    surprise_method: str = "associative_loss_grad" # Changed from "gradient_norm" to be more specific to MLP params
+    base_decay_rate: float = 0.99 
+    importance_half_life: int = 1000 
+    memory_prune_threshold: float = 0.01 
+    surprise_method: str = "associative_loss_grad" 
 
-    integration_layers: List[int] = dataclasses.field(default_factory=lambda: [0, 12, 23]) # Default for 24 layers
+    integration_layers: List[int] = dataclasses.field(default_factory=lambda: [0, 12, 23])
 
-    # --- New fields for MLP-based SurpriseMemory ---
-    memory_mlp_num_layers: int = 2 # Number of layers in the memory MLP (e.g., 1 for linear, 2 for MLP)
-    # Input/Output dim of memory_mlp will be config.hidden_size
-    mem_mlp_intermediate_size: int = 1024 # Hidden size of the memory_mlp's intermediate layer if num_layers > 1
-    memory_learning_rate: float = 0.01    # Theta in paper, for updating memory_mlp params
-    memory_momentum: float = 0.9          # Eta in paper, for memory_mlp param updates
-    memory_weight_decay: float = 0.001    # Alpha in paper, for memory_mlp param updates (weight decay)
-    active_update_during_eval: bool = True # Whether memory_mlp parameters are updated during evaluation
+    memory_mlp_num_layers: int = 2 
+    mem_mlp_intermediate_size: int = 1024 
+    memory_learning_rate: float = 0.01    
+    memory_momentum: float = 0.9          
+    memory_weight_decay: float = 0.001    
+    active_update_during_eval: bool = True 
 
 @dataclasses.dataclass
 class Transformer2Config:
@@ -145,7 +161,7 @@ class Transformer2Config:
     adapt_lm_head: bool = False
     layer_specific: bool = False
     use_randomized_svd: bool = True
-    svd_precision: str = "fixed"
+    svd_precision: str = "fixed" 
     svd_n_oversamples: int = 10
     svd_n_iter: int = 5
     enable_svd_caching: bool = True
@@ -155,9 +171,9 @@ class Transformer2Config:
 class MVoTConfig:
     """Configuration for the MVoT token processor."""
     codebook_size: int = 8192
-    embedding_dim: int = 768
+    embedding_dim: int = 768 
     discrepancy_loss_weight: float = 0.1
-    codebook_model_type: str = "vqvae"
+    codebook_model_type: str = "vqvae" 
     codebook_path: Optional[str] = None
     use_pretrained_codebook: bool = False
 
@@ -167,9 +183,9 @@ class ByteLMConfig:
     hidden_size: int = 256
     num_layers: int = 4
     num_attention_heads: int = 4
-    intermediate_size: int = 1024
+    intermediate_size: int = 1024 
     byte_lm_dropout: float = 0.1
-    byte_lm_model_type: str = "transformer"
+    byte_lm_model_type: str = "transformer" 
     byte_lm_max_position: int = 512
 
 @dataclasses.dataclass
@@ -181,7 +197,7 @@ class BLTConfig:
     num_local_layers: int = 1
     num_latent_layers: int = 2
     byte_lm: ByteLMConfig = dataclasses.field(default_factory=ByteLMConfig)
-    blt_checkpoint_path: Optional[str] = None
+    blt_checkpoint_path: Optional[str] = None 
 
 @dataclasses.dataclass
 class DataConfig:
@@ -190,7 +206,7 @@ class DataConfig:
     eval_data_dir: Optional[str] = None
     train_file_pattern: str = "*.txt"
     eval_file_pattern: str = "*.txt"
-    block_size: int = 4096
+    block_size: int = 4096 
 
 @dataclasses.dataclass
 class HardwareConfig:
@@ -227,18 +243,17 @@ class TrainingConfig:
 @dataclasses.dataclass
 class ModelConfig:
     """Main configuration aggregating all settings."""
-    # Core Model Parameters
     hidden_size: int = 2048
     num_layers: int = 24
     num_attention_heads: int = 16
-    intermediate_size: int = 8192
+    intermediate_size: int = 8192 
     hidden_dropout_prob: float = 0.1
     attention_probs_dropout_prob: float = 0.1
     max_position_embeddings: int = 4096
-    vocab_size: int = 32000
+    vocab_size: int = 32000 
     layer_norm_eps: float = 1.0e-5
 
-    tokenizer_name: Optional[str] = None
+    tokenizer_name: Optional[str] = None 
 
     use_blt_processor: bool = False
     use_titans_memory: bool = True
@@ -260,23 +275,22 @@ class ModelConfig:
     @classmethod
     def from_dict(cls: Type['ModelConfig'], config_dict: Dict[str, Any]) -> 'ModelConfig':
         instance = _init_from_dict(cls, config_dict)
-        instance = resolve_config(instance) # Resolve after initial load
+        instance = resolve_config(instance) 
         return instance
 
     def save(self, path: str):
         config_dict = self.to_dict()
         try:
-            # Ensure directory exists, especially for nested paths like in tests
             dir_name = os.path.dirname(path)
-            if dir_name: # Only create if dirname is not empty (e.g. not saving in current dir)
+            if dir_name: 
                 os.makedirs(dir_name, exist_ok=True)
 
             if path.endswith((".yaml", ".yml")):
                 with open(path, 'w', encoding='utf-8') as f:
                     yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
                 logger.info(f"Configuration saved to YAML: {path}")
-            else: # Default to JSON
-                if not path.endswith(".json"): # Ensure .json extension if not yaml
+            else: 
+                if not path.endswith(".json"):
                      base, _ = os.path.splitext(path)
                      path = base + ".json"
                 with open(path, 'w', encoding='utf-8') as f:
@@ -286,7 +300,7 @@ class ModelConfig:
             logger.error(f"Failed to save configuration to {path}: {e}", exc_info=True)
 
 def get_default_config() -> ModelConfig:
-    return resolve_config(ModelConfig()) # Resolve on default creation
+    return resolve_config(ModelConfig())
 
 def load_config(path: str) -> Optional[ModelConfig]:
     if not os.path.exists(path):
@@ -301,10 +315,10 @@ def load_config(path: str) -> Optional[ModelConfig]:
             else:
                 logger.error(f"Unsupported config file format: {path}. Use .json or .yaml")
                 return None
-        if config_dict is None: # Check if file was empty or invalid YAML/JSON
+        if config_dict is None:
              logger.error(f"Configuration file is empty or invalid: {path}")
              return None
-        config = ModelConfig.from_dict(config_dict) # from_dict now calls resolve_config
+        config = ModelConfig.from_dict(config_dict)
         logger.info(f"Configuration loaded from: {path}")
         return config
     except Exception as e:
@@ -316,54 +330,58 @@ def resolve_config(config: ModelConfig) -> ModelConfig:
     if config.hidden_size % config.num_attention_heads != 0:
         raise ValueError(f"hidden_size ({config.hidden_size}) must be divisible by num_attention_heads ({config.num_attention_heads}).")
     if config.data.block_size > config.max_position_embeddings:
-        logger.warning(f"data.block_size ({config.data.block_size}) > max_position_embeddings ({config.max_position_embeddings}). Adjusting block_size.")
+        logger.warning(f"data.block_size ({config.data.block_size}) > max_position_embeddings ({config.max_position_embeddings}). Adjusting block_size to {config.max_position_embeddings}.")
         config.data.block_size = config.max_position_embeddings
     
     if config.use_titans_memory:
-        if config.titans.window_size > config.max_position_embeddings:
-            logger.warning(f"Titans window_size ({config.titans.window_size}) > max_position_embeddings. Adjusting window_size.")
+        if config.titans.window_size > config.max_position_embeddings: 
+            logger.warning(f"Titans window_size ({config.titans.window_size}) > max_position_embeddings. Adjusting window_size to {config.max_position_embeddings}.")
             config.titans.window_size = config.max_position_embeddings
         
-        default_integration_layers = [0, config.num_layers // 2, config.num_layers -1 if config.num_layers > 0 else 0]
-        if config.titans.integration_layers == [0, 12, 23] and config.num_layers != 24: # Check against old default
-             config.titans.integration_layers = default_integration_layers
-             logger.info(f"Adjusted Titans integration_layers to {config.titans.integration_layers} for num_layers={config.num_layers}")
+        old_default_num_layers_for_integration = 24 
+        if config.titans.integration_layers == [0, old_default_num_layers_for_integration // 2, old_default_num_layers_for_integration - 1] and \
+           config.num_layers != old_default_num_layers_for_integration:
+            new_default_integration_layers = [0, config.num_layers // 2, config.num_layers -1 if config.num_layers > 0 else 0]
+            config.titans.integration_layers = new_default_integration_layers
+            logger.info(f"Adjusted Titans integration_layers to {config.titans.integration_layers} for num_layers={config.num_layers}")
         
         if config.titans.memory_mlp_num_layers <= 0:
-             logger.warning(f"Titans memory_mlp_num_layers ({config.titans.memory_mlp_num_layers}) is not positive. Setting to 1.")
+             logger.warning(f"Titans memory_mlp_num_layers ({config.titans.memory_mlp_num_layers}) is not positive. Setting to 1 (Linear layer).")
              config.titans.memory_mlp_num_layers = 1
         if config.titans.memory_mlp_num_layers > 1 and config.titans.mem_mlp_intermediate_size <= 0:
-             logger.warning(f"Titans memory_mlp_num_layers > 1 but mem_mlp_intermediate_size ({config.titans.mem_mlp_intermediate_size}) is not positive. Setting to hidden_size/2.")
-             config.titans.mem_mlp_intermediate_size = config.hidden_size // 2
+             default_intermediate = config.hidden_size // 2 if config.hidden_size > 0 else 256 
+             logger.warning(f"Titans memory_mlp_num_layers > 1 but mem_mlp_intermediate_size ({config.titans.mem_mlp_intermediate_size}) is not positive. Setting to {default_intermediate}.")
+             config.titans.mem_mlp_intermediate_size = default_intermediate
 
 
     if config.use_transformer2_adaptation:
         k = config.transformer2.num_singular_values
-        max_k_attn = config.hidden_size
-        if k > max_k_attn and (config.transformer2.adapt_attention or config.transformer2.adapt_lm_head or config.transformer2.adapt_embeddings):
-            logger.warning(f"T2 k ({k}) > hidden_size ({max_k_attn}). Clamping k.")
-            config.transformer2.num_singular_values = max_k_attn
-        max_k_ffn = min(config.hidden_size, config.intermediate_size)
-        if k > max_k_ffn and config.transformer2.adapt_ffn:
-            logger.warning(f"T2 k ({k}) > FFN dimensions ({max_k_ffn}). Clamping k.")
-            config.transformer2.num_singular_values = min(k, max_k_ffn) 
+        max_k_attn_like = config.hidden_size
+        if k > max_k_attn_like and (config.transformer2.adapt_attention or config.transformer2.adapt_lm_head or config.transformer2.adapt_embeddings):
+            logger.warning(f"Transformer2 num_singular_values ({k}) > hidden_size ({max_k_attn_like}). Effective k will be clamped by SVD computation.")
+        
+        max_k_ffn_fc1 = min(config.hidden_size, config.intermediate_size)
+        max_k_ffn_fc2 = min(config.intermediate_size, config.hidden_size)
+        if k > max_k_ffn_fc1 and config.transformer2.adapt_ffn:
+            logger.warning(f"Transformer2 num_singular_values ({k}) > FFN fc1 dimensions ({max_k_ffn_fc1}). Effective k will be clamped by SVD computation.")
+        if k > max_k_ffn_fc2 and config.transformer2.adapt_ffn:
+            logger.warning(f"Transformer2 num_singular_values ({k}) > FFN fc2 dimensions ({max_k_ffn_fc2}). Effective k will be clamped by SVD computation.")
     
     if config.use_mvot_processor:
-        if config.mvot.embedding_dim != config.hidden_size:
-             logger.info(f"MVoT embedding_dim ({config.mvot.embedding_dim}) differs from model hidden_size ({config.hidden_size}). Ensure VisualCodebook projection layers handle this.")
         if config.mvot.use_pretrained_codebook and not config.mvot.codebook_path:
-            raise ValueError("MVoT use_pretrained_codebook is True, but codebook_path is not set.")
+            raise ValueError("MVoT use_pretrained_codebook is True, but mvot.codebook_path is not set.")
     
     if config.use_blt_processor:
         if config.vocab_size != 260: 
-             logger.warning(f"BLT processor is enabled. Overriding vocab_size from {config.vocab_size} to 260.")
+             logger.warning(f"BLT processor is enabled. Overriding ModelConfig.vocab_size from {config.vocab_size} to 260 (byte vocab + special).")
              config.vocab_size = 260
         if config.blt.max_patch_size > config.data.block_size:
-             logger.warning(f"BLT max_patch_size ({config.blt.max_patch_size}) > data.block_size ({config.data.block_size}). This might lead to issues if block_size refers to bytes.")
+             logger.warning(f"BLT max_patch_size ({config.blt.max_patch_size}) > data.block_size ({config.data.block_size}). Ensure block_size is sufficient for max_patch_size.")
     else: 
          if not config.tokenizer_name:
-              logger.warning("BLT is disabled, but 'tokenizer_name' is not set in ModelConfig. Defaulting to 'gpt2'. Training script might override.")
-              config.tokenizer_name = "gpt2" 
+              default_tokenizer = "gpt2"
+              logger.warning(f"BLT is disabled, but ModelConfig.tokenizer_name is not set. Defaulting to '{default_tokenizer}'. Training script might override if it loads a tokenizer.")
+              config.tokenizer_name = default_tokenizer
 
     try:
         import torch
@@ -375,15 +393,15 @@ def resolve_config(config: ModelConfig) -> ModelConfig:
         elif can_use_mps: effective_device = 'mps'
 
         if config.hardware.mixed_precision and effective_device == 'cpu':
-            logger.info("Disabling mixed precision because device is CPU.")
+            logger.info("Disabling mixed precision because effective device is CPU.")
             config.hardware.mixed_precision = False
         
         if config.hardware.use_flash_attention:
             if effective_device != 'cuda' or not hasattr(torch.nn.functional, "scaled_dot_product_attention"):
-                logger.info(f"Disabling FlashAttention (device: {effective_device}, PyTorch supports: {hasattr(torch.nn.functional, 'scaled_dot_product_attention')}).")
+                logger.info(f"Disabling FlashAttention (device: {effective_device}, PyTorch supports scaled_dot_product_attention: {hasattr(torch.nn.functional, 'scaled_dot_product_attention')}).")
                 config.hardware.use_flash_attention = False
     except ImportError:
-        logger.warning("PyTorch not found during config resolution. Hardware checks skipped.")
+        logger.warning("PyTorch not found during config resolution. Hardware checks skipped. mixed_precision and use_flash_attention defaulted to False.")
         config.hardware.mixed_precision = False
         config.hardware.use_flash_attention = False
 
