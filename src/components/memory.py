@@ -10,6 +10,7 @@ integration into the unified architecture.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.amp import autocast
 from typing import List, Tuple, Optional, Dict, Any
 import logging
 import math
@@ -171,6 +172,7 @@ class SurpriseMemoryMLP(nn.Module):
             return torch.tensor(0.0), []
 
         mlp_param_dtype = mlp_params_for_update[0].dtype
+        logger.debug(f"_get_associative_loss_and_param_gradients: MLP parameter dtype for update: {mlp_param_dtype}")
         mlp_param_device = mlp_params_for_update[0].device
         
         k_t_batch_casted = k_t_batch.to(dtype=mlp_param_dtype, device=mlp_param_device)
@@ -192,10 +194,15 @@ class SurpriseMemoryMLP(nn.Module):
         associative_loss_val = torch.tensor(0.0, device=mlp_param_device) 
 
         try:
-            # Using torch.enable_grad() here as an explicit scope for autograd operations
-            with torch.enable_grad():
-                v_t_pred_batch = self._manual_mlp_forward(k_t_batch_casted) 
-                associative_loss = F.mse_loss(v_t_pred_batch, v_t_batch_casted)
+            autocast_device_type = k_t_batch_casted.device.type
+            if autocast_device_type not in ['cuda', 'mps', 'cpu']:
+                logger.warning(f"Unexpected device type {autocast_device_type} for autocast disabling in SurpriseMemoryMLP. Proceeding.")
+
+            with autocast(device_type=autocast_device_type, enabled=False): # Disable autocast locally
+                # Using torch.enable_grad() here as an explicit scope for autograd operations
+                with torch.enable_grad():
+                    v_t_pred_batch = self._manual_mlp_forward(k_t_batch_casted) 
+                    associative_loss = F.mse_loss(v_t_pred_batch, v_t_batch_casted)
             
             associative_loss_val = associative_loss.detach() 
 
